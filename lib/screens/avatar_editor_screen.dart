@@ -149,16 +149,14 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
             ),
           ],
         ),
-        child: AvatarWidget(config: _config, size: 136)
-            .animate(
-              key: ValueKey(_config.hashCode),
-            )
-            .scale(
-              begin: const Offset(0.9, 0.9),
-              end: const Offset(1.0, 1.0),
-              duration: 300.ms,
-              curve: Curves.elasticOut,
-            ),
+        child: AvatarWidget(config: _config, size: 136.0)
+                  .animate(key: ValueKey(_config.hashCode))
+                  .scale(
+                    begin: const Offset(0.9, 0.9),
+                    end: const Offset(1.0, 1.0),
+                    duration: 300.ms,
+                    curve: Curves.elasticOut,
+                  ),
       ),
     );
   }

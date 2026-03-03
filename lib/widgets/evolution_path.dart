@@ -81,7 +81,7 @@ class EvolutionPath extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentStage = BookwormStage.fromWordCount(wordCount);
-    final stages = BookwormStage.values;
+    const stages = BookwormStage.values;
 
     return Column(
       mainAxisSize: MainAxisSize.min,

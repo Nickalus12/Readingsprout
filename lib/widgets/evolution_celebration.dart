@@ -87,14 +87,12 @@ class _EvolutionCelebrationState extends State<EvolutionCelebration>
   bool _showConfetti = false;
   bool _showTitle = false;
 
-  late final BookwormStage _oldStage;
   late final BookwormStage _newStage;
 
   @override
   void initState() {
     super.initState();
 
-    _oldStage = BookwormStage.fromWordCount(widget.previousWordCount);
     _newStage = BookwormStage.fromWordCount(widget.newWordCount);
 
     _confettiController = ConfettiController(

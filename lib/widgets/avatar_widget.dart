@@ -13,14 +13,14 @@ class AvatarWidget extends StatelessWidget {
   final AvatarConfig config;
   final double size;
   final bool showBackground;
-  final bool animate;
+  final bool animateEffects;
 
   const AvatarWidget({
     super.key,
     required this.config,
     this.size = 80,
     this.showBackground = true,
-    this.animate = false,
+    this.animateEffects = false,
   });
 
   @override
@@ -875,7 +875,7 @@ class _SparklePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rng = Random(42); // deterministic seed for consistent sparkle positions
-    final sparkleCount = 6;
+    const sparkleCount = 6;
     final colors = rainbow
         ? [Colors.red, Colors.orange, Colors.yellow, Colors.green, Colors.blue, Colors.purple]
         : [AppColors.starGold, Colors.white, AppColors.starGold, Colors.white, AppColors.starGold, Colors.white];

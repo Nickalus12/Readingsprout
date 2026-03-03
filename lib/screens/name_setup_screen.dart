@@ -219,7 +219,7 @@ class _NameSetupScreenState extends State<NameSetupScreen> {
                           width: 200,
                           height: 56,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: const LinearGradient(
                               colors: [
                                 AppColors.electricBlue,
                                 AppColors.violet,

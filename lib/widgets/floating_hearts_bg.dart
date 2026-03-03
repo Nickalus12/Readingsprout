@@ -182,7 +182,7 @@ class _Heart {
   double rotationSpeed;
   double wobblePhase;
   Color color;
-  bool absorbing;
+  bool absorbing = false;
 
   _Heart({
     required this.x,
@@ -195,16 +195,15 @@ class _Heart {
     required this.rotationSpeed,
     required this.wobblePhase,
     required this.color,
-    this.absorbing = false,
   });
 }
 
 class _CloudFlash {
   double x;
   double y;
-  double elapsed;
+  double elapsed = 0;
 
-  _CloudFlash({required this.x, required this.y, this.elapsed = 0});
+  _CloudFlash({required this.x, required this.y});
 }
 
 // ── Painter ────────────────────────────────────────────────────────

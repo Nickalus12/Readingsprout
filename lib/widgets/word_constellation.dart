@@ -1,10 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../data/dolch_words.dart';
-import '../models/progress.dart';
 import '../services/audio_service.dart';
 import '../services/progress_service.dart';
 import '../theme/app_theme.dart';
@@ -25,7 +23,6 @@ class WordConstellation extends StatelessWidget {
   Widget build(BuildContext context) {
     // Gather all mastered words with their level info
     final masteredWords = <_MasteredWord>[];
-    int totalAttempted = 0;
 
     for (int level = 1; level <= DolchWords.totalLevels; level++) {
       final lp = progressService.getLevel(level);
@@ -34,7 +31,6 @@ class WordConstellation extends StatelessWidget {
       for (final word in words) {
         final stats = lp.wordStats[word.text];
         if (stats != null && stats.attempts > 0) {
-          totalAttempted++;
           if (stats.perfectAttempts > 0) {
             masteredWords.add(_MasteredWord(
               text: word.text,
@@ -47,7 +43,7 @@ class WordConstellation extends StatelessWidget {
       }
     }
 
-    final totalWords = 220; // Dolch word count
+    const totalWords = 220; // Dolch word count
     final remaining = totalWords - masteredWords.length;
 
     return Column(

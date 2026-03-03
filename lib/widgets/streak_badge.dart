@@ -92,15 +92,15 @@ class _StreakTier {
       );
     }
     if (streak >= 3) {
-      return _StreakTier(
+      return const _StreakTier(
         iconSize: 22,
-        flameColor: const Color(0xFFFF8C00), // bright orange
-        borderColor: const Color(0xFFFF8C00),
+        flameColor: Color(0xFFFF8C00), // bright orange
+        borderColor: Color(0xFFFF8C00),
       );
     }
-    return _StreakTier(
+    return const _StreakTier(
       iconSize: 20,
-      flameColor: const Color(0xFFFF6B35), // orange
+      flameColor: Color(0xFFFF6B35), // orange
       borderColor: AppColors.border,
     );
   }

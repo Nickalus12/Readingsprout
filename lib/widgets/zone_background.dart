@@ -120,7 +120,7 @@ class _Particle {
   double wobbleSpeed;
   Color color;
   int type; // zone-specific sub-type (0 = primary, 1 = secondary, etc.)
-  double life; // 0→1 normalized lifetime progress (unused by some zones)
+  double life = 0; // 0→1 normalized lifetime progress (unused by some zones)
 
   _Particle({
     required this.x,
@@ -135,7 +135,6 @@ class _Particle {
     this.wobbleSpeed = 1.0,
     required this.color,
     this.type = 0,
-    this.life = 0,
   });
 }
 
@@ -145,7 +144,7 @@ class _ShootingStar {
   double vx, vy;
   double length;
   double opacity;
-  double elapsed;
+  double elapsed = 0;
   double duration;
 
   _ShootingStar({
@@ -155,7 +154,6 @@ class _ShootingStar {
     required this.vy,
     this.length = 60,
     this.opacity = 0.7,
-    this.elapsed = 0,
     this.duration = 1.0,
   });
 }
