@@ -16,7 +16,7 @@ import '../services/progress_service.dart';
 import '../widgets/animated_glow_border.dart';
 import '../widgets/letter_tile.dart';
 import '../widgets/celebration_overlay.dart';
-import '../widgets/floating_hearts_bg.dart';
+import '../widgets/zone_background.dart';
 
 class GameScreen extends StatefulWidget {
   final int level;
@@ -351,27 +351,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             onTap: () => _focusNode.requestFocus(),
             child: Stack(
               children: [
-                // ── Background gradient ──────────────────
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.topCenter,
-                      radius: 1.2,
-                      colors: [
-                        levelColors.first.withValues(alpha: 0.12),
-                        AppColors.background,
-                      ],
-                    ),
-                  ),
-                ),
-
-                // ── Floating hearts (subtle in game) ─────
-                const Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.4,
-                    child: FloatingHeartsBackground(
-                      cloudZoneHeight: 0.10,
-                    ),
+                // ── Zone-themed animated background ──────
+                Positioned.fill(
+                  child: ZoneBackground(
+                    zone: zoneIndexForLevel(widget.level),
                   ),
                 ),
 

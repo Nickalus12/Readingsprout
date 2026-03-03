@@ -43,6 +43,43 @@ class AppColors {
     Color(0xFFFF4757),
   ];
 
+  // Avatar skin tones (inclusive range)
+  static const List<Color> skinTones = [
+    Color(0xFFF5D6B8), // Light
+    Color(0xFFE8BC98), // Light-medium
+    Color(0xFFD4A57B), // Medium
+    Color(0xFFC08C5A), // Medium-dark
+    Color(0xFF8D5524), // Dark
+    Color(0xFF5C3310), // Deep
+  ];
+
+  // Avatar background colors
+  static const List<Color> avatarBgColors = [
+    Color(0xFFFF9A76), // Peach
+    Color(0xFF7BD4A8), // Mint
+    Color(0xFF6BB8F0), // Sky
+    Color(0xFFB794F6), // Lavender
+    Color(0xFFFFBF69), // Honey
+    Color(0xFFFF7085), // Coral
+    Color(0xFF72E0ED), // Aqua
+    Color(0xFFE098D0), // Mauve
+  ];
+
+  // Garden colors
+  static const Color gardenSoil = Color(0xFF2A1F14);
+  static const Color gardenStem = Color(0xFF10B981);
+  static const Color gardenLeaf = Color(0xFF059669);
+
+  // Treasure chest
+  static const Color chestWood = Color(0xFF8B6914);
+  static const Color chestGold = Color(0xFFFFD700);
+  static const Color chestSilver = Color(0xFFC0C0C0);
+
+  // Streak flame
+  static const Color flameOrange = Color(0xFFFF8C42);
+  static const Color flameRed = Color(0xFFFF4444);
+  static const Color flameMagic = Color(0xFF8B5CF6);
+
   // Level gradients — brightened for dark backgrounds
   static const List<List<Color>> levelGradients = [
     [Color(0xFFFF9A76), Color(0xFFFFBE98)], // Peach

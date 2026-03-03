@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
+import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/audio_service.dart';
 import '../services/streak_service.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
 import 'level_select_screen.dart';
+import 'profile_screen.dart';
 import 'word_editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
+  final ProfileService? profileService;
   final ProgressService progressService;
   final AudioService audioService;
   final StreakService streakService;
@@ -19,6 +22,7 @@ class HomeScreen extends StatefulWidget {
 
   const HomeScreen({
     super.key,
+    this.profileService,
     required this.progressService,
     required this.audioService,
     required this.streakService,
@@ -316,10 +320,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 16),
 
-                    // ── Bottom row: Custom Words + Change Name ─
+                    // ── Bottom row: My Garden + Custom Words + Change Name ─
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        if (widget.profileService != null) ...[
+                          TextButton.icon(
+                            onPressed: () => Navigator.push(
+                              context,
+                              _smoothRoute(ProfileScreen(
+                                profileService: widget.profileService!,
+                                progressService: widget.progressService,
+                                audioService: widget.audioService,
+                                playerName: widget.playerName,
+                              )),
+                            ),
+                            icon: const Icon(
+                              Icons.local_florist_rounded,
+                              size: 20,
+                            ),
+                            label: Text(
+                              'My Garden',
+                              style: GoogleFonts.fredoka(fontSize: 16),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.secondaryText,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         TextButton.icon(
                           onPressed: () => Navigator.push(
                             context,

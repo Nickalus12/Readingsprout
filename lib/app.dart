@@ -6,6 +6,7 @@ import 'screens/name_setup_screen.dart';
 import 'services/progress_service.dart';
 import 'services/audio_service.dart';
 import 'services/player_settings_service.dart';
+import 'services/profile_service.dart';
 import 'services/review_service.dart';
 import 'services/streak_service.dart';
 import 'widgets/floating_hearts_bg.dart';
@@ -22,6 +23,7 @@ class _SightWordsAppState extends State<SightWordsApp> {
   late final ProgressService _progressService;
   late final AudioService _audioService;
   late final PlayerSettingsService _settingsService;
+  late final ProfileService _profileService;
   late final ReviewService _reviewService;
   late final StreakService _streakService;
   bool _initialized = false;
@@ -36,6 +38,7 @@ class _SightWordsAppState extends State<SightWordsApp> {
     _progressService = ProgressService();
     _audioService = AudioService();
     _settingsService = PlayerSettingsService();
+    _profileService = ProfileService();
     _reviewService = ReviewService();
     _streakService = StreakService();
 
@@ -55,6 +58,12 @@ class _SightWordsAppState extends State<SightWordsApp> {
       await _settingsService.init();
     } catch (e) {
       debugPrint('PlayerSettingsService init failed: $e');
+    }
+
+    try {
+      await _profileService.init();
+    } catch (e) {
+      debugPrint('ProfileService init failed: $e');
     }
 
     try {
@@ -121,6 +130,7 @@ class _SightWordsAppState extends State<SightWordsApp> {
     }
 
     return HomeScreen(
+      profileService: _profileService,
       progressService: _progressService,
       audioService: _audioService,
       streakService: _streakService,

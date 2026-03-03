@@ -6,7 +6,7 @@ import '../data/dolch_words.dart';
 import '../models/progress.dart';
 import '../services/progress_service.dart';
 import '../services/audio_service.dart';
-import '../widgets/floating_hearts_bg.dart';
+import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
 import 'game_screen.dart';
@@ -32,10 +32,14 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
   // highest unlocked level, collapse others.
   late final Map<int, bool> _expanded;
 
+  /// Zone index for the animated background (based on highest unlocked level).
+  late final int _activeZoneIndex;
+
   @override
   void initState() {
     super.initState();
     final highestUnlocked = widget.progressService.highestUnlockedLevel;
+    _activeZoneIndex = zoneIndexForLevel(highestUnlocked);
     _expanded = {};
     for (int i = 0; i < DolchWords.zones.length; i++) {
       final zone = DolchWords.zones[i];
@@ -52,20 +56,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background gradient
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.background, AppColors.backgroundEnd],
-              ),
-            ),
-          ),
-
-          // Floating hearts
-          const Positioned.fill(
-            child: FloatingHeartsBackground(cloudZoneHeight: 0.12),
+          // Zone-themed animated background
+          Positioned.fill(
+            child: ZoneBackground(zone: _activeZoneIndex),
           ),
 
           // Content
