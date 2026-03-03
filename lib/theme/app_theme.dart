@@ -1,0 +1,129 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+class AppColors {
+  AppColors._();
+
+  // Core dark palette
+  static const Color background = Color(0xFF0A0A1A);
+  static const Color backgroundEnd = Color(0xFF111127);
+  static const Color surface = Color(0xFF1A1A2E);
+  static const Color surfaceVariant = Color(0xFF16213E);
+  static const Color border = Color(0xFF2A2A4A);
+
+  // Text
+  static const Color primaryText = Color(0xFFEAEAEA);
+  static const Color secondaryText = Color(0xFF8892B0);
+
+  // Feedback
+  static const Color success = Color(0xFF00E68A);
+  static const Color error = Color(0xFFFF4757);
+  static const Color starGold = Color(0xFFFFD700);
+
+  // Glow accents
+  static const Color electricBlue = Color(0xFF00D4FF);
+  static const Color violet = Color(0xFF8B5CF6);
+  static const Color magenta = Color(0xFFEC4899);
+  static const Color cyan = Color(0xFF06B6D4);
+  static const Color emerald = Color(0xFF10B981);
+
+  // Confetti colors for dark backgrounds
+  static const List<Color> confettiColors = [
+    Color(0xFF00D4FF),
+    Color(0xFF8B5CF6),
+    Color(0xFFEC4899),
+    Color(0xFFFFD700),
+    Color(0xFF00E68A),
+    Color(0xFF06B6D4),
+    Color(0xFFFF4757),
+  ];
+
+  // Level gradients — brightened for dark backgrounds
+  static const List<List<Color>> levelGradients = [
+    [Color(0xFFFF9A76), Color(0xFFFFBE98)], // Peach
+    [Color(0xFFB794F6), Color(0xFFD4BBFF)], // Lavender
+    [Color(0xFF7BD4A8), Color(0xFFA8E6CF)], // Mint
+    [Color(0xFF6BB8F0), Color(0xFF99D5FF)], // Sky
+    [Color(0xFFD680A8), Color(0xFFE8A0BF)], // Rose
+    [Color(0xFFFFBF69), Color(0xFFFFD59E)], // Honey
+    [Color(0xFFFF7085), Color(0xFFFF9AA2)], // Coral
+    [Color(0xFF8FD4B8), Color(0xFFB5EAD7)], // Sage
+    [Color(0xFFA5B0D9), Color(0xFFC7CEEA)], // Periwinkle
+    [Color(0xFFFFAFCC), Color(0xFFFFC8DD)], // Blush
+    [Color(0xFF9B8FE0), Color(0xFFBDB2FF)], // Iris
+    [Color(0xFF7BAAF0), Color(0xFFA0C4FF)], // Azure
+    [Color(0xFFA8E8A7), Color(0xFFCAFFC9)], // Lime
+    [Color(0xFFFFC68A), Color(0xFFFFDDB5)], // Apricot
+    [Color(0xFFC9A0F0), Color(0xFFE2C2FF)], // Orchid
+    [Color(0xFF72E0ED), Color(0xFF9BF6FF)], // Aqua
+    [Color(0xFFFF8585), Color(0xFFFFADAD)], // Salmon
+    [Color(0xFFB0E4C4), Color(0xFFD0F4DE)], // Seafoam
+    [Color(0xFFFFE68A), Color(0xFFFFF1B5)], // Butter
+    [Color(0xFFE098D0), Color(0xFFF1C0E8)], // Mauve
+    [Color(0xFFB598E0), Color(0xFFCFBAF0)], // Wisteria
+    [Color(0xFF80AAE8), Color(0xFFA3C4F3)], // Cornflower
+  ];
+}
+
+class AppTheme {
+  AppTheme._();
+
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: AppColors.background,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.violet,
+        brightness: Brightness.dark,
+        surface: AppColors.surface,
+      ),
+      textTheme: GoogleFonts.fredokaTextTheme(ThemeData.dark().textTheme).copyWith(
+        displayLarge: GoogleFonts.fredoka(
+          fontSize: 48,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryText,
+        ),
+        displayMedium: GoogleFonts.fredoka(
+          fontSize: 36,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryText,
+        ),
+        headlineLarge: GoogleFonts.fredoka(
+          fontSize: 28,
+          fontWeight: FontWeight.w500,
+          color: AppColors.primaryText,
+        ),
+        headlineMedium: GoogleFonts.fredoka(
+          fontSize: 22,
+          fontWeight: FontWeight.w500,
+          color: AppColors.primaryText,
+        ),
+        bodyLarge: GoogleFonts.nunito(
+          fontSize: 18,
+          fontWeight: FontWeight.w400,
+          color: AppColors.secondaryText,
+        ),
+        bodyMedium: GoogleFonts.nunito(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          color: AppColors.secondaryText,
+        ),
+        labelLarge: GoogleFonts.fredoka(
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          elevation: 0,
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,32 @@
+name: sight_words
+description: A beautiful sight word learning app for kids — hear it, type it, learn it.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audioplayers: ^6.1.0          # Play pre-generated TTS audio clips
+  shared_preferences: ^2.3.0    # Persist progress & settings locally
+  confetti: ^0.7.0              # Celebration confetti animations
+  google_fonts: ^6.2.1          # Beautiful typography
+  flutter_animate: ^4.5.0       # Smooth, declarative animations
+  path_provider: ^2.1.0         # Find app directories for audio storage
+  uuid: ^4.0.0                  # Unique IDs for custom words
+  window_manager: ^0.4.0         # Desktop window control (hide title bar, fullscreen)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/audio/words/
+    - assets/audio/letters/
+    - assets/audio/effects/
+    - assets/audio/phrases/
