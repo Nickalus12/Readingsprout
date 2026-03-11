@@ -1,40 +1,20 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import '../data/phrase_templates.dart';
 import 'amplitude_envelope.dart';
-import 'audio_player_pool.dart';
 import 'deepgram_tts_service.dart';
 
-/// Manages playback of pre-generated TTS audio clips.
-///
-/// Audio files are expected at:
-///   assets/audio/words/{word}.mp3          — full word pronunciation
-///   assets/audio/letter_names/{letter}.mp3 — spoken letter name (e.g. "ay", "bee")
-///   assets/audio/phonics/{letter}.mp3      — phonetic letter sound (e.g. "ah", "buh")
-///   assets/audio/phrases/{cat}_{i}.mp3     — personalized encouragement (bundled)
-///   assets/audio/effects/*.mp3             — UI sound effects
-///
-/// For personalized phrases, the service first checks for runtime-generated
-/// files from [DeepgramTtsService] (stored in the app documents directory),
-/// then falls back to bundled assets.
-///
-/// Letter NAME files (default for playLetter):
-///   letter_names/a.mp3 → "ay"
-///   letter_names/b.mp3 → "bee"
-///
-/// Phonics files (old phonetic sounds):
-///   phonics/a.mp3 → "ah" (short a sound)
-///   phonics/b.mp3 → "buh"
 class AudioService {
-  late AudioPlayerPool _pool;
-
   final _rng = Random();
-
   bool _initialized = false;
-  static final bool _isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  /// The SoLoud singleton instance.
+  late final SoLoud _soloud;
+
+  /// Cache of loaded AudioSources keyed by asset path.
+  final Map<String, AudioSource> _sourceCache = {};
 
   /// Optional Deepgram TTS service for runtime-generated phrases.
   DeepgramTtsService? _deepgramTts;
@@ -43,121 +23,127 @@ class AudioService {
   String? _activeProfileId;
 
   // ── Amplitude-based lip sync ──────────────────────────────────────
-
-  /// Cache for loaded amplitude envelopes.
   final AmplitudeEnvelopeCache _envelopeCache = AmplitudeEnvelopeCache();
-
-  /// Current mouth amplitude (0.0-1.0) driven by audio playback.
-  /// Listen to this for real-time lip sync.
   final ValueNotifier<double> mouthAmplitude = ValueNotifier(0.0);
 
-  StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<void>? _completionSub;
+  Timer? _amplitudeTimer;
+  SoundHandle? _trackedHandle;
+  AmplitudeEnvelope? _trackedEnvelope;
 
   Future<void> init() async {
-    _pool = AudioPlayerPool(poolSize: 12);
-    await _pool.init();
+    _soloud = SoLoud.instance;
+    if (!_soloud.isInitialized) {
+      await _soloud.init(
+        automaticCleanup: false,
+      );
+    }
+    // Allow more simultaneous voices for music + effects + words
+    _soloud.setMaxActiveVoiceCount(32);
     _initialized = true;
   }
 
-  /// Acquire a pooled player and play a source with the given tag.
-  /// Stops any existing players with the same tag first.
-  /// On Windows, a brief delay between stop and play prevents silent failures.
-  /// Returns `true` on success, `false` on failure.
-  Future<bool> _pooledPlay(String tag, Source source, {AmplitudeEnvelope? envelope}) async {
+  /// Load an asset, using cache to avoid reloading.
+  Future<AudioSource> _loadAsset(String assetPath) async {
+    final fullPath = 'assets/$assetPath';
+    if (_sourceCache.containsKey(fullPath)) {
+      return _sourceCache[fullPath]!;
+    }
+    final source = await _soloud.loadAsset(fullPath, mode: LoadMode.memory);
+    _sourceCache[fullPath] = source;
+    return source;
+  }
+
+  /// Load a file from filesystem (for Deepgram-generated audio).
+  Future<AudioSource> _loadFile(String filePath) async {
+    if (_sourceCache.containsKey(filePath)) {
+      return _sourceCache[filePath]!;
+    }
+    final source = await _soloud.loadFile(filePath, mode: LoadMode.memory);
+    _sourceCache[filePath] = source;
+    return source;
+  }
+
+  /// Play an asset with the given tag behavior. Returns true on success.
+  Future<bool> _play(String assetPath, {double volume = 1.0, AmplitudeEnvelope? envelope}) async {
     try {
-      await _pool.stopByTag(tag);
-      final pooled = _pool.acquire(tag: tag);
+      final source = await _loadAsset(assetPath);
+      final handle = await _soloud.play(source, volume: volume);
 
       if (envelope != null) {
-        _startAmplitudeTracking(pooled.player, envelope);
+        _startAmplitudeTracking(handle, envelope);
       }
-
-      if (_isDesktop) {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      }
-      await pooled.player.play(source);
-
-      // Auto-release when done
-      pooled.player.onPlayerComplete.listen((_) {
-        if (envelope != null) {
-          mouthAmplitude.value = 0.0;
-          _stopAmplitudeTracking();
-        }
-        _pool.release(pooled);
-      });
       return true;
     } catch (e) {
-      debugPrint('AudioPool play error ($tag): $e');
+      debugPrint('SoLoud play error ($assetPath): $e');
       return false;
     }
   }
 
-  /// Connect the Deepgram TTS service for runtime phrase generation.
+  /// Stop all currently playing instances of a source at the given path.
+  Future<void> _stopByPath(String assetPath) async {
+    final fullPath = 'assets/$assetPath';
+    final source = _sourceCache[fullPath];
+    if (source != null && source.handles.isNotEmpty) {
+      for (final handle in source.handles.toList()) {
+        try {
+          await _soloud.stop(handle);
+        } catch (_) {}
+      }
+    }
+  }
+
   void setDeepgramTts(DeepgramTtsService tts) {
     _deepgramTts = tts;
   }
 
-  /// Set the active profile for phrase file lookup.
   void setActiveProfile(String? profileId) {
     _activeProfileId = profileId;
   }
 
-  /// Play the full word pronunciation.
-  /// Returns `true` if audio played successfully, `false` on failure.
   Future<bool> playWord(String word) async {
     if (!_initialized) return false;
     try {
       _stopAmplitudeTracking();
       final path = 'audio/words/${word.toLowerCase()}.mp3';
+      await _stopByPath(path);
       final env = await _envelopeCache.load(path);
-      return await _pooledPlay('word', AssetSource(path), envelope: env);
+      return await _play(path, envelope: env);
     } catch (e) {
       debugPrint('Audio error (word: $word): $e');
       return false;
     }
   }
 
-  /// Play the spoken letter NAME (e.g. "ay" for A, "bee" for B).
-  /// This is the default for all letter playback in the app.
-  /// Returns `true` if audio played successfully, `false` on failure.
   Future<bool> playLetter(String letter) async {
     if (!_initialized) return false;
     try {
       _stopAmplitudeTracking();
       final path = 'audio/letter_names/${letter.toLowerCase()}.mp3';
+      await _stopByPath(path);
       final env = await _envelopeCache.load(path);
-      return await _pooledPlay('letter', AssetSource(path), envelope: env);
+      return await _play(path, envelope: env);
     } catch (e) {
       debugPrint('Audio error (letter: $letter): $e');
       return false;
     }
   }
 
-  /// Play the phonetic sound for a single letter (e.g. "ah" for A, "buh" for B).
-  /// Returns `true` if audio played successfully, `false` on failure.
   Future<bool> playLetterPhonics(String letter) async {
     if (!_initialized) return false;
     try {
       _stopAmplitudeTracking();
       final path = 'audio/phonics/${letter.toLowerCase()}.mp3';
+      await _stopByPath(path);
       final env = await _envelopeCache.load(path);
-      return await _pooledPlay('letterName', AssetSource(path), envelope: env);
+      return await _play(path, envelope: env);
     } catch (e) {
       debugPrint('Audio error (letter phonics: $letter): $e');
       return false;
     }
   }
 
-  /// Alias for [playLetter] — plays the letter name.
   Future<bool> playLetterName(String letter) => playLetter(letter);
 
-  /// Play a random personalized phrase from a category.
-  ///
-  /// Categories: 'word_complete', 'level_complete', 'welcome'.
-  /// Checks for runtime-generated audio (per-profile) first, then
-  /// falls back to bundled assets.
-  /// Returns the phrase text for display, or null if no name set.
   Future<String?> playPhrase(String category, String playerName) async {
     if (!_initialized || playerName.isEmpty) return null;
 
@@ -177,22 +163,22 @@ class AudioService {
     final text = templates[index].replaceAll('{name}', playerName);
 
     try {
-      // Check for runtime-generated file first (per-profile personalized audio)
+      // Check for runtime-generated file first
       if (_deepgramTts != null && _activeProfileId != null) {
         final localFile = _deepgramTts!.phraseFile(_activeProfileId!, category, index);
         if (localFile.existsSync()) {
-          // No envelope for runtime-generated files — use fallback (mouth stays at 0.0)
           _stopAmplitudeTracking();
-          await _pooledPlay('phrase', DeviceFileSource(localFile.path));
+          final source = await _loadFile(localFile.path);
+          await _soloud.play(source);
           return text;
         }
       }
 
-      // Fall back to bundled asset with amplitude tracking
+      // Fall back to bundled asset
       final path = 'audio/phrases/${category}_$index.mp3';
       final env = await _envelopeCache.load(path);
       _stopAmplitudeTracking();
-      await _pooledPlay('phrase', AssetSource(path), envelope: env);
+      await _play(path, envelope: env);
     } catch (e) {
       debugPrint('Audio error (phrase: ${category}_$index): $e');
     }
@@ -200,32 +186,21 @@ class AudioService {
     return text;
   }
 
-  /// Play a welcome phrase for the player.
-  /// Mixes in generic greetings that don't require a name.
   Future<String?> playWelcome(String playerName) async {
-    // 40% chance of generic welcome (works for any name / no name)
     if (_rng.nextDouble() < 0.4 || playerName.isEmpty) {
       const genericFiles = [
-        'welcome_generic_1',  // "Welcome!"
-        'welcome_generic_2',  // "Hi there!"
-        'welcome_generic_3',  // "Ready to learn?"
-        'welcome_generic_4',  // "Let's get started!"
-        'welcome_generic_5',  // "Time to learn!"
-        'welcome_generic_6',  // "Here we go!"
-        'welcome_generic_7',  // "Let's have fun!"
-        'welcome_generic_8',  // "You're going to do great!"
-        'welcome_generic_9',  // "Learning time!"
-        'welcome_generic_10', // "Let's do this!"
-        'welcome_generic_11', // "Good to see you!"
-        'welcome_generic_12', // "Let's read some words!"
-        'welcome_generic_13', // "Are you ready?"
+        'welcome_generic_1', 'welcome_generic_2', 'welcome_generic_3',
+        'welcome_generic_4', 'welcome_generic_5', 'welcome_generic_6',
+        'welcome_generic_7', 'welcome_generic_8', 'welcome_generic_9',
+        'welcome_generic_10', 'welcome_generic_11', 'welcome_generic_12',
+        'welcome_generic_13',
       ];
       final file = genericFiles[_rng.nextInt(genericFiles.length)];
       try {
         _stopAmplitudeTracking();
         final path = 'audio/words/$file.mp3';
         final env = await _envelopeCache.load(path);
-        await _pooledPlay('phrase', AssetSource(path), envelope: env);
+        await _play(path, envelope: env);
       } catch (e) {
         debugPrint('Audio error (generic welcome: $file): $e');
       }
@@ -234,70 +209,63 @@ class AudioService {
     return playPhrase('welcome', playerName);
   }
 
-  /// Play a word-complete encouragement phrase.
-  Future<String?> playWordComplete(String playerName) async {
-    return playPhrase('word_complete', playerName);
-  }
+  Future<String?> playWordComplete(String playerName) => playPhrase('word_complete', playerName);
+  Future<String?> playLevelComplete(String playerName) => playPhrase('level_complete', playerName);
 
-  /// Play a level-complete celebration phrase.
-  Future<String?> playLevelComplete(String playerName) async {
-    return playPhrase('level_complete', playerName);
-  }
-
-  /// Play a success chime.
   Future<void> playSuccess() async {
     if (!_initialized) return;
-    try {
-      await _pooledPlay('effect', AssetSource('audio/effects/success.mp3'));
-    } catch (e) {
-      debugPrint('Audio error (success): $e');
-    }
+    try { await _play('audio/effects/success.mp3'); } catch (e) { debugPrint('Audio error (success): $e'); }
   }
 
-  /// Play error/wrong feedback sound.
   Future<void> playError() async {
     if (!_initialized) return;
-    try {
-      await _pooledPlay('effect', AssetSource('audio/effects/error.mp3'));
-    } catch (e) {
-      debugPrint('Audio error (error): $e');
-    }
+    try { await _play('audio/effects/error.mp3'); } catch (e) { debugPrint('Audio error (error): $e'); }
   }
 
-  /// Play level complete fanfare.
   Future<void> playLevelCompleteEffect() async {
     if (!_initialized) return;
-    try {
-      await _pooledPlay('effect', AssetSource('audio/effects/level_complete.mp3'));
-    } catch (e) {
-      debugPrint('Audio error (level_complete): $e');
-    }
+    try { await _play('audio/effects/level_complete.mp3'); } catch (e) { debugPrint('Audio error (level_complete): $e'); }
   }
 
-  // ── Amplitude tracking helpers ────────────────────────────────────
+  // ── Amplitude tracking with Timer-based position polling ────────
 
-  /// Start tracking amplitude from the given player using the envelope.
-  void _startAmplitudeTracking(AudioPlayer player, AmplitudeEnvelope? env) {
+  void _startAmplitudeTracking(SoundHandle handle, AmplitudeEnvelope? env) {
     _stopAmplitudeTracking();
     if (env == null) return;
-    _positionSub = player.onPositionChanged.listen((pos) {
-      mouthAmplitude.value = env.getAmplitude(pos);
-    });
-    _completionSub = player.onPlayerComplete.listen((_) {
-      mouthAmplitude.value = 0.0;
-      _stopAmplitudeTracking();
+
+    _trackedHandle = handle;
+    _trackedEnvelope = env;
+
+    // Poll position every 20ms (matches envelope frame rate)
+    _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
+      final h = _trackedHandle;
+      final e = _trackedEnvelope;
+      if (h == null || e == null) {
+        _stopAmplitudeTracking();
+        return;
+      }
+      try {
+        if (!_soloud.getIsValidVoiceHandle(h)) {
+          mouthAmplitude.value = 0.0;
+          _stopAmplitudeTracking();
+          return;
+        }
+        final position = _soloud.getPosition(h);
+        mouthAmplitude.value = e.getAmplitude(position);
+      } catch (_) {
+        mouthAmplitude.value = 0.0;
+        _stopAmplitudeTracking();
+      }
     });
   }
 
-  /// Stop amplitude tracking and reset mouth to closed.
   void _stopAmplitudeTracking() {
-    _positionSub?.cancel();
-    _positionSub = null;
-    _completionSub?.cancel();
-    _completionSub = null;
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+    _trackedHandle = null;
+    _trackedEnvelope = null;
   }
 
-  /// Pre-load envelopes for a word list (e.g. at level start).
   Future<void> preloadEnvelopes(List<String> words) async {
     await _envelopeCache.preloadWords(words);
   }
@@ -305,6 +273,13 @@ class AudioService {
   void dispose() {
     _stopAmplitudeTracking();
     mouthAmplitude.dispose();
-    _pool.dispose();
+    // Dispose all cached sources
+    for (final source in _sourceCache.values) {
+      try { _soloud.disposeSource(source); } catch (_) {}
+    }
+    _sourceCache.clear();
+    if (_soloud.isInitialized) {
+      _soloud.deinit();
+    }
   }
 }

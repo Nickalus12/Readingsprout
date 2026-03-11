@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audioplayers: ^6.1.0          # Play pre-generated TTS audio clips
+  flutter_soloud: ^3.5.0        # High-performance audio engine (SoLoud)
   shared_preferences: ^2.3.0    # Persist progress & settings locally
   confetti: ^0.8.0              # Celebration confetti animations
   google_fonts: ^8.0.2          # Beautiful typography

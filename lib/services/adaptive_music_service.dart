@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import '../data/music_layers.dart';
 
 /// Manages layered, adaptive background music for Reading Sprout.
 ///
 /// The music system plays zone-themed ambient soundscapes with multiple
 /// layers (pad, melody, percussion) that fade in/out based on gameplay
-/// intensity. All players are owned by this service — it does NOT share
-/// the [AudioPlayerPool] used by [AudioService].
+/// intensity. Uses [SoLoud.instance] (shared singleton with [AudioService]).
 ///
 /// Key design goals:
 /// - **Subtle**: Master volume is low (0.15). This is ambient background
@@ -18,19 +17,13 @@ import '../data/music_layers.dart';
 ///   dip it down, streaks push it higher).
 /// - **Smooth**: All volume transitions are gradual (2-3 second fades)
 ///   to avoid jarring changes.
-/// - **Independent**: Creates its own [AudioPlayer] instances so it can
-///   be used alongside the main audio pool without conflicts.
+/// - **Zone-themed filters**: Each zone applies global audio filters
+///   (reverb, echo) for unique atmospheres.
 class AdaptiveMusicService {
   // ── Configuration ──────────────────────────────────────────────────
 
   /// Master volume multiplier. Keeps music ambient and unobtrusive.
   static const double _masterVolume = 0.15;
-
-  /// How long fade-in/out transitions take (in milliseconds).
-  static const int _fadeDurationMs = 2500;
-
-  /// Timer interval for volume fade steps.
-  static const int _fadeStepMs = 50;
 
   /// How much a correct answer bumps intensity.
   static const double _correctBump = 0.08;
@@ -46,37 +39,30 @@ class AdaptiveMusicService {
 
   // ── State ──────────────────────────────────────────────────────────
 
-  /// Active audio players keyed by layer instrument name.
-  final Map<String, AudioPlayer> _layerPlayers = {};
+  late final SoLoud _soloud;
 
-  /// Target volumes for each layer (pre-master-volume scaling).
+  /// Loaded music sources keyed by asset path.
+  final Map<String, AudioSource> _sources = {};
+
+  /// Active handles for each layer instrument.
+  final Map<String, SoundHandle> _layerHandles = {};
+
+  /// Target volumes for each layer.
   final Map<String, double> _layerTargetVolumes = {};
 
-  /// Current volumes for each layer (smoothly interpolated).
+  /// Current volumes for smooth interpolation.
   final Map<String, double> _layerCurrentVolumes = {};
 
-  /// Dedicated player for stingers (one-shots).
-  AudioPlayer? _stingerPlayer;
+  /// Stinger sources (pre-loaded).
+  final Map<String, AudioSource> _stingerSources = {};
 
-  /// The currently active zone key (e.g. 'woods', 'shore').
   String? _currentZone;
-
-  /// Current intensity level (0.0 = calm, 1.0 = max energy).
   double _intensity = 0.0;
-
-  /// Whether music is actively playing.
   bool _isPlaying = false;
-
-  /// Whether music is enabled by the user.
   bool _enabled = true;
-
-  /// Timer for smooth volume fading.
-  Timer? _fadeTimer;
-
-  /// Timer for intensity decay over time.
-  Timer? _decayTimer;
-
   bool _disposed = false;
+  Timer? _fadeTimer;
+  Timer? _decayTimer;
 
   // ── Public API ─────────────────────────────────────────────────────
 
@@ -95,16 +81,30 @@ class AdaptiveMusicService {
   /// Enable or disable music globally.
   set enabled(bool value) {
     _enabled = value;
-    if (!value && _isPlaying) {
-      stopMusic();
-    }
+    if (!value && _isPlaying) stopMusic();
   }
 
   /// Initialize the service. Call once at app startup.
   Future<void> init() async {
-    _stingerPlayer = AudioPlayer();
-    await _stingerPlayer!.setReleaseMode(ReleaseMode.stop);
-    debugPrint('AdaptiveMusicService initialized');
+    _soloud = SoLoud.instance;
+    // SoLoud may already be initialized by AudioService
+    if (!_soloud.isInitialized) {
+      await _soloud.init(automaticCleanup: false);
+    }
+
+    // Pre-load stinger sources
+    for (final entry in MusicLayers.stingers.entries) {
+      try {
+        _stingerSources[entry.key] = await _soloud.loadAsset(
+          'assets/${entry.value.assetPath}',
+          mode: LoadMode.memory,
+        );
+      } catch (e) {
+        debugPrint('AdaptiveMusic: Failed to load stinger ${entry.key}: $e');
+      }
+    }
+
+    debugPrint('AdaptiveMusicService initialized (SoLoud)');
   }
 
   /// Start playing zone-themed music.
@@ -114,13 +114,11 @@ class AdaptiveMusicService {
   /// If a different zone is playing, it crossfades to the new zone.
   Future<void> startZoneMusic(String zoneKey) async {
     if (_disposed || !_enabled) return;
-
-    // Already playing this zone — just resume if paused
     if (_currentZone == zoneKey && _isPlaying) return;
 
-    // Different zone or first start — stop current and start new
     if (_currentZone != null && _currentZone != zoneKey) {
-      await _stopLayerPlayers();
+      await _stopLayerHandles();
+      _removeZoneFilters();
     }
 
     final zoneMusic = MusicLayers.zones[zoneKey];
@@ -132,22 +130,24 @@ class AdaptiveMusicService {
     _currentZone = zoneKey;
     _intensity = 0.0;
 
-    // Create a player for each layer
+    // Load and start each layer
     for (final layer in zoneMusic.layers) {
-      final player = AudioPlayer();
-      await player.setReleaseMode(ReleaseMode.loop);
-      await player.setVolume(0.0); // Start silent, fade in
-      _layerPlayers[layer.instrument] = player;
-      _layerCurrentVolumes[layer.instrument] = 0.0;
-      _layerTargetVolumes[layer.instrument] = 0.0;
-
       try {
-        await player.play(AssetSource(layer.assetPath));
+        final assetPath = 'assets/${layer.assetPath}';
+        if (!_sources.containsKey(assetPath)) {
+          _sources[assetPath] = await _soloud.loadAsset(assetPath, mode: LoadMode.memory);
+        }
+        final source = _sources[assetPath]!;
+        final handle = await _soloud.play(source, volume: 0.0, looping: true);
+        _layerHandles[layer.instrument] = handle;
+        _layerCurrentVolumes[layer.instrument] = 0.0;
+        _layerTargetVolumes[layer.instrument] = 0.0;
       } catch (e) {
         debugPrint('AdaptiveMusic: Failed to play ${layer.instrument}: $e');
       }
     }
 
+    _applyZoneFilters(zoneKey);
     _isPlaying = true;
     _updateTargetVolumes();
     _startFadeTimer();
@@ -156,51 +156,90 @@ class AdaptiveMusicService {
     debugPrint('AdaptiveMusic: Started zone "$zoneKey"');
   }
 
+  /// Apply zone-specific global audio filters for unique atmosphere.
+  void _applyZoneFilters(String zoneKey) {
+    try {
+      switch (zoneKey) {
+        case 'woods':
+          _soloud.filters.freeverbFilter.activate();
+          _soloud.filters.freeverbFilter.wet.value = 0.12;
+          _soloud.filters.freeverbFilter.roomSize.value = 0.6;
+        case 'shore':
+          _soloud.filters.echoFilter.activate();
+          _soloud.filters.echoFilter.delay.value = 0.25;
+          _soloud.filters.echoFilter.decay.value = 0.3;
+        case 'peaks':
+          _soloud.filters.freeverbFilter.activate();
+          _soloud.filters.freeverbFilter.wet.value = 0.08;
+          _soloud.filters.freeverbFilter.roomSize.value = 0.4;
+        case 'sky':
+          _soloud.filters.freeverbFilter.activate();
+          _soloud.filters.freeverbFilter.wet.value = 0.20;
+          _soloud.filters.freeverbFilter.roomSize.value = 0.8;
+        case 'crown':
+          _soloud.filters.freeverbFilter.activate();
+          _soloud.filters.freeverbFilter.wet.value = 0.25;
+          _soloud.filters.freeverbFilter.roomSize.value = 0.9;
+      }
+    } catch (e) {
+      debugPrint('AdaptiveMusic: Filter setup error: $e');
+    }
+  }
+
+  /// Remove all zone-specific global filters.
+  void _removeZoneFilters() {
+    try {
+      _soloud.filters.freeverbFilter.deactivate();
+    } catch (_) {}
+    try {
+      _soloud.filters.echoFilter.deactivate();
+    } catch (_) {}
+  }
+
   /// Stop all music with a fade-out.
   Future<void> stopMusic() async {
     if (!_isPlaying) return;
 
-    // Set all targets to 0, let fade handle it
-    for (final key in _layerTargetVolumes.keys) {
-      _layerTargetVolumes[key] = 0.0;
+    // Fade out all layers
+    for (final entry in _layerHandles.entries) {
+      try {
+        _soloud.fadeVolume(entry.value, 0.0, const Duration(milliseconds: 2000));
+        _soloud.scheduleStop(entry.value, const Duration(milliseconds: 2100));
+      } catch (_) {}
     }
 
-    // Wait for fade to mostly complete, then clean up
-    await Future<void>.delayed(const Duration(milliseconds: _fadeDurationMs));
-    await _stopLayerPlayers();
+    _stopFadeTimer();
+    _stopDecayTimer();
+
+    // Wait for fade then clean up
+    await Future<void>.delayed(const Duration(milliseconds: 2200));
+    _layerHandles.clear();
+    _layerCurrentVolumes.clear();
+    _layerTargetVolumes.clear();
+    _removeZoneFilters();
 
     _isPlaying = false;
     _currentZone = null;
     _intensity = 0.0;
-    _stopFadeTimer();
-    _stopDecayTimer();
 
     debugPrint('AdaptiveMusic: Stopped');
   }
 
   /// Update the intensity based on gameplay difficulty.
-  ///
-  /// [difficulty] is a normalized 0.0-1.0 value. Higher values
-  /// activate more layers and increase tempo slightly.
   void updateIntensity(double difficulty) {
     _intensity = difficulty.clamp(0.0, 1.0);
     _updateTargetVolumes();
   }
 
   /// Play a short stinger sound effect.
-  ///
-  /// [name] is one of: 'correct', 'streak', 'combo'.
   Future<void> playStinger(String name) async {
     if (_disposed || !_enabled) return;
-
-    final stinger = MusicLayers.stingers[name];
-    if (stinger == null) return;
-
+    final source = _stingerSources[name];
+    if (source == null) return;
+    final stingerLayer = MusicLayers.stingers[name];
+    if (stingerLayer == null) return;
     try {
-      final player = _stingerPlayer;
-      if (player == null) return;
-      await player.setVolume(stinger.baseVolume * _masterVolume);
-      await player.play(AssetSource(stinger.assetPath));
+      await _soloud.play(source, volume: stingerLayer.baseVolume * _masterVolume);
     } catch (e) {
       debugPrint('AdaptiveMusic: Stinger error ($name): $e');
     }
@@ -210,7 +249,6 @@ class AdaptiveMusicService {
   void onCorrectAnswer() {
     _intensity = (_intensity + _correctBump).clamp(0.0, 1.0);
     _updateTargetVolumes();
-    // Play the correct chime stinger
     playStinger('correct');
   }
 
@@ -224,7 +262,6 @@ class AdaptiveMusicService {
   void onStreakReached(int streak) {
     _intensity = (_intensity + _streakBump).clamp(0.0, 1.0);
     _updateTargetVolumes();
-    // Play streak chime for milestones
     if (streak >= 5) {
       playStinger('streak');
     } else if (streak >= 3) {
@@ -241,10 +278,8 @@ class AdaptiveMusicService {
   /// Pause music playback (e.g. when app goes to background).
   Future<void> pause() async {
     if (!_isPlaying) return;
-    for (final player in _layerPlayers.values) {
-      try {
-        await player.pause();
-      } catch (_) {}
+    for (final handle in _layerHandles.values) {
+      try { _soloud.setPause(handle, true); } catch (_) {}
     }
     _stopFadeTimer();
     _stopDecayTimer();
@@ -253,10 +288,8 @@ class AdaptiveMusicService {
   /// Resume music playback after pause.
   Future<void> resume() async {
     if (!_isPlaying || !_enabled) return;
-    for (final player in _layerPlayers.values) {
-      try {
-        await player.resume();
-      } catch (_) {}
+    for (final handle in _layerHandles.values) {
+      try { _soloud.setPause(handle, false); } catch (_) {}
     }
     _startFadeTimer();
     _startDecayTimer();
@@ -267,11 +300,16 @@ class AdaptiveMusicService {
     _disposed = true;
     _stopFadeTimer();
     _stopDecayTimer();
-    await _stopLayerPlayers();
-    try {
-      await _stingerPlayer?.dispose();
-    } catch (_) {}
-    _stingerPlayer = null;
+    await _stopLayerHandles();
+    _removeZoneFilters();
+    for (final source in _sources.values) {
+      try { _soloud.disposeSource(source); } catch (_) {}
+    }
+    for (final source in _stingerSources.values) {
+      try { _soloud.disposeSource(source); } catch (_) {}
+    }
+    _sources.clear();
+    _stingerSources.clear();
     debugPrint('AdaptiveMusicService disposed');
   }
 
@@ -280,115 +318,80 @@ class AdaptiveMusicService {
   /// Recalculate target volumes for all layers based on current intensity.
   void _updateTargetVolumes() {
     if (_currentZone == null) return;
-
     final zoneMusic = MusicLayers.zones[_currentZone!];
     if (zoneMusic == null) return;
 
     for (final layer in zoneMusic.layers) {
       double targetVol;
       if (_intensity >= layer.minIntensity) {
-        // Layer is active — ramp volume based on how far above threshold
         final ramp = layer.minIntensity > 0
-            ? ((_intensity - layer.minIntensity) / (1.0 - layer.minIntensity))
-                .clamp(0.0, 1.0)
+            ? ((_intensity - layer.minIntensity) / (1.0 - layer.minIntensity)).clamp(0.0, 1.0)
             : 1.0;
-        // Pad always at base volume; melody/perc ramp up
-        if (layer.instrument == 'pad') {
-          targetVol = layer.baseVolume;
-        } else {
-          targetVol = layer.baseVolume * ramp;
-        }
+        targetVol = layer.instrument == 'pad' ? layer.baseVolume : layer.baseVolume * ramp;
       } else {
         targetVol = 0.0;
       }
-
       _layerTargetVolumes[layer.instrument] = targetVol;
     }
-
-    // Tempo modulation: slight speed changes based on intensity
     _updatePlaybackRates();
   }
 
   /// Adjust playback rate for subtle tempo modulation.
   void _updatePlaybackRates() {
-    // Map intensity to playback rate: 0.95x at low, 1.05x at high
     final rate = 0.95 + (_intensity * 0.10);
-    for (final entry in _layerPlayers.entries) {
-      try {
-        entry.value.setPlaybackRate(rate);
-      } catch (_) {}
+    for (final handle in _layerHandles.values) {
+      try { _soloud.setRelativePlaySpeed(handle, rate); } catch (_) {}
     }
   }
 
   /// Start the periodic fade timer that smoothly interpolates volumes.
   void _startFadeTimer() {
     _stopFadeTimer();
-    _fadeTimer = Timer.periodic(
-      const Duration(milliseconds: _fadeStepMs),
-      (_) => _fadeStep(),
-    );
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 50), (_) => _fadeStep());
   }
 
-  void _stopFadeTimer() {
-    _fadeTimer?.cancel();
-    _fadeTimer = null;
-  }
+  void _stopFadeTimer() { _fadeTimer?.cancel(); _fadeTimer = null; }
 
   /// One step of the volume fade interpolation.
   void _fadeStep() {
     if (_disposed) return;
-
-    const stepFraction = _fadeStepMs / _fadeDurationMs;
-
-    for (final instrument in _layerPlayers.keys) {
+    const stepFraction = 50 / 2500;
+    for (final instrument in _layerHandles.keys) {
       final current = _layerCurrentVolumes[instrument] ?? 0.0;
       final target = _layerTargetVolumes[instrument] ?? 0.0;
-
+      double newVol;
       if ((current - target).abs() < 0.005) {
-        // Close enough — snap to target
-        _layerCurrentVolumes[instrument] = target;
+        newVol = target;
       } else {
-        // Interpolate towards target
-        final delta = (target - current) * stepFraction * 3;
-        _layerCurrentVolumes[instrument] = current + delta;
+        newVol = current + (target - current) * stepFraction * 3;
       }
-
-      // Apply master volume and set on player
-      final effectiveVol =
-          (_layerCurrentVolumes[instrument]! * _masterVolume).clamp(0.0, 1.0);
-      try {
-        _layerPlayers[instrument]?.setVolume(effectiveVol);
-      } catch (_) {}
+      _layerCurrentVolumes[instrument] = newVol;
+      final effectiveVol = (newVol * _masterVolume).clamp(0.0, 1.0);
+      final handle = _layerHandles[instrument];
+      if (handle != null) {
+        try { _soloud.setVolume(handle, effectiveVol); } catch (_) {}
+      }
     }
   }
 
   /// Start the intensity decay timer (slowly reduces intensity over time).
   void _startDecayTimer() {
     _stopDecayTimer();
-    _decayTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) {
-        if (_disposed || !_isPlaying) return;
-        _intensity = (_intensity - _decayPerSecond).clamp(0.0, 1.0);
-        _updateTargetVolumes();
-      },
-    );
+    _decayTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_disposed || !_isPlaying) return;
+      _intensity = (_intensity - _decayPerSecond).clamp(0.0, 1.0);
+      _updateTargetVolumes();
+    });
   }
 
-  void _stopDecayTimer() {
-    _decayTimer?.cancel();
-    _decayTimer = null;
-  }
+  void _stopDecayTimer() { _decayTimer?.cancel(); _decayTimer = null; }
 
-  /// Stop and dispose all layer players.
-  Future<void> _stopLayerPlayers() async {
-    for (final player in _layerPlayers.values) {
-      try {
-        await player.stop();
-        await player.dispose();
-      } catch (_) {}
+  /// Stop all active layer handles.
+  Future<void> _stopLayerHandles() async {
+    for (final handle in _layerHandles.values) {
+      try { await _soloud.stop(handle); } catch (_) {}
     }
-    _layerPlayers.clear();
+    _layerHandles.clear();
     _layerCurrentVolumes.clear();
     _layerTargetVolumes.clear();
   }

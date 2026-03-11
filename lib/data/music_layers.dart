@@ -5,7 +5,7 @@
 /// melody (pentatonic loop), and optional percussion. Stingers are short
 /// one-shot sounds for events like correct answers and streaks.
 class MusicLayer {
-  /// Path relative to `assets/` (audioplayers AssetSource convention).
+  /// Path relative to `assets/` (SoLoud prepends `assets/` when loading).
   final String assetPath;
 
   /// Layer type: 'pad', 'melody', 'percussion', 'stinger'.
