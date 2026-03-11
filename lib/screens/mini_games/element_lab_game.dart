@@ -437,37 +437,45 @@ class _ElementLabGameState extends State<ElementLabGame>
     El.stone, El.metal, El.wood, El.glass, El.ice,
   };
 
+  // Wind sensitivity per element: 0 = unaffected, 1 = heavy, 2 = light, 3 = ash
+  // Pre-computed lookup for O(1) access instead of Set.contains
+  static final Uint8List _windSensitivity = () {
+    final t = Uint8List(32); // enough for all element IDs
+    for (final el in _lightWindElements) { t[el] = 2; }
+    for (final el in _heavyWindElements) { t[el] = 1; }
+    t[El.ash] = 3;
+    return t;
+  }();
+
   void _applyWind() {
     if (_windForce == 0) return;
     final absWind = _windForce.abs();
     final dir = _windForce > 0 ? 1 : -1;
+    final w = _gridW;
+    final g = _grid;
 
-    // Scan all cells
+    // Pre-compute thresholds (avoid repeated division in inner loop)
+    // Using int random (nextInt(100)) instead of nextDouble for speed
+    final ashThresh = (absWind * 25).clamp(0, 100);   // /4.0 → 25%
+    final lightThresh = (absWind * 10).clamp(0, 100);  // /10.0 → 10%
+    final heavyThresh = (absWind * 3).clamp(0, 100);   // /30.0 → ~3%
+
     for (int y = 0; y < _gridH; y++) {
-      // Scan against wind direction to avoid double-pushing
-      final startX = dir > 0 ? _gridW - 1 : 0;
-      final endX = dir > 0 ? -1 : _gridW;
+      final startX = dir > 0 ? w - 1 : 0;
+      final endX = dir > 0 ? -1 : w;
       final step = dir > 0 ? -1 : 1;
+      final rowOff = y * w;
       for (int x = startX; x != endX; x += step) {
-        final idx = y * _gridW + x;
-        final el = _grid[idx];
+        final el = g[rowOff + x];
         if (el == El.empty) continue;
+        final sens = el < 32 ? _windSensitivity[el] : 0;
+        if (sens == 0) continue;
 
-        double chance;
-        if (el == El.ash) {
-          chance = absWind / 4.0; // ash is ultra-lightweight, blows very easily
-        } else if (_lightWindElements.contains(el)) {
-          chance = absWind / 10.0;
-        } else if (_heavyWindElements.contains(el)) {
-          chance = absWind / 30.0;
-        } else {
-          continue; // static or unaffected
-        }
-
-        if (_rng.nextDouble() < chance) {
+        final thresh = sens == 3 ? ashThresh : (sens == 2 ? lightThresh : heavyThresh);
+        if (_rng.nextInt(100) < thresh) {
           final nx = x + dir;
-          if (_inBounds(nx, y) && _grid[y * _gridW + nx] == El.empty) {
-            _swap(idx, y * _gridW + nx);
+          if (nx >= 0 && nx < w && g[rowOff + nx] == El.empty) {
+            _swap(rowOff + x, rowOff + nx);
           }
         }
       }
@@ -2721,6 +2729,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     }
   }
 
+  @pragma('vm:prefer-inline')
   void _swap(int a, int b) {
     final tmpEl = _grid[a];
     final tmpLife = _life[a];
@@ -2741,19 +2750,32 @@ class _ElementLabGameState extends State<ElementLabGame>
     _flags[b] = 1;
   }
 
+  // Inlined for hot-path performance — avoid function call overhead.
+  @pragma('vm:prefer-inline')
   bool _inBounds(int x, int y) =>
       x >= 0 && x < _gridW && y >= 0 && y < _gridH;
 
+  /// Optimized 8-neighbor check. Unrolled for performance.
+  @pragma('vm:prefer-inline')
   bool _checkAdjacent(int x, int y, int elType) {
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dx = -1; dx <= 1; dx++) {
-        if (dx == 0 && dy == 0) continue;
-        final nx = x + dx;
-        final ny = y + dy;
-        if (_inBounds(nx, ny) && _grid[ny * _gridW + nx] == elType) {
-          return true;
-        }
-      }
+    final w = _gridW;
+    final g = _grid;
+    final maxX = w - 1;
+    final maxY = _gridH - 1;
+    // Unrolled: check all 8 neighbors without loop overhead
+    if (y > 0) {
+      final rowAbove = (y - 1) * w;
+      if (x > 0    && g[rowAbove + x - 1] == elType) return true;
+                       if (g[rowAbove + x]     == elType) return true;
+      if (x < maxX && g[rowAbove + x + 1] == elType) return true;
+    }
+    if (x > 0    && g[y * w + x - 1] == elType) return true;
+    if (x < maxX && g[y * w + x + 1] == elType) return true;
+    if (y < maxY) {
+      final rowBelow = (y + 1) * w;
+      if (x > 0    && g[rowBelow + x - 1] == elType) return true;
+                       if (g[rowBelow + x]     == elType) return true;
+      if (x < maxX && g[rowBelow + x + 1] == elType) return true;
     }
     return false;
   }
@@ -2815,49 +2837,54 @@ class _ElementLabGameState extends State<ElementLabGame>
 
   void _renderPixels() {
     final total = _gridW * _gridH;
-    final t = _dayNightT; // 0.0 = day, 1.0 = night
+    final w = _gridW;
+    final h = _gridH;
+    final g = _grid;
+    final t = _dayNightT;
 
-    // Day background: RGB(10, 10, 26). Night: deep navy RGB(4, 4, 16).
+    // Pre-computed background colors
     final bgR = (10 - t * 6).round().clamp(0, 255);
     final bgG = (10 - t * 6).round().clamp(0, 255);
     final bgB = (26 - t * 10).round().clamp(0, 255);
 
     // Night glow multiplier for fire/lava halos
-    final glowMul = 1.0 + t * 1.5; // 1.0 at day, 2.5 at night
+    final glowMul = 1.0 + t * 1.5;
+    final glowIntR = (12 * glowMul).round();
+    final glowIntG = (4 * glowMul).round();
 
-    // Star set for quick lookup
+    // Star set for quick lookup (only at night)
     final starSet = t > 0.05 ? Set<int>.from(_starPositions) : <int>{};
 
+    // Pre-compute glow only every 3rd frame (fire moves slowly)
+    final doGlow = _frameCount % 3 == 0;
+
+    // Pre-compute integer night factors (avoid per-pixel float math)
+    final nightBoost = (t * 30).round();
+    final nightBoostG = (nightBoost * 0.2).round();
+    final nightShimmer = (t * 50).round();
+    final nightSmokeBoost = (t * 20).round();
+    // Fixed-point 8-bit: 256 = 1.0, so (1-dim)*256
+    final nightDimWater = (256 * (1.0 - t * 0.15)).round();
+    final nightDimGeneral = (256 * (1.0 - t * 0.2)).round();
+
     for (int i = 0; i < total; i++) {
-      final el = _grid[i];
+      final el = g[i];
       final pi4 = i * 4;
       if (el == El.empty) {
-        // Check for fire/lava glow from immediate neighbors only (3x3 not 5x5)
-        // Only update glow every other frame to reduce flicker
-        final x = i % _gridW;
-        final y = i ~/ _gridW;
+        // Lightweight glow check: only check cardinal neighbors (4 not 8)
         int glowR = 0, glowG = 0;
-        if (_frameCount % 2 == 0) {
-          for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -1; dx <= 1; dx++) {
-              if (dx == 0 && dy == 0) continue;
-              final nx = x + dx;
-              final ny = y + dy;
-              if (_inBounds(nx, ny)) {
-                final nel = _grid[ny * _gridW + nx];
-                if (nel == El.fire || nel == El.lava) {
-                  glowR += (12 * glowMul).round();
-                  if (nel == El.fire) glowG += (4 * glowMul).round();
-                }
-              }
-            }
-          }
+        if (doGlow) {
+          final x = i % w;
+          final y = i ~/ w;
+          // Check 4 cardinal neighbors only (much faster than 8)
+          if (y > 0)     { final n = g[i - w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
+          if (y < h - 1) { final n = g[i + w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
+          if (x > 0)     { final n = g[i - 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
+          if (x < w - 1) { final n = g[i + 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
         }
         if (glowR > 0) {
-          glowR = glowR.clamp(0, 80);
-          glowG = glowG.clamp(0, 25);
-          _pixels[pi4] = (bgR + glowR).clamp(0, 255);
-          _pixels[pi4 + 1] = (bgG + glowG).clamp(0, 255);
+          _pixels[pi4] = (bgR + glowR.clamp(0, 60)).clamp(0, 255);
+          _pixels[pi4 + 1] = (bgG + glowG.clamp(0, 20)).clamp(0, 255);
           _pixels[pi4 + 2] = bgB;
           _pixels[pi4 + 3] = 255;
         } else if (starSet.contains(i)) {
@@ -2887,53 +2914,43 @@ class _ElementLabGameState extends State<ElementLabGame>
 
       final c = _getElementColor(el, i);
 
-      int r = (c.r * 255.0).round().clamp(0, 255);
-      int g = (c.g * 255.0).round().clamp(0, 255);
-      int b = (c.b * 255.0).round().clamp(0, 255);
-      final int a = (c.a * 255.0).round().clamp(0, 255);
+      int r = (c.r * 255.0).round();
+      int g2 = (c.g * 255.0).round();
+      int b = (c.b * 255.0).round();
+      final int a = (c.a * 255.0).round();
 
-      // Night lighting adjustments
-      if (t > 0.01) {
+      // Night lighting adjustments (pre-computed int factors)
+      if (nightBoost > 0) {
         if (el == El.fire || el == El.lava) {
-          // Fire/lava glow brighter at night
-          final boost = (t * 30).round();
-          r = (r + boost).clamp(0, 255);
-          g = (g + (boost * 0.2).round()).clamp(0, 255);
+          r = (r + nightBoost).clamp(0, 255);
+          g2 = (g2 + nightBoostG).clamp(0, 255);
         } else if (el == El.lightning) {
-          // Lightning stays bright — no change
+          // stays bright
         } else if (el == El.water) {
-          // Moonlight shimmer on water surface at night
-          final wx = i % _gridW;
-          final wy = i ~/ _gridW;
-          final isTop = wy > 0 && _grid[(wy - 1) * _gridW + wx] != El.water;
+          final wx = i % w;
+          final isTop = i >= w && g[i - w] != El.water;
           if (isTop && ((_frameCount + wx * 3) % 12 < 3)) {
-            final shimmer = (t * 50).round();
-            r = (r + shimmer).clamp(0, 255);
-            g = (g + shimmer).clamp(0, 255);
-            b = (b + shimmer).clamp(0, 255);
+            r = (r + nightShimmer).clamp(0, 255);
+            g2 = (g2 + nightShimmer).clamp(0, 255);
+            b = (b + nightShimmer).clamp(0, 255);
           } else {
-            final dim = t * 0.15;
-            r = (r * (1.0 - dim)).round().clamp(0, 255);
-            g = (g * (1.0 - dim)).round().clamp(0, 255);
+            r = (r * nightDimWater) >> 8;
+            g2 = (g2 * nightDimWater) >> 8;
           }
         } else if (el == El.smoke) {
-          // Smoke more visible at night
-          final boost = (t * 20).round();
-          r = (r + boost).clamp(0, 255);
-          g = (g + boost).clamp(0, 255);
-          b = (b + boost).clamp(0, 255);
+          r = (r + nightSmokeBoost).clamp(0, 255);
+          g2 = (g2 + nightSmokeBoost).clamp(0, 255);
+          b = (b + nightSmokeBoost).clamp(0, 255);
         } else {
-          // General dimming for other elements
-          final dim = t * 0.2;
-          r = (r * (1.0 - dim)).round().clamp(0, 255);
-          g = (g * (1.0 - dim)).round().clamp(0, 255);
-          b = (b * (1.0 - dim)).round().clamp(0, 255);
+          r = (r * nightDimGeneral) >> 8;
+          g2 = (g2 * nightDimGeneral) >> 8;
+          b = (b * nightDimGeneral) >> 8;
         }
       }
 
-      _pixels[pi4] = r;
-      _pixels[pi4 + 1] = g;
-      _pixels[pi4 + 2] = b;
+      _pixels[pi4] = r.clamp(0, 255);
+      _pixels[pi4 + 1] = g2.clamp(0, 255);
+      _pixels[pi4 + 2] = b.clamp(0, 255);
       _pixels[pi4 + 3] = a;
     }
   }
@@ -2959,8 +2976,23 @@ class _ElementLabGameState extends State<ElementLabGame>
             : const Color(0xFFFFFFFF);
 
       case El.rainbow:
-        final hue = (_rainbowHue + _life[idx] * 7) % 360;
-        return HSVColor.fromAHSV(1.0, hue.toDouble(), 0.8, 1.0).toColor();
+        // Fast HSV→RGB for rainbow (avoids HSVColor object creation)
+        final hue = ((_rainbowHue + _life[idx] * 7) % 360).toDouble();
+        final h6 = hue / 60.0;
+        final hi = h6.floor() % 6;
+        final f = h6 - h6.floor();
+        const v = 255; // v=1.0*255, s=0.8 → p = v*(1-s) = 51
+        const p = 51;
+        final q = (v * (1.0 - 0.8 * f)).round();
+        final t2 = (v * (1.0 - 0.8 * (1.0 - f))).round();
+        switch (hi) {
+          case 0: return Color.fromARGB(255, v, t2, p);
+          case 1: return Color.fromARGB(255, q, v, p);
+          case 2: return Color.fromARGB(255, p, v, t2);
+          case 3: return Color.fromARGB(255, p, q, v);
+          case 4: return Color.fromARGB(255, t2, p, v);
+          default: return Color.fromARGB(255, v, p, q);
+        }
 
       case El.steam:
         final alpha = (180 - _life[idx] * 2).clamp(60, 180);
