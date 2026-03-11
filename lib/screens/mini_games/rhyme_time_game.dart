@@ -10,6 +10,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -24,6 +25,7 @@ class RhymeTimeGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const RhymeTimeGame({
     super.key,
@@ -32,6 +34,7 @@ class RhymeTimeGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -100,21 +103,21 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   final _rng = Random();
 
   // Game config
-  static const int _gameDurationSecs = 60;
-  static const int _maxLives = 3;
-  static const int _startChoices = 3;
-  static const int _maxChoices = 6;
+  late final int _gameDurationSecs;
+  late final int _maxLives;
+  late final int _startChoices;
+  late final int _maxChoices;
 
   // Game state
   bool _gameStarted = false;
   bool _gameOver = false;
   bool _introPlayed = false;
   int _score = 0;
-  int _lives = _maxLives;
+  late int _lives;
   int _combo = 0;
   int _bestCombo = 0;
   int _wordsMatched = 0;
-  int _timeRemaining = _gameDurationSecs;
+  late int _timeRemaining;
   Timer? _gameTimer;
 
   // Current round
@@ -124,7 +127,7 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   bool _roundTransitioning = false;
 
   // Difficulty
-  int _currentChoices = _startChoices;
+  late int _currentChoices;
 
   // Effects
   final List<_PopParticle> _particles = [];
@@ -159,6 +162,13 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   @override
   void initState() {
     super.initState();
+    _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
+    _maxLives = widget.difficultyParams?.lives ?? 3;
+    _startChoices = widget.difficultyParams?.distractorCount ?? 3;
+    _maxChoices = (_startChoices + 3).clamp(_startChoices, 8);
+    _lives = _maxLives;
+    _timeRemaining = _gameDurationSecs;
+    _currentChoices = _startChoices;
     _sessionTimer = Stopwatch()..start();
     _shuffledFamilies = List.of(rhymeFamilies)..shuffle(_rng);
     _ticker = createTicker(_onTick)..start();

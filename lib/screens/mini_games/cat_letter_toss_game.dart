@@ -10,6 +10,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -23,6 +24,7 @@ class CatLetterTossGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const CatLetterTossGame({
     super.key,
@@ -31,6 +33,7 @@ class CatLetterTossGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -108,8 +111,8 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   final _rng = Random();
 
   // Game config
-  static const int _maxLives = 3;
-  static const int _wordsPerRound = 10;
+  late final int _maxLives;
+  late final int _wordsPerRound;
   static const double _gravity = 420.0; // px/sec^2
   static const double _tossInterval = 1.2; // seconds between tosses
   static const double _basketWidth = 90.0;
@@ -121,7 +124,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
-  int _lives = _maxLives;
+  late int _lives;
   int _wordsCompleted = 0;
   int _combo = 0;
   int _bestCombo = 0;
@@ -179,6 +182,9 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   @override
   void initState() {
     super.initState();
+    _maxLives = widget.difficultyParams?.lives ?? 3;
+    _wordsPerRound = widget.difficultyParams?.wordCount ?? 10;
+    _lives = _maxLives;
     _sessionTimer = Stopwatch()..start();
     _buildWordPool();
     _nextWord();

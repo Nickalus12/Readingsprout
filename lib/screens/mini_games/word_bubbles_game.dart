@@ -7,6 +7,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -20,6 +21,7 @@ class WordBubblesGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const WordBubblesGame({
     super.key,
@@ -28,6 +30,7 @@ class WordBubblesGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -48,13 +51,13 @@ class _WordBubblesGameState extends State<WordBubblesGame>
 
   // -- Score / lives / combo -----------------------------------------------
   int _score = 0;
-  int _lives = 3;
+  late int _lives;
   int _combo = 0;
   int _comboMultiplier = 1;
 
   // -- Timer (60 seconds) --------------------------------------------------
-  static const int _gameDuration = 60;
-  int _secondsLeft = _gameDuration;
+  late final int _gameDuration;
+  late int _secondsLeft;
   Timer? _countdownTimer;
 
   // -- Pop effects ---------------------------------------------------------
@@ -98,6 +101,9 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   @override
   void initState() {
     super.initState();
+    _gameDuration = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
+    _secondsLeft = _gameDuration;
+    _lives = widget.difficultyParams?.lives ?? 3;
     _sessionTimer = Stopwatch()..start();
     _buildWordPool();
     _initBackgroundElements();
@@ -1223,7 +1229,7 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   void _restartGame() {
     setState(() {
       _score = 0;
-      _lives = 3;
+      _lives = widget.difficultyParams?.lives ?? 3;
       _combo = 0;
       _comboMultiplier = 1;
       _bestCombo = 0;

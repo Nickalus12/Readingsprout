@@ -8,6 +8,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ class PaintSplashGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const PaintSplashGame({
     super.key,
@@ -29,6 +31,7 @@ class PaintSplashGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -118,7 +121,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   final _rng = Random();
 
   // Game config
-  static const int _gameDurationSecs = 60;
+  late final int _gameDurationSecs;
   static const double _blobZoneTop = 0.22;
   static const double _blobZoneBottom = 0.88;
 
@@ -131,7 +134,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   int _bestCombo = 0;
   int _wordsCompleted = 0;
   int _perfectWords = 0;
-  int _timeRemaining = _gameDurationSecs;
+  late int _timeRemaining;
   Timer? _gameTimer;
   bool _madeErrorThisWord = false;
 
@@ -178,6 +181,8 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   @override
   void initState() {
     super.initState();
+    _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
+    _timeRemaining = _gameDurationSecs;
     _sessionTimer = Stopwatch()..start();
     _wordPool = _buildWordPool();
 

@@ -10,13 +10,16 @@ import '../services/streak_service.dart';
 import '../services/high_score_service.dart';
 import '../services/stats_service.dart';
 import '../services/avatar_personality_service.dart';
+import '../services/adaptive_music_service.dart';
 import '../services/review_service.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
 import 'level_select_screen.dart';
 import 'alphabet_screen.dart';
 import 'mini_games_screen.dart';
+import 'parent_dashboard_screen.dart';
 import 'profile_screen.dart';
+import '../services/adaptive_difficulty_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final ProfileService? profileService;
@@ -27,6 +30,8 @@ class HomeScreen extends StatefulWidget {
   final StatsService? statsService;
   final AvatarPersonalityService? personalityService;
   final ReviewService? reviewService;
+  final AdaptiveDifficultyService? adaptiveDifficultyService;
+  final AdaptiveMusicService? musicService;
   final String playerName;
   final String profileId;
   final VoidCallback? onChangeName;
@@ -42,6 +47,8 @@ class HomeScreen extends StatefulWidget {
     this.statsService,
     this.personalityService,
     this.reviewService,
+    this.adaptiveDifficultyService,
+    this.musicService,
     this.playerName = '',
     this.profileId = '',
     this.onChangeName,
@@ -191,6 +198,29 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
+
+          // ── Parent Dashboard button (top-right, subtle) ────
+          if (widget.statsService != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 12,
+              child: GestureDetector(
+                onTap: () => _showParentGate(context),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.insights_rounded,
+                    size: 18,
+                    color: AppColors.secondaryText.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+            ),
 
           // ── Foreground content ──────────────────────────────
           SafeArea(
@@ -355,6 +385,8 @@ class _HomeScreenState extends State<HomeScreen>
                           streakService: widget.streakService,
                           personalityService: widget.personalityService,
                           reviewService: widget.reviewService,
+                          adaptiveDifficultyService: widget.adaptiveDifficultyService,
+                          musicService: widget.musicService,
                           playerName: widget.playerName,
                           profileId: widget.profileId,
                         )),
@@ -500,6 +532,7 @@ class _HomeScreenState extends State<HomeScreen>
                               profileService: widget.profileService,
                               statsService: widget.statsService,
                               personalityService: widget.personalityService,
+                              adaptiveDifficultyService: widget.adaptiveDifficultyService,
                               profileId: widget.profileId,
                             )),
                           ),
@@ -524,6 +557,28 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
+      ),
+    );
+  }
+
+  void _showParentGate(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => ParentGate(
+        onVerified: () {
+          Navigator.pop(context); // close dialog
+          Navigator.push(
+            context,
+            _smoothRoute(ParentDashboardScreen(
+              progressService: widget.progressService,
+              statsService: widget.statsService!,
+              streakService: widget.streakService,
+              highScoreService: widget.highScoreService,
+              reviewService: widget.reviewService,
+              playerName: widget.playerName,
+            )),
+          );
+        },
       ),
     );
   }

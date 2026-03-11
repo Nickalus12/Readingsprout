@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../data/dolch_words.dart';
 import '../models/progress.dart';
 import '../models/word.dart';
+import '../data/music_layers.dart';
 import '../data/phrase_templates.dart';
 import '../services/audio_service.dart';
 import '../models/player_profile.dart';
@@ -15,11 +16,15 @@ import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/stats_service.dart';
 import '../services/streak_service.dart';
+import '../services/adaptive_music_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/review_service.dart';
+import '../services/adaptive_difficulty_service.dart';
 import '../data/sticker_definitions.dart';
 import '../widgets/animated_glow_border.dart';
 import '../widgets/letter_tile.dart';
+import '../widgets/letter_tracing_canvas.dart';
+import '../data/letter_paths.dart';
 import '../utils/haptics.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/celebration_overlay.dart';
@@ -35,6 +40,8 @@ class GameScreen extends StatefulWidget {
   final StreakService? streakService;
   final AvatarPersonalityService? personalityService;
   final ReviewService? reviewService;
+  final AdaptiveDifficultyService? adaptiveDifficultyService;
+  final AdaptiveMusicService? musicService;
   final String playerName;
   final String profileId;
 
@@ -48,6 +55,8 @@ class GameScreen extends StatefulWidget {
     this.streakService,
     this.personalityService,
     this.reviewService,
+    this.adaptiveDifficultyService,
+    this.musicService,
     this.tier = 1,
     this.playerName = '',
     this.profileId = '',
@@ -104,6 +113,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   String _streakMessageText = '';
   String _zoneEncouragement = '';
 
+  // ── Finger Spell (letter tracing) state ──────────────────────
+  /// Whether letter tracing is active for the current word.
+  bool _tracingActive = false;
+
+  /// Index of the letter currently being traced (within the word).
+  int _tracingLetterIndex = 0;
+
+  /// Maximum number of letters to trace per word (caps long words).
+  static const int _maxTracingLetters = 3;
+
+  /// Random instance for tracing probability.
+  final Random _tracingRandom = Random();
+
   // ── Zone info cache ────────────────────────────────────────────
   late final int _zoneIndex;
   late final String _zoneKey;
@@ -159,6 +181,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _zoneIndex = zoneIndexForLevel(widget.level);
     final zone = DolchWords.zoneForLevel(widget.level);
     _zoneKey = PhraseTemplates.zoneKey(zone.name);
+
+    // Start adaptive background music for this zone
+    final musicZoneKey = MusicLayers.zoneKeyFromIndex(_zoneIndex);
+    widget.musicService?.startZoneMusic(musicZoneKey);
 
     // Load words for this level, ordered by spaced repetition priority
     final levelWords = List<Word>.from(DolchWords.wordsForLevel(widget.level));
@@ -251,6 +277,50 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     } else {
       _currentLetterIndex = 0;
     }
+
+    // Decide whether to show tracing for this word
+    _tracingActive = _shouldShowTracing();
+    _tracingLetterIndex = _currentLetterIndex; // start tracing from first unrevealed letter
+  }
+
+  /// Returns true ~25% of the time to trigger letter tracing mode.
+  /// Only triggers when the word has letters with defined stroke paths.
+  bool _shouldShowTracing() {
+    if (_targetText.isEmpty) return false;
+    // Check at least one letter in the word has a tracing path
+    final startIdx = (_isExplorer || _isAdventurer) ? 1 : 0;
+    if (startIdx >= _targetText.length) return false;
+    final hasPath = LetterPaths.strokeCount(_targetText[startIdx]) > 0;
+    if (!hasPath) return false;
+    return _tracingRandom.nextDouble() < 0.25;
+  }
+
+  /// Called when a letter tracing is completed successfully.
+  void _onTracingLetterComplete() {
+    if (!mounted) return;
+    final letterIdx = _tracingLetterIndex;
+    if (letterIdx >= _targetText.length) return;
+
+    // Reveal the traced letter
+    Haptics.correct();
+    widget.audioService.playLetter(_targetText[letterIdx]);
+    setState(() {
+      _revealedLetters[letterIdx] = true;
+      _tracingLetterIndex++;
+      _currentLetterIndex = _tracingLetterIndex;
+    });
+
+    // Check how many letters have been traced — cap at _maxTracingLetters
+    final tracedCount = letterIdx - ((_isExplorer || _isAdventurer) ? 1 : 0) + 1;
+
+    if (_tracingLetterIndex >= _targetText.length) {
+      // All letters traced — word complete
+      Future.delayed(const Duration(milliseconds: 500), _onWordComplete);
+    } else if (tracedCount >= _maxTracingLetters) {
+      // Traced enough letters, switch to keyboard for the rest
+      setState(() => _tracingActive = false);
+    }
+    // Otherwise continue tracing the next letter
   }
 
   Future<void> _announceCurrentWord() async {
@@ -281,6 +351,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       // Correct letter!
       Haptics.correct();
       widget.statsService?.recordLetterTap(key);
+      widget.adaptiveDifficultyService?.recordEvent(correct: true);
       setState(() {
         _revealedLetters[_currentLetterIndex] = true;
         _currentLetterIndex++;
@@ -305,10 +376,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Track the wrong tap with what was expected
     final expected = _targetText[_currentLetterIndex];
     widget.statsService?.recordWrongTap(tappedKey, expected);
+    widget.adaptiveDifficultyService?.recordEvent(correct: false);
     // Notify personality service of incorrect attempt
     if (widget.profileId.isNotEmpty) {
       widget.personalityService?.onWordIncorrect(widget.profileId);
     }
+    // Dip music intensity on wrong answer
+    widget.musicService?.onWrongAnswer();
     setState(() {
       _shaking = true;
       _mistakesThisWord++;
@@ -486,6 +560,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     widget.audioService.playSuccess();
     _avatarController.setExpression(AvatarExpression.excited, duration: const Duration(seconds: 2));
 
+    // Bump adaptive music intensity on correct answer
+    widget.musicService?.onCorrectAnswer();
+
     // Notify personality service of correct word
     if (widget.profileId.isNotEmpty) {
       widget.personalityService?.onWordCorrect(widget.profileId);
@@ -495,6 +572,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (_mistakesThisWord == 0) {
       _inLevelStreak++;
     } else {
+      widget.musicService?.onStreakBroken();
       _inLevelStreak = 0;
     }
 
@@ -502,6 +580,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (_inLevelStreak >= 3 &&
         (_inLevelStreak == 3 || _inLevelStreak == 5 ||
          _inLevelStreak == 7 || _inLevelStreak >= 10)) {
+      widget.musicService?.onStreakReached(_inLevelStreak);
       _streakMessageText = PhraseTemplates.randomZoneStreakMessage(_zoneKey);
       _showStreakMessage = true;
       Future.delayed(const Duration(milliseconds: 1800), () {
@@ -551,7 +630,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (!mounted) return;
 
     if (_isLastWord || wasTierComplete) {
-      // Level/tier complete!
+      // Level/tier complete — stop background music for celebration
+      widget.musicService?.stopMusic();
       _levelConfettiController.play();
       widget.audioService.playLevelCompleteEffect();
       _avatarController.setExpression(AvatarExpression.excited, duration: const Duration(seconds: 4));
@@ -581,6 +661,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // Stop adaptive music when leaving game
+    widget.musicService?.stopMusic();
     _sessionTimer.stop();
     widget.statsService?.recordPlayTime(_sessionTimer.elapsed.inSeconds);
     // Notify personality service of session end
@@ -676,8 +758,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                               _buildLetterTiles(),
                               const SizedBox(height: 20),
 
-                              // On-screen keyboard
-                              _buildKeyboard(levelColors),
+                              // On-screen keyboard or letter tracing canvas
+                              if (_tracingActive &&
+                                  _tracingLetterIndex < _targetText.length &&
+                                  !_showingCelebration)
+                                _buildTracingArea()
+                              else
+                                _buildKeyboard(levelColors),
                               const Spacer(flex: 1),
                             ],
                           ),
@@ -1076,6 +1163,27 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     );
   }
 
+  // ── Letter Tracing Area ────────────────────────────────────────
+
+  Widget _buildTracingArea() {
+    final letter = _targetText[_tracingLetterIndex];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: LetterTracingCanvas(
+        key: ValueKey('trace_${_currentWordIndex}_$_tracingLetterIndex'),
+        letter: letter,
+        traceColor: AppColors.electricBlue,
+        guideColor: Colors.white.withValues(alpha: 0.3),
+        onComplete: _onTracingLetterComplete,
+      ),
+    ).animate().fadeIn(duration: 300.ms).slideY(
+          begin: 0.1,
+          end: 0,
+          duration: 300.ms,
+          curve: Curves.easeOutCubic,
+        );
+  }
+
   // ── On-Screen Keyboard ──────────────────────────────────────────
 
   Widget _buildKeyboard(List<Color> levelColors) {
@@ -1472,6 +1580,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                               statsService: widget.statsService,
                               streakService: widget.streakService,
                               personalityService: widget.personalityService,
+                              adaptiveDifficultyService: widget.adaptiveDifficultyService,
                               playerName: widget.playerName,
                               profileId: widget.profileId,
                             ),

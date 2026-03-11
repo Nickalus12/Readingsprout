@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../data/phrase_templates.dart';
 import 'amplitude_envelope.dart';
+import 'audio_player_pool.dart';
 import 'deepgram_tts_service.dart';
 
 /// Manages playback of pre-generated TTS audio clips.
@@ -28,11 +29,7 @@ import 'deepgram_tts_service.dart';
 ///   phonics/a.mp3 → "ah" (short a sound)
 ///   phonics/b.mp3 → "buh"
 class AudioService {
-  final AudioPlayer _wordPlayer = AudioPlayer();
-  final AudioPlayer _letterPlayer = AudioPlayer();
-  final AudioPlayer _letterNamePlayer = AudioPlayer();
-  final AudioPlayer _effectPlayer = AudioPlayer();
-  final AudioPlayer _phrasePlayer = AudioPlayer();
+  late AudioPlayerPool _pool;
 
   final _rng = Random();
 
@@ -58,26 +55,42 @@ class AudioService {
   StreamSubscription<void>? _completionSub;
 
   Future<void> init() async {
-    final players = [_wordPlayer, _letterPlayer, _letterNamePlayer, _effectPlayer, _phrasePlayer];
-    for (final p in players) {
-      try {
-        await p.setReleaseMode(ReleaseMode.stop);
-      } catch (e) {
-        debugPrint('AudioService setReleaseMode error: $e');
-      }
-    }
+    _pool = AudioPlayerPool(poolSize: 12);
+    await _pool.init();
     _initialized = true;
   }
 
-  /// Stop a player and play a new asset source reliably.
-  /// On Windows, a brief delay between stop and play prevents silent failures
-  /// caused by the media session not fully releasing before the next play.
-  Future<void> _stopAndPlay(AudioPlayer player, Source source) async {
-    await player.stop();
-    if (_isDesktop) {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+  /// Acquire a pooled player and play a source with the given tag.
+  /// Stops any existing players with the same tag first.
+  /// On Windows, a brief delay between stop and play prevents silent failures.
+  /// Returns `true` on success, `false` on failure.
+  Future<bool> _pooledPlay(String tag, Source source, {AmplitudeEnvelope? envelope}) async {
+    try {
+      await _pool.stopByTag(tag);
+      final pooled = _pool.acquire(tag: tag);
+
+      if (envelope != null) {
+        _startAmplitudeTracking(pooled.player, envelope);
+      }
+
+      if (_isDesktop) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      await pooled.player.play(source);
+
+      // Auto-release when done
+      pooled.player.onPlayerComplete.listen((_) {
+        if (envelope != null) {
+          mouthAmplitude.value = 0.0;
+          _stopAmplitudeTracking();
+        }
+        _pool.release(pooled);
+      });
+      return true;
+    } catch (e) {
+      debugPrint('AudioPool play error ($tag): $e');
+      return false;
     }
-    await player.play(source);
   }
 
   /// Connect the Deepgram TTS service for runtime phrase generation.
@@ -95,13 +108,10 @@ class AudioService {
   Future<bool> playWord(String word) async {
     if (!_initialized) return false;
     try {
-      final env = await _envelopeCache.load('audio/words/${word.toLowerCase()}.mp3');
-      _startAmplitudeTracking(_wordPlayer, env);
-      await _stopAndPlay(
-        _wordPlayer,
-        AssetSource('audio/words/${word.toLowerCase()}.mp3'),
-      );
-      return true;
+      _stopAmplitudeTracking();
+      final path = 'audio/words/${word.toLowerCase()}.mp3';
+      final env = await _envelopeCache.load(path);
+      return await _pooledPlay('word', AssetSource(path), envelope: env);
     } catch (e) {
       debugPrint('Audio error (word: $word): $e');
       return false;
@@ -114,13 +124,10 @@ class AudioService {
   Future<bool> playLetter(String letter) async {
     if (!_initialized) return false;
     try {
-      final env = await _envelopeCache.load('audio/letter_names/${letter.toLowerCase()}.mp3');
-      _startAmplitudeTracking(_letterPlayer, env);
-      await _stopAndPlay(
-        _letterPlayer,
-        AssetSource('audio/letter_names/${letter.toLowerCase()}.mp3'),
-      );
-      return true;
+      _stopAmplitudeTracking();
+      final path = 'audio/letter_names/${letter.toLowerCase()}.mp3';
+      final env = await _envelopeCache.load(path);
+      return await _pooledPlay('letter', AssetSource(path), envelope: env);
     } catch (e) {
       debugPrint('Audio error (letter: $letter): $e');
       return false;
@@ -132,13 +139,10 @@ class AudioService {
   Future<bool> playLetterPhonics(String letter) async {
     if (!_initialized) return false;
     try {
-      final env = await _envelopeCache.load('audio/phonics/${letter.toLowerCase()}.mp3');
-      _startAmplitudeTracking(_letterNamePlayer, env);
-      await _stopAndPlay(
-        _letterNamePlayer,
-        AssetSource('audio/phonics/${letter.toLowerCase()}.mp3'),
-      );
-      return true;
+      _stopAmplitudeTracking();
+      final path = 'audio/phonics/${letter.toLowerCase()}.mp3';
+      final env = await _envelopeCache.load(path);
+      return await _pooledPlay('letterName', AssetSource(path), envelope: env);
     } catch (e) {
       debugPrint('Audio error (letter phonics: $letter): $e');
       return false;
@@ -179,15 +183,16 @@ class AudioService {
         if (localFile.existsSync()) {
           // No envelope for runtime-generated files — use fallback (mouth stays at 0.0)
           _stopAmplitudeTracking();
-          await _stopAndPlay(_phrasePlayer, DeviceFileSource(localFile.path));
+          await _pooledPlay('phrase', DeviceFileSource(localFile.path));
           return text;
         }
       }
 
       // Fall back to bundled asset with amplitude tracking
-      final env = await _envelopeCache.load('audio/phrases/${category}_$index.mp3');
-      _startAmplitudeTracking(_phrasePlayer, env);
-      await _stopAndPlay(_phrasePlayer, AssetSource('audio/phrases/${category}_$index.mp3'));
+      final path = 'audio/phrases/${category}_$index.mp3';
+      final env = await _envelopeCache.load(path);
+      _stopAmplitudeTracking();
+      await _pooledPlay('phrase', AssetSource(path), envelope: env);
     } catch (e) {
       debugPrint('Audio error (phrase: ${category}_$index): $e');
     }
@@ -217,9 +222,10 @@ class AudioService {
       ];
       final file = genericFiles[_rng.nextInt(genericFiles.length)];
       try {
-        final env = await _envelopeCache.load('audio/words/$file.mp3');
-        _startAmplitudeTracking(_phrasePlayer, env);
-        await _stopAndPlay(_phrasePlayer, AssetSource('audio/words/$file.mp3'));
+        _stopAmplitudeTracking();
+        final path = 'audio/words/$file.mp3';
+        final env = await _envelopeCache.load(path);
+        await _pooledPlay('phrase', AssetSource(path), envelope: env);
       } catch (e) {
         debugPrint('Audio error (generic welcome: $file): $e');
       }
@@ -242,7 +248,7 @@ class AudioService {
   Future<void> playSuccess() async {
     if (!_initialized) return;
     try {
-      await _stopAndPlay(_effectPlayer, AssetSource('audio/effects/success.mp3'));
+      await _pooledPlay('effect', AssetSource('audio/effects/success.mp3'));
     } catch (e) {
       debugPrint('Audio error (success): $e');
     }
@@ -252,7 +258,7 @@ class AudioService {
   Future<void> playError() async {
     if (!_initialized) return;
     try {
-      await _stopAndPlay(_effectPlayer, AssetSource('audio/effects/error.mp3'));
+      await _pooledPlay('effect', AssetSource('audio/effects/error.mp3'));
     } catch (e) {
       debugPrint('Audio error (error): $e');
     }
@@ -262,7 +268,7 @@ class AudioService {
   Future<void> playLevelCompleteEffect() async {
     if (!_initialized) return;
     try {
-      await _stopAndPlay(_effectPlayer, AssetSource('audio/effects/level_complete.mp3'));
+      await _pooledPlay('effect', AssetSource('audio/effects/level_complete.mp3'));
     } catch (e) {
       debugPrint('Audio error (level_complete): $e');
     }
@@ -299,10 +305,6 @@ class AudioService {
   void dispose() {
     _stopAmplitudeTracking();
     mouthAmplitude.dispose();
-    _wordPlayer.dispose();
-    _letterPlayer.dispose();
-    _letterNamePlayer.dispose();
-    _effectPlayer.dispose();
-    _phrasePlayer.dispose();
+    _pool.dispose();
   }
 }

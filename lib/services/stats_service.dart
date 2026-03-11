@@ -106,6 +106,36 @@ class StatsService {
     await _save();
   }
 
+  /// Record a daily session snapshot (call at end of each play session).
+  Future<void> recordDailySession(String date, int wordsPlayed, int minutesPlayed) async {
+    final existing = _stats.dailySessions[date];
+    if (existing != null) {
+      _stats.dailySessions[date] = DailySessionStats(
+        wordsPlayed: existing.wordsPlayed + wordsPlayed,
+        minutesPlayed: existing.minutesPlayed + minutesPlayed,
+      );
+    } else {
+      _stats.dailySessions[date] = DailySessionStats(
+        wordsPlayed: wordsPlayed,
+        minutesPlayed: minutesPlayed,
+      );
+    }
+    await _save();
+  }
+
+  /// Get daily stats for the last [days] days, ordered oldest to newest.
+  List<MapEntry<String, DailySessionStats>> getDailyStats(int days) {
+    final now = DateTime.now();
+    final result = <MapEntry<String, DailySessionStats>>[];
+    for (int i = days - 1; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final key = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final stats = _stats.dailySessions[key] ?? const DailySessionStats();
+      result.add(MapEntry(key, stats));
+    }
+    return result;
+  }
+
   // ── Query Methods ──────────────────────────────────────────────────
 
   /// Get tap count for a specific letter.
@@ -194,6 +224,9 @@ class PlayerStats {
   /// Per-mini-game stats.
   Map<String, MiniGameAttemptStats> miniGameStats;
 
+  /// Daily session tracking: 'YYYY-MM-DD' -> stats.
+  Map<String, DailySessionStats> dailySessions;
+
   int totalLetterTaps;
   int totalWrongTaps;
   int totalWordsCompleted;
@@ -209,6 +242,7 @@ class PlayerStats {
     Map<String, int>? confusions,
     Map<String, WordAttemptStats>? wordAttempts,
     Map<String, MiniGameAttemptStats>? miniGameStats,
+    Map<String, DailySessionStats>? dailySessions,
     this.totalLetterTaps = 0,
     this.totalWrongTaps = 0,
     this.totalWordsCompleted = 0,
@@ -221,7 +255,8 @@ class PlayerStats {
         wrongLetterTaps = wrongLetterTaps ?? {},
         confusions = confusions ?? {},
         wordAttempts = wordAttempts ?? {},
-        miniGameStats = miniGameStats ?? {};
+        miniGameStats = miniGameStats ?? {},
+        dailySessions = dailySessions ?? {};
 
   Map<String, dynamic> toJson() => {
         'letterTaps': letterTaps,
@@ -230,6 +265,8 @@ class PlayerStats {
         'wordAttempts': wordAttempts
             .map((k, v) => MapEntry(k, v.toJson())),
         'miniGameStats': miniGameStats
+            .map((k, v) => MapEntry(k, v.toJson())),
+        'dailySessions': dailySessions
             .map((k, v) => MapEntry(k, v.toJson())),
         'totalLetterTaps': totalLetterTaps,
         'totalWrongTaps': totalWrongTaps,
@@ -254,6 +291,12 @@ class PlayerStats {
             (json['miniGameStats'] as Map<String, dynamic>?)?.map(
                   (k, v) => MapEntry(k,
                       MiniGameAttemptStats.fromJson(v as Map<String, dynamic>)),
+                ) ??
+                {},
+        dailySessions:
+            (json['dailySessions'] as Map<String, dynamic>?)?.map(
+                  (k, v) => MapEntry(k,
+                      DailySessionStats.fromJson(v as Map<String, dynamic>)),
                 ) ??
                 {},
         totalLetterTaps: json['totalLetterTaps'] as int? ?? 0,
@@ -324,5 +367,26 @@ class MiniGameAttemptStats {
         timesPlayed: json['timesPlayed'] as int? ?? 0,
         highScore: json['highScore'] as int? ?? 0,
         totalScore: json['totalScore'] as int? ?? 0,
+      );
+}
+
+class DailySessionStats {
+  final int wordsPlayed;
+  final int minutesPlayed;
+
+  const DailySessionStats({
+    this.wordsPlayed = 0,
+    this.minutesPlayed = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'wordsPlayed': wordsPlayed,
+        'minutesPlayed': minutesPlayed,
+      };
+
+  factory DailySessionStats.fromJson(Map<String, dynamic> json) =>
+      DailySessionStats(
+        wordsPlayed: json['wordsPlayed'] as int? ?? 0,
+        minutesPlayed: json['minutesPlayed'] as int? ?? 0,
       );
 }

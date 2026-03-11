@@ -8,8 +8,10 @@ import '../services/audio_service.dart';
 import '../services/profile_service.dart';
 import '../services/stats_service.dart';
 import '../services/streak_service.dart';
+import '../services/adaptive_music_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/review_service.dart';
+import '../services/adaptive_difficulty_service.dart';
 import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
@@ -23,6 +25,8 @@ class LevelSelectScreen extends StatefulWidget {
   final StreakService? streakService;
   final AvatarPersonalityService? personalityService;
   final ReviewService? reviewService;
+  final AdaptiveDifficultyService? adaptiveDifficultyService;
+  final AdaptiveMusicService? musicService;
   final String playerName;
   final String profileId;
 
@@ -35,6 +39,8 @@ class LevelSelectScreen extends StatefulWidget {
     this.streakService,
     this.personalityService,
     this.reviewService,
+    this.adaptiveDifficultyService,
+    this.musicService,
     this.playerName = '',
     this.profileId = '',
   });
@@ -438,6 +444,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
           streakService: widget.streakService,
           personalityService: widget.personalityService,
           reviewService: widget.reviewService,
+          adaptiveDifficultyService: widget.adaptiveDifficultyService,
+          musicService: widget.musicService,
           playerName: widget.playerName,
           profileId: widget.profileId,
           tier: selectedTier.value,

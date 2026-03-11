@@ -10,6 +10,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -96,6 +97,7 @@ class UnicornFlightGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const UnicornFlightGame({
     super.key,
@@ -104,6 +106,7 @@ class UnicornFlightGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -116,7 +119,7 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
-  int _hearts = 3;
+  late int _hearts;
   String _targetWord = '';
   double _gameSpeed = 1.0;
 
@@ -145,7 +148,7 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
 
   // Timing
   double _bubbleSpawnTimer = 0.0;
-  final double _bubbleSpawnInterval = 2.0;
+  late final double _bubbleSpawnInterval;
   double _trailSpawnTimer = 0.0;
 
   // Ticker
@@ -165,6 +168,8 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
   @override
   void initState() {
     super.initState();
+    _hearts = widget.difficultyParams?.lives ?? 3;
+    _bubbleSpawnInterval = widget.difficultyParams?.spawnInterval ?? 2.0;
     _sessionTimer = Stopwatch()..start();
     _buildWordPool();
     _pickNewTarget();
@@ -249,7 +254,7 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
       _gameStarted = true;
       _gameOver = false;
       _score = 0;
-      _hearts = 3;
+      _hearts = widget.difficultyParams?.lives ?? 3;
       _gameSpeed = 1.0;
       _bubbles.clear();
       _sparkles.clear();

@@ -12,8 +12,10 @@ import 'services/profile_service.dart';
 import 'services/review_service.dart';
 import 'services/streak_service.dart';
 import 'services/high_score_service.dart';
+import 'services/adaptive_music_service.dart';
 import 'services/avatar_personality_service.dart';
 import 'services/stats_service.dart';
+import 'services/adaptive_difficulty_service.dart';
 import 'widgets/avatar_shader_loader.dart';
 import 'widgets/floating_hearts_bg.dart';
 
@@ -36,6 +38,8 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
   late final StatsService _statsService;
   late final DeepgramTtsService _deepgramTtsService;
   late final AvatarPersonalityService _personalityService;
+  late final AdaptiveDifficultyService _adaptiveDifficultyService;
+  late final AdaptiveMusicService _adaptiveMusicService;
   bool _initialized = false;
 
   @override
@@ -55,6 +59,8 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     _statsService = StatsService();
     _deepgramTtsService = DeepgramTtsService();
     _personalityService = AvatarPersonalityService();
+    _adaptiveDifficultyService = AdaptiveDifficultyService();
+    _adaptiveMusicService = AdaptiveMusicService();
 
     // Get SharedPreferences once, share across all services
     final prefs = await SharedPreferences.getInstance();
@@ -91,6 +97,12 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
       _personalityService.init().catchError((e) {
         debugPrint('AvatarPersonalityService init failed: $e');
       }),
+      _adaptiveDifficultyService.init(prefs).catchError((e) {
+        debugPrint('AdaptiveDifficultyService init failed: $e');
+      }),
+      _adaptiveMusicService.init().catchError((e) {
+        debugPrint('AdaptiveMusicService init failed: $e');
+      }),
       ShaderLoader.init().catchError((e) {
         debugPrint('ShaderLoader init failed: $e');
       }),
@@ -113,6 +125,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     _highScoreService.switchProfile(profileId);
     _reviewService.switchProfile(profileId);
     _statsService.switchProfile(profileId);
+    _adaptiveDifficultyService.switchProfile(profileId);
     _profileService.switchProfile(profileId);
     _audioService.setActiveProfile(profileId.isEmpty ? null : profileId);
   }
@@ -181,6 +194,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
   @override
   void dispose() {
     _audioService.dispose();
+    _adaptiveMusicService.dispose();
     super.dispose();
   }
 
@@ -240,6 +254,8 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
       statsService: _statsService,
       personalityService: _personalityService,
       reviewService: _reviewService,
+      adaptiveDifficultyService: _adaptiveDifficultyService,
+      musicService: _adaptiveMusicService,
       playerName: _settingsService.playerName,
       profileId: _settingsService.activeProfileId ?? '',
       onChangeName: _onChangeName,

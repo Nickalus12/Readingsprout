@@ -9,6 +9,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -22,6 +23,7 @@ class LetterDropGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const LetterDropGame({
     super.key,
@@ -30,6 +32,7 @@ class LetterDropGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -116,18 +119,18 @@ class _LetterDropGameState extends State<LetterDropGame>
   int _lastStepMicros = 0;
 
   // Game config
-  static const int _maxLives = 3;
-  static const int _wordsPerRound = 8;
-  static const int _gameDurationSecs = 90;
+  late final int _maxLives;
+  late final int _wordsPerRound;
+  late final int _gameDurationSecs;
   static const int _maxDynamicBodies = 12;
 
   // Game state
   bool _gameOver = false;
   bool _roundComplete = false;
   int _score = 0;
-  int _lives = _maxLives;
+  late int _lives;
   int _wordsCompleted = 0;
-  int _timeRemaining = _gameDurationSecs;
+  late int _timeRemaining;
   Timer? _gameTimer;
 
   // Word state
@@ -172,6 +175,11 @@ class _LetterDropGameState extends State<LetterDropGame>
   @override
   void initState() {
     super.initState();
+    _maxLives = widget.difficultyParams?.lives ?? 3;
+    _wordsPerRound = widget.difficultyParams?.wordCount ?? 8;
+    _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 90;
+    _lives = _maxLives;
+    _timeRemaining = _gameDurationSecs;
     _sessionTimer = Stopwatch()..start();
     _world = World(Vector2(0, 9.8));
     _world.createBody(BodyDef());

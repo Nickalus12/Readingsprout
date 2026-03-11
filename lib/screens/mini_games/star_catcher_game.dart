@@ -8,6 +8,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -22,6 +23,7 @@ class StarCatcherGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const StarCatcherGame({
     super.key,
@@ -30,6 +32,7 @@ class StarCatcherGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -113,7 +116,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   final _rng = Random();
 
   // Game config
-  static const int _gameDurationSecs = 60;
+  late final int _gameDurationSecs;
   static const double _starZoneTop = 0.18;
   static const double _starZoneBottom = 0.88;
 
@@ -125,7 +128,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   int _combo = 0;
   int _bestCombo = 0;
   int _wordsCompleted = 0;
-  int _timeRemaining = _gameDurationSecs;
+  late int _timeRemaining;
   Timer? _gameTimer;
 
   // Current word
@@ -163,6 +166,8 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   @override
   void initState() {
     super.initState();
+    _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
+    _timeRemaining = _gameDurationSecs;
     _sessionTimer = Stopwatch()..start();
     _wordPool = _buildWordPool();
 

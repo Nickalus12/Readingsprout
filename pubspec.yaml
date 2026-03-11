@@ -42,6 +42,7 @@ flutter:
     - assets/audio/letter_names/
     - assets/audio/effects/
     - assets/audio/phrases/
+    - assets/audio/music/
     - assets/google_fonts/
   fonts:
     - family: Fredoka

@@ -19,6 +19,7 @@ import 'mini_games/letter_drop_game.dart';
 import 'mini_games/rhyme_time_game.dart';
 import 'mini_games/star_catcher_game.dart';
 import 'mini_games/paint_splash_game.dart';
+import '../services/adaptive_difficulty_service.dart';
 
 class MiniGamesScreen extends StatefulWidget {
   final ProgressService progressService;
@@ -28,6 +29,7 @@ class MiniGamesScreen extends StatefulWidget {
   final ProfileService? profileService;
   final StatsService? statsService;
   final AvatarPersonalityService? personalityService;
+  final AdaptiveDifficultyService? adaptiveDifficultyService;
   final String profileId;
 
   const MiniGamesScreen({
@@ -39,6 +41,7 @@ class MiniGamesScreen extends StatefulWidget {
     this.profileService,
     this.statsService,
     this.personalityService,
+    this.adaptiveDifficultyService,
     this.profileId = '',
   });
 
@@ -116,6 +119,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('unicorn_flight'),
                           ),
                         ),
                         _buildGameBtn(
@@ -127,6 +131,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('lightning_speller'),
                           ),
                         ),
                         _buildGameBtn(
@@ -138,6 +143,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('word_bubbles'),
                           ),
                         ),
                         _buildGameBtn(
@@ -149,6 +155,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('memory_match'),
                           ),
                         ),
                         _buildGameBtn(
@@ -160,6 +167,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('falling_letters'),
                           ),
                         ),
                         _buildGameBtn(
@@ -171,6 +179,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('cat_letter_toss'),
                           ),
                         ),
                         _buildGameBtn(
@@ -182,6 +191,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('letter_drop'),
                           ),
                         ),
                         _buildGameBtn(
@@ -193,6 +203,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('rhyme_time'),
                           ),
                         ),
                         _buildGameBtn(
@@ -204,6 +215,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('star_catcher'),
                           ),
                         ),
                         _buildGameBtn(
@@ -215,6 +227,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
                             playerName: widget.playerName,
                             profileService: widget.profileService,
                             hintsEnabled: _hintsEnabled,
+                            difficultyParams: widget.adaptiveDifficultyService?.getParamsForGame('paint_splash'),
                           ),
                         ),
                       ],

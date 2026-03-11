@@ -8,6 +8,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -21,6 +22,7 @@ class FallingLettersGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const FallingLettersGame({
     super.key,
@@ -29,6 +31,7 @@ class FallingLettersGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -206,7 +209,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
 
   // Game config
   static const int _columns = 6;
-  static const int _maxLives = 3;
+  late final int _maxLives;
   static const double _baseSpeed = 0.0025;
   static const double _speedIncrease = 0.00008; // per word completed
   static const double _letterSpawnInterval = 0.8; // seconds base
@@ -223,7 +226,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
-  int _lives = _maxLives;
+  late int _lives;
   int _wordsCompleted = 0;
 
   // Word state
@@ -290,6 +293,8 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   @override
   void initState() {
     super.initState();
+    _maxLives = widget.difficultyParams?.lives ?? 3;
+    _lives = _maxLives;
     _sessionTimer = Stopwatch()..start();
     _buildWordPool();
     _initStars();

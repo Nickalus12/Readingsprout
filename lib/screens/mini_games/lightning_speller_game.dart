@@ -7,6 +7,7 @@ import '../../models/player_profile.dart';
 import '../../services/audio_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/progress_service.dart';
+import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -20,6 +21,7 @@ class LightningSpellerGame extends StatefulWidget {
   final String playerName;
   final ProfileService? profileService;
   final bool hintsEnabled;
+  final GameDifficultyParams? difficultyParams;
 
   const LightningSpellerGame({
     super.key,
@@ -28,6 +30,7 @@ class LightningSpellerGame extends StatefulWidget {
     required this.playerName,
     this.profileService,
     this.hintsEnabled = true,
+    this.difficultyParams,
   });
 
   @override
@@ -87,7 +90,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   late AnimationController _errorFlashController;
 
   // Lives
-  int _lives = 3;
+  late int _lives;
   bool _gameOver = false;
 
   // Word reveal timer
@@ -107,6 +110,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   @override
   void initState() {
     super.initState();
+    _lives = widget.difficultyParams?.lives ?? 3;
     _sessionTimer = Stopwatch()..start();
     _initControllers();
     _buildWordPool();
@@ -555,7 +559,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
 
   void _restartGame() {
     setState(() {
-      _lives = 3;
+      _lives = widget.difficultyParams?.lives ?? 3;
       _score = 0;
       _combo = 0;
       _bestCombo = 0;
