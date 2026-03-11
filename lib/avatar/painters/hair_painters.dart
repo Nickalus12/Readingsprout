@@ -337,36 +337,36 @@ class HairBackPainter extends CustomPainter {
     canvas.drawPath(massPath, paint);
 
     // ── Side strand curtains (left) ──
-    // 3 strand groups for volume, each with follow-through phase offset.
-    for (int s = 0; s < 3; s++) {
+    // 4 strand groups for denser volume, with follow-through phase offset.
+    for (int s = 0; s < 4; s++) {
       final phase = s;
       final sSway = _computeSway(swayValue, phase, windStrength);
       final sBounce = _computeBounce(bounceValue, phase);
-      final xBase = ie.left - 0.01 + s * 0.015;
+      final xBase = ie.left - 0.01 + s * 0.012;
       final strand = [
         Offset(w * xBase, h * 0.24),
         Offset(w * (xBase - 0.02 + sSway * 0.3), h * (0.38 + sBounce * 0.2)),
         Offset(w * (xBase - 0.04 + sSway * 0.6), h * (0.52 + sBounce * 0.4)),
         Offset(w * (xBase - 0.05 + sSway * 0.8), h * (0.65 + sBounce * 0.6)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.032, paint, hlPaint,
-          strandCount: 3, spreadFactor: 0.5);
+      _drawStrandGroup(canvas, strand, w * 0.038, paint, hlPaint,
+          strandCount: 4, spreadFactor: 0.35);
     }
 
     // ── Side strand curtains (right) ──
-    for (int s = 0; s < 3; s++) {
+    for (int s = 0; s < 4; s++) {
       final phase = s + 2;
       final sSway = _computeSway(swayValue, phase, windStrength);
       final sBounce = _computeBounce(bounceValue, phase);
-      final xBase = ie.right + 0.01 - s * 0.015;
+      final xBase = ie.right + 0.01 - s * 0.012;
       final strand = [
         Offset(w * xBase, h * 0.24),
         Offset(w * (xBase + 0.02 + sSway * 0.3), h * (0.38 + sBounce * 0.2)),
         Offset(w * (xBase + 0.04 + sSway * 0.6), h * (0.52 + sBounce * 0.4)),
         Offset(w * (xBase + 0.05 + sSway * 0.8), h * (0.65 + sBounce * 0.6)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.032, paint, hlPaint,
-          strandCount: 3, spreadFactor: 0.5);
+      _drawStrandGroup(canvas, strand, w * 0.038, paint, hlPaint,
+          strandCount: 4, spreadFactor: 0.35);
     }
 
     // ── Subtle wavy texture lines on the dome ──
@@ -517,20 +517,52 @@ class HairFrontPainter extends CustomPainter {
     // ── Hair cap (covers top of head) ──
     _drawHairCap(canvas, paint, w, h, e, hlPaint);
 
+    // ── Solid bang base fill (eliminates gaps between strands) ──
+    {
+      final bangBase = Path()
+        ..moveTo(w * 0.64, h * 0.08)
+        ..cubicTo(
+            w * 0.58, h * 0.07,
+            w * 0.42, h * 0.07,
+            w * 0.34, h * 0.09)
+        ..cubicTo(
+            w * (0.28 + sway0 * 0.15), h * 0.16,
+            w * (0.22 + sway1 * 0.22), h * 0.28,
+            w * (0.20 + sway1 * 0.28), h * (e.oB + 0.01))
+        ..lineTo(w * e.iL, h * (e.iT + 0.06))
+        ..quadraticBezierTo(
+            w * 0.50, h * (e.iT - 0.01),
+            w * e.iR, h * (e.iT + 0.02))
+        ..lineTo(w * 0.64, h * 0.08)
+        ..close();
+      canvas.drawPath(bangBase, paint);
+    }
+
     // ── Side-swept bangs ──
-    // 5 individual strand groups sweeping from right to left across forehead.
-    // Each strand is built from bezier control points for organic curves.
-    // Strands vary in thickness and length for natural appearance.
+    // 7 strand groups sweeping from right to left across forehead.
+    // Thicker strands with more overlap for dense, natural look.
 
     // Strand group 1: rightmost, short wispy strand
     {
       final strand = [
-        Offset(w * 0.62, h * 0.09),
-        Offset(w * (0.58 + sway0 * 0.15), h * 0.14),
-        Offset(w * (0.52 + sway0 * 0.20), h * (e.iT + 0.02)),
+        Offset(w * 0.63, h * 0.09),
+        Offset(w * (0.59 + sway0 * 0.15), h * 0.14),
+        Offset(w * (0.53 + sway0 * 0.20), h * (e.iT + 0.02)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.018, paint, hlPaint,
-          strandCount: 3, spreadFactor: 0.4);
+      _drawStrandGroup(canvas, strand, w * 0.024, paint, hlPaint,
+          strandCount: 4, spreadFactor: 0.3);
+    }
+
+    // Strand group 1b: fill between 1 and 2
+    {
+      final strand = [
+        Offset(w * 0.60, h * 0.085),
+        Offset(w * (0.54 + sway0 * 0.16), h * 0.13),
+        Offset(w * (0.47 + sway0 * 0.21), h * 0.18),
+        Offset(w * (0.42 + sway1 * 0.23), h * (e.iT + 0.03)),
+      ];
+      _drawStrandGroup(canvas, strand, w * 0.022, paint, null,
+          strandCount: 3, spreadFactor: 0.25);
     }
 
     // Strand group 2: mid-right, medium length
@@ -541,8 +573,8 @@ class HairFrontPainter extends CustomPainter {
         Offset(w * (0.40 + sway0 * 0.22), h * 0.18),
         Offset(w * (0.36 + sway1 * 0.25), h * (e.iT + 0.04)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.022, paint, hlPaint,
-          strandCount: 3, spreadFactor: 0.35);
+      _drawStrandGroup(canvas, strand, w * 0.028, paint, hlPaint,
+          strandCount: 4, spreadFactor: 0.25);
     }
 
     // Strand group 3: center, longest — the main bang sweep
@@ -554,8 +586,20 @@ class HairFrontPainter extends CustomPainter {
         Offset(w * (0.28 + sway1 * 0.28), h * 0.24),
         Offset(w * (0.24 + sway1 * 0.30), h * (e.oB - 0.02)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.026, paint, null,
-          strandCount: 4, spreadFactor: 0.3);
+      _drawStrandGroup(canvas, strand, w * 0.032, paint, null,
+          strandCount: 5, spreadFactor: 0.25);
+    }
+
+    // Strand group 3b: fill between 3 and 4
+    {
+      final strand = [
+        Offset(w * 0.47, h * 0.075),
+        Offset(w * (0.40 + sway0 * 0.13), h * 0.13),
+        Offset(w * (0.33 + sway0 * 0.20), h * 0.20),
+        Offset(w * (0.28 + sway1 * 0.24), h * (e.iT + 0.05)),
+      ];
+      _drawStrandGroup(canvas, strand, w * 0.024, paint, null,
+          strandCount: 3, spreadFactor: 0.25);
     }
 
     // Strand group 4: mid-left, medium
@@ -566,8 +610,8 @@ class HairFrontPainter extends CustomPainter {
         Offset(w * (0.32 + sway0 * 0.18), h * 0.20),
         Offset(w * (0.28 + sway1 * 0.22), h * (e.iT + 0.06)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.020, paint, hlPaint,
-          strandCount: 3, spreadFactor: 0.35);
+      _drawStrandGroup(canvas, strand, w * 0.026, paint, hlPaint,
+          strandCount: 4, spreadFactor: 0.25);
     }
 
     // Strand group 5: leftmost, short wispy
@@ -577,8 +621,8 @@ class HairFrontPainter extends CustomPainter {
         Offset(w * (0.34 + sway0 * 0.10), h * 0.15),
         Offset(w * (0.30 + sway0 * 0.15), h * (e.iT + 0.03)),
       ];
-      _drawStrandGroup(canvas, strand, w * 0.016, paint, hlPaint,
-          strandCount: 2, spreadFactor: 0.4);
+      _drawStrandGroup(canvas, strand, w * 0.022, paint, hlPaint,
+          strandCount: 3, spreadFactor: 0.3);
     }
 
     // ── Shine streak ──

@@ -271,8 +271,8 @@ class _HomeScreenState extends State<HomeScreen>
                         },
                         child: Image.asset(
                           'assets/images/logo.png',
-                          width: (widget.profileService != null ? 60 : 110) * sf,
-                          height: (widget.profileService != null ? 60 : 110) * sf,
+                          width: (widget.profileService != null ? 120 : 160) * sf,
+                          height: (widget.profileService != null ? 120 : 160) * sf,
                         ),
                       ),
                     )

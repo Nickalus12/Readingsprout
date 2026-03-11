@@ -228,7 +228,7 @@ class TorsoPainter extends CustomPainter {
 
     final cx = w * 0.5 + sin(swayValue * pi) * w * 0.006;
     final breathExpand = sin(breathingValue * pi) * 0.012;
-    final shoulderW = w * (0.70 + breathExpand);
+    final shoulderW = w * (0.72 + breathExpand);
     final waistW = w * (0.55 + breathExpand * 0.5);
     final shoulderY = h * 0.78;
     final torsoBottom = h * 1.08;
@@ -626,7 +626,8 @@ class ArmPainter extends CustomPainter {
   void _drawArm(Canvas canvas, double w, double h, double cx,
       double shoulderW, double shoulderY, double side,
       Color highlight, Color shadow, double boneRotation) {
-    final armCx = cx + side * shoulderW * 0.52;
+    // Align arm center with shoulder cap center (0.48)
+    final armCx = cx + side * shoulderW * 0.48;
     // Shoulder width ~8% of widget, wrist ~5%
     final shoulderArmW = w * 0.08;
     final wristArmW = w * 0.05;
@@ -843,12 +844,12 @@ class HandPainter extends CustomPainter {
     // Hand scale relative to widget — works at all sizes
     final handSize = w * 0.13;
 
-    // Left hand
-    _drawHand(canvas, cx - shoulderW * 0.52, handY, handSize, -1.0, leftPose,
+    // Left hand — aligned with arm center (0.48)
+    _drawHand(canvas, cx - shoulderW * 0.48, handY, handSize, -1.0, leftPose,
         false);
 
-    // Right hand
-    _drawHand(canvas, cx + shoulderW * 0.52, handY, handSize, 1.0, rightPose,
+    // Right hand — aligned with arm center (0.48)
+    _drawHand(canvas, cx + shoulderW * 0.48, handY, handSize, 1.0, rightPose,
         true);
   }
 

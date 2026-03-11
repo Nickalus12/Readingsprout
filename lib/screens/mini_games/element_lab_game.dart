@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/audio_service.dart';
 import '../../services/progress_service.dart';
 import '../../theme/app_theme.dart';
@@ -169,12 +170,66 @@ class _ElementLabGameState extends State<ElementLabGame>
   static const int _maxUndoHistory = 10;
   bool _isCapturingStroke = false;
 
+  // -- Audio narration (mute toggle) ----------------------------------------
+  bool _isMuted = false;
+
+  /// Element names that have dedicated word audio files.
+  /// Others will be spelled letter-by-letter.
+  static const Set<String> _speakableWords = {
+    'sand', 'water', 'fire', 'ice', 'plant', 'stone',
+    'mud', 'steam', 'ant', 'oil', 'acid', 'glass', 'rainbow',
+  };
+
   @override
   void initState() {
     super.initState();
     _remainingSeconds = kSessionDuration.inSeconds;
     _ticker = createTicker(_onTick);
     _startSessionTimer();
+    _loadMutePreference();
+  }
+
+  String get _muteKey => 'element_lab_muted_${widget.playerName}';
+
+  Future<void> _loadMutePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isMuted = prefs.getBool(_muteKey) ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    setState(() => _isMuted = !_isMuted);
+    Haptics.tap();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_muteKey, _isMuted);
+  }
+
+  /// Speak an element name aloud. Uses playWord() for known words,
+  /// spells letter-by-letter for others (lightning, TNT, zap).
+  Future<void> _speakElementName(int elType) async {
+    if (_isMuted || elType == El.empty || elType == El.eraser) return;
+    final name = _elementNames[elType.clamp(0, _elementNames.length - 1)].toLowerCase();
+    if (name.isEmpty) return;
+
+    if (_speakableWords.contains(name)) {
+      await widget.audioService.playWord(name);
+    } else {
+      // Spell letter-by-letter for non-word names (TNT, Zap, Lightning)
+      for (final letter in name.split('')) {
+        if (!mounted || _isMuted) break;
+        await widget.audioService.playLetter(letter);
+        await Future.delayed(const Duration(milliseconds: 250));
+      }
+    }
+  }
+
+  /// Speak a simple word using playWord.
+  Future<void> _speakWord(String word) async {
+    if (_isMuted) return;
+    await widget.audioService.playWord(word);
   }
 
   bool _gridInitialized = false;
@@ -215,12 +270,20 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (_remainingSeconds == 60) {
           _showTimeWarning = true;
           _timeWarningText = '1 Minute Left!';
+          if (!_isMuted) {
+            _speakWord('one');
+            Future.delayed(const Duration(milliseconds: 400), () => _speakWord('minute'));
+          }
           Future.delayed(const Duration(seconds: 2), () {
             if (mounted) setState(() => _showTimeWarning = false);
           });
         } else if (_remainingSeconds == 30) {
           _showTimeWarning = true;
           _timeWarningText = '30 Seconds Left!';
+          if (!_isMuted) {
+            _speakWord('thirty');
+            Future.delayed(const Duration(milliseconds: 400), () => _speakWord('seconds'));
+          }
           Future.delayed(const Duration(seconds: 2), () {
             if (mounted) setState(() => _showTimeWarning = false);
           });
@@ -229,6 +292,9 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (_remainingSeconds <= 0) {
           _remainingSeconds = 0;
           _sessionExpired = true;
+          if (!_isMuted) {
+            _speakWord('time');
+          }
         }
       });
     });
@@ -1363,6 +1429,24 @@ class _ElementLabGameState extends State<ElementLabGame>
               color: AppColors.primaryText,
             ),
           ),
+          const SizedBox(width: 4),
+          // Speaker / mute toggle
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: IconButton(
+              onPressed: _toggleMute,
+              icon: Icon(
+                _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: _isMuted
+                    ? AppColors.secondaryText.withValues(alpha: 0.5)
+                    : AppColors.electricBlue,
+              ),
+              iconSize: 22,
+              padding: EdgeInsets.zero,
+              tooltip: _isMuted ? 'Sound on' : 'Sound off',
+            ),
+          ),
           const Spacer(),
           // Session timer
           TweenAnimationBuilder<double>(
@@ -1495,6 +1579,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       onTap: () {
         setState(() => _selectedElement = elType);
         Haptics.tap();
+        _speakElementName(elType);
       },
       onLongPress: () {
         setState(() {
@@ -1502,6 +1587,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           _infoElement = elType;
         });
         Haptics.tap();
+        _speakElementName(elType);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),

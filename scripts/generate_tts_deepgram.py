@@ -305,8 +305,20 @@ GENERIC_WELCOMES = {
     "welcome_generic_13": "Are you ready?",
 }
 
-# UI word for the "alphabet" header speaker icon
-EXTRA_WORDS = ["alphabet"]
+# UI words and mini-game element names
+EXTRA_WORDS = [
+    "alphabet",
+    # Element Lab elements
+    "sand", "water", "fire", "ice", "lightning", "plant", "stone",
+    "mud", "steam", "ant", "oil", "acid", "glass", "rainbow",
+    # Element Lab timer
+    "minute", "thirty", "seconds", "time",
+]
+
+# Special pronunciation overrides (key = filename, value = spoken text)
+EXTRA_WORD_PRONUNCIATIONS = {
+    "tnt": "T N T",
+}
 
 
 # ============================================================================
@@ -498,9 +510,15 @@ def generate_words(tts: DeepgramTTS, base: Path, workers: int, dry_run: bool):
     words_dir = base / "words"
     items = [(w, w, words_dir / f"{w}.mp3") for w in ALL_WORDS]
 
-    # Add the extra UI words (e.g. "alphabet" for the header icon)
+    # Add the extra UI words (element names, timer words, etc.)
     for w in EXTRA_WORDS:
-        items.append((w, w, words_dir / f"{w}.mp3"))
+        spoken = EXTRA_WORD_PRONUNCIATIONS.get(w, w)
+        items.append((w, spoken, words_dir / f"{w}.mp3"))
+
+    # Add any pronunciation-override-only entries not already in EXTRA_WORDS
+    for key, spoken in EXTRA_WORD_PRONUNCIATIONS.items():
+        if key not in EXTRA_WORDS:
+            items.append((key, spoken, words_dir / f"{key}.mp3"))
 
     return _generate_batch(tts, items, "WORDS (Dolch + Bonus)", workers, dry_run)
 
