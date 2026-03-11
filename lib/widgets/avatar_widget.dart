@@ -983,6 +983,14 @@ class FacePainter extends CustomPainter {
       noseBridgeAO,
     );
 
+    // ── Head silhouette outline ──
+    // Subtle stroke to define the head shape against dark backgrounds
+    final outlinePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = skinColor.withValues(alpha: 0.3);
+    canvas.drawPath(facePath, outlinePaint);
+
     canvas.restore();
   }
 

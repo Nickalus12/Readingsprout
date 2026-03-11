@@ -12,6 +12,7 @@ import '../services/stats_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/adaptive_music_service.dart';
 import '../services/review_service.dart';
+import '../widgets/avatar_widget.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
 import 'level_select_screen.dart';
@@ -66,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Ticker _starTicker;
   late _StarSim _starSim;
   final _heartsKey = GlobalKey<FloatingHeartsBackgroundState>();
+  final AvatarController _avatarController = AvatarController();
 
   @override
   void initState() {
@@ -76,6 +78,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
     _starSim = _StarSim();
     _starTicker = createTicker(_starSim.tick)..start();
+    // Bind avatar lip sync to audio amplitude
+    _avatarController.bindAmplitude(widget.audioService.mouthAmplitude);
     // Check streak status on app open
     widget.streakService.checkStreak();
     // Play welcome phrase on first load
@@ -84,6 +88,8 @@ class _HomeScreenState extends State<HomeScreen>
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
           widget.audioService.playWelcome(widget.playerName);
+          _avatarController.setExpression(AvatarExpression.happy,
+              duration: const Duration(seconds: 3));
         }
       });
     }
@@ -91,6 +97,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _avatarController.dispose();
     _starTicker.dispose();
     _starSim.dispose();
     _logoController.dispose();
@@ -233,6 +240,40 @@ class _HomeScreenState extends State<HomeScreen>
                   children: [
                     SizedBox(height: MediaQuery.of(context).size.height * 0.06),
 
+                    // ── Avatar + Logo area ──
+                    if (widget.profileService != null)
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.violet.withValues(alpha: 0.15),
+                              blurRadius: 24,
+                              spreadRadius: 4,
+                            ),
+                            BoxShadow(
+                              color: AppColors.electricBlue.withValues(alpha: 0.08),
+                              blurRadius: 40,
+                              spreadRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: AvatarWidget(
+                          config: widget.profileService!.avatar,
+                          size: 110 * sf,
+                          showBackground: true,
+                          controller: _avatarController,
+                        ),
+                      )
+                          .animate()
+                          .fadeIn(duration: 600.ms)
+                          .scale(
+                            begin: const Offset(0.8, 0.8),
+                            end: const Offset(1.0, 1.0),
+                            curve: Curves.easeOutCubic,
+                            duration: 600.ms,
+                          ),
+
                     // ── Logo (tappable with bounce + glow) ──
                     GestureDetector(
                       onTap: _onLogoTap,
@@ -264,8 +305,8 @@ class _HomeScreenState extends State<HomeScreen>
                         },
                         child: Image.asset(
                           'assets/images/logo.png',
-                          width: 110 * sf,
-                          height: 110 * sf,
+                          width: (widget.profileService != null ? 60 : 110) * sf,
+                          height: (widget.profileService != null ? 60 : 110) * sf,
                         ),
                       ),
                     )
