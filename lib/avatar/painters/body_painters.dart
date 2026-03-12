@@ -512,55 +512,86 @@ class ShoulderPainter extends CustomPainter {
     final shoulderW = w * (0.72 + breathExpand);
     final shoulderY = h * 0.78;
 
-    final shirtHL = Color.lerp(shirtColor, Colors.white, 0.20)!;
+    final shirtHL = Color.lerp(shirtColor, Colors.white, 0.22)!;
+    final shirtMid = Color.lerp(shirtColor, Colors.white, 0.08)!;
     final shirtSH = Color.lerp(shirtColor, Colors.black, 0.15)!;
 
     for (final side in [-1.0, 1.0]) {
       final dy = side < 0 ? leftShoulderDy : rightShoulderDy;
+      // Align with torso shoulder dome (0.48 * shoulderW from center)
       final sCx = cx + side * shoulderW * 0.48;
       final sCy = shoulderY + dy * h;
-      final capW = w * 0.14;
-      final capH = h * 0.06;
+      // Wider, flatter cap for child-like roundness
+      final capW = w * 0.16;
+      final capH = h * 0.055;
 
-      final capRect = Rect.fromCenter(
-        center: Offset(sCx, sCy + capH * 0.3),
-        width: capW,
-        height: capH,
+      // Cap top sits slightly above shoulderY for overlap with torso dome
+      final capTop = sCy - capH * 0.15;
+      // Cap bottom aligns with arm start (shoulderY + h*0.035)
+      final capBottom = sCy + h * 0.035;
+
+      final capRect = Rect.fromLTRB(
+        sCx - capW * 0.55, capTop,
+        sCx + capW * 0.55, capBottom,
       );
 
-      // Rounded dome shape via quadratic beziers
+      // Soft rounded dome via cubic beziers for child-like shape
       final capPath = Path();
-      capPath.moveTo(sCx - capW * 0.5, sCy + capH * 0.5);
-      capPath.quadraticBezierTo(
-        sCx - capW * 0.4, sCy - capH * 0.2,
-        sCx, sCy - capH * 0.3,
+      // Start at inner-bottom (torso side)
+      capPath.moveTo(sCx - side * capW * 0.5, capBottom);
+      // Rise up the inner edge into the dome peak
+      capPath.cubicTo(
+        sCx - side * capW * 0.45, sCy - capH * 0.05,
+        sCx - side * capW * 0.2, capTop - capH * 0.1,
+        sCx, capTop - capH * 0.15,
       );
+      // Dome peak down to outer edge
+      capPath.cubicTo(
+        sCx + side * capW * 0.2, capTop - capH * 0.1,
+        sCx + side * capW * 0.45, sCy + capH * 0.05,
+        sCx + side * capW * 0.5, capBottom,
+      );
+      // Smooth bottom connecting to arm zone
       capPath.quadraticBezierTo(
-        sCx + capW * 0.4, sCy - capH * 0.2,
-        sCx + capW * 0.5, sCy + capH * 0.5,
+        sCx, capBottom + capH * 0.08,
+        sCx - side * capW * 0.5, capBottom,
       );
       capPath.close();
 
+      // 3D curvature: radial-like effect via top-to-bottom + side gradient
       final capPaint = Paint()
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [shirtHL, shirtColor, shirtSH],
-          stops: const [0.0, 0.5, 1.0],
+          colors: [shirtHL, shirtMid, shirtColor, shirtSH],
+          stops: const [0.0, 0.35, 0.7, 1.0],
         ).createShader(capRect);
-
       canvas.drawPath(capPath, capPaint);
 
-      // Seam line at shoulder-torso junction
+      // Side highlight for 3D curvature (light catches top-outer edge)
+      final sideHLPaint = Paint()
+        ..shader = LinearGradient(
+          begin: side < 0 ? Alignment.centerRight : Alignment.centerLeft,
+          end: side < 0 ? Alignment.centerLeft : Alignment.centerRight,
+          colors: [
+            shirtHL.withValues(alpha: 0.3),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.5],
+        ).createShader(capRect);
+      canvas.drawPath(capPath, sideHLPaint);
+
+      // Soft seam line at shoulder-torso junction (blended, not harsh)
       final seamPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.7
-        ..color = shirtSH.withValues(alpha: 0.4);
+        ..strokeWidth = 0.8
+        ..color = shirtSH.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
       final seamPath = Path()
-        ..moveTo(sCx - capW * 0.45, sCy + capH * 0.45)
+        ..moveTo(sCx - side * capW * 0.4, capBottom - 1)
         ..quadraticBezierTo(
-          sCx, sCy + capH * 0.55,
-          sCx + capW * 0.45, sCy + capH * 0.45,
+          sCx, capBottom + capH * 0.04,
+          sCx + side * capW * 0.4, capBottom - 1,
         );
       canvas.drawPath(seamPath, seamPaint);
     }
@@ -628,37 +659,45 @@ class ArmPainter extends CustomPainter {
       Color highlight, Color shadow, double boneRotation) {
     // Align arm center with shoulder cap center (0.48)
     final armCx = cx + side * shoulderW * 0.48;
-    // Shoulder width ~8% of widget, wrist ~5%
-    final shoulderArmW = w * 0.08;
-    final wristArmW = w * 0.05;
+    // Child proportions: chubbier upper arm, softer taper
+    final shoulderArmW = w * 0.085;
+    final wristArmW = w * 0.052;
 
-    final upperArmTop = shoulderY + h * 0.035;
+    // Arm top blends with shoulder cap bottom (shoulderY + h*0.035)
+    final upperArmTop = shoulderY + h * 0.033;
 
-    if (boneRotation.abs() > 0.001) {
+    // Natural resting angle: arms hang slightly outward (~3 degrees)
+    final naturalAngle = side * 0.052; // ~3 degrees in radians
+    final totalRotation = boneRotation + naturalAngle;
+
+    if (totalRotation.abs() > 0.001) {
       canvas.save();
       canvas.translate(armCx, shoulderY);
-      canvas.rotate(boneRotation);
+      canvas.rotate(totalRotation);
       canvas.translate(-armCx, -shoulderY);
     }
 
-    final elbowY = shoulderY + h * 0.12;
-    final forearmBottom = shoulderY + h * 0.22;
+    final elbowY = shoulderY + h * 0.125;
+    final forearmBottom = shoulderY + h * 0.225;
 
-    // ── Upper arm (bezier contours, not rectangles) ──
+    // ── Upper arm (soft bezier contours for child character) ──
     final upperPath = Path();
-    // Left contour: organic outward bulge
+    // Outer contour: gentle bicep bulge
     upperPath.moveTo(armCx - shoulderArmW * 0.5, upperArmTop);
     upperPath.cubicTo(
-      armCx - shoulderArmW * 0.65, (upperArmTop + elbowY) * 0.48,
-      armCx - shoulderArmW * 0.58, elbowY - 3,
-      armCx - shoulderArmW * 0.48, elbowY,
+      armCx - shoulderArmW * 0.6, upperArmTop + (elbowY - upperArmTop) * 0.3,
+      armCx - shoulderArmW * 0.55, elbowY - (elbowY - upperArmTop) * 0.15,
+      armCx - shoulderArmW * 0.46, elbowY,
     );
-    // Bottom of upper arm
-    upperPath.lineTo(armCx + shoulderArmW * 0.48, elbowY);
-    // Right contour: mirror bulge
+    // Elbow bottom: soft curve instead of hard line
+    upperPath.quadraticBezierTo(
+      armCx, elbowY + 1.5,
+      armCx + shoulderArmW * 0.46, elbowY,
+    );
+    // Inner contour: mirror with gentle bulge
     upperPath.cubicTo(
-      armCx + shoulderArmW * 0.58, elbowY - 3,
-      armCx + shoulderArmW * 0.65, (upperArmTop + elbowY) * 0.48,
+      armCx + shoulderArmW * 0.55, elbowY - (elbowY - upperArmTop) * 0.15,
+      armCx + shoulderArmW * 0.6, upperArmTop + (elbowY - upperArmTop) * 0.3,
       armCx + shoulderArmW * 0.5, upperArmTop,
     );
     upperPath.close();
@@ -667,114 +706,145 @@ class ArmPainter extends CustomPainter {
       armCx - shoulderArmW, upperArmTop, armCx + shoulderArmW, elbowY,
     );
 
-    // Skin gradient for 3D roundness
+    // Skin gradient for 3D cylindrical roundness
     final upperSkinPaint = Paint()
       ..shader = LinearGradient(
         begin: side < 0 ? Alignment.centerLeft : Alignment.centerRight,
         end: side < 0 ? Alignment.centerRight : Alignment.centerLeft,
         colors: [shadow, highlight, skinColor, highlight, shadow],
-        stops: const [0.0, 0.15, 0.5, 0.85, 1.0],
+        stops: const [0.0, 0.12, 0.5, 0.88, 1.0],
       ).createShader(upperRect);
     canvas.drawPath(upperPath, upperSkinPaint);
 
     // Sleeve overlay (covers top ~55% of upper arm)
     final sleeveBottom = upperArmTop + (elbowY - upperArmTop) * 0.55;
     final sleevePath = Path();
-    sleevePath.moveTo(armCx - shoulderArmW * 0.60, upperArmTop - 1);
+    // Sleeve top aligns with shoulder cap — slightly wider for overlap
+    sleevePath.moveTo(armCx - shoulderArmW * 0.62, upperArmTop - 2);
     sleevePath.cubicTo(
-      armCx - shoulderArmW * 0.58, (upperArmTop + sleeveBottom) * 0.5,
-      armCx - shoulderArmW * 0.54, sleeveBottom - 1,
-      armCx - shoulderArmW * 0.50, sleeveBottom,
+      armCx - shoulderArmW * 0.60, (upperArmTop + sleeveBottom) * 0.5,
+      armCx - shoulderArmW * 0.54, sleeveBottom - 2,
+      armCx - shoulderArmW * 0.48, sleeveBottom,
     );
     sleevePath.quadraticBezierTo(
-      armCx, sleeveBottom + 3,
-      armCx + shoulderArmW * 0.50, sleeveBottom,
+      armCx, sleeveBottom + 2.5,
+      armCx + shoulderArmW * 0.48, sleeveBottom,
     );
     sleevePath.cubicTo(
-      armCx + shoulderArmW * 0.54, sleeveBottom - 1,
-      armCx + shoulderArmW * 0.58, (upperArmTop + sleeveBottom) * 0.5,
-      armCx + shoulderArmW * 0.60, upperArmTop - 1,
+      armCx + shoulderArmW * 0.54, sleeveBottom - 2,
+      armCx + shoulderArmW * 0.60, (upperArmTop + sleeveBottom) * 0.5,
+      armCx + shoulderArmW * 0.62, upperArmTop - 2,
     );
     sleevePath.close();
 
     final sleeveRect = Rect.fromLTRB(
-      armCx - shoulderArmW * 0.65, upperArmTop,
-      armCx + shoulderArmW * 0.65, sleeveBottom,
+      armCx - shoulderArmW * 0.68, upperArmTop,
+      armCx + shoulderArmW * 0.68, sleeveBottom,
     );
     final sleevePaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [shirtColor, Color.lerp(shirtColor, Colors.black, 0.08)!],
+        colors: [
+          shirtColor,
+          Color.lerp(shirtColor, Colors.black, 0.06)!,
+          Color.lerp(shirtColor, Colors.black, 0.12)!,
+        ],
+        stops: const [0.0, 0.6, 1.0],
       ).createShader(sleeveRect);
     canvas.drawPath(sleevePath, sleevePaint);
 
-    // Sleeve hem
-    final hemPaint = Paint()
+    // Sleeve cuff edge — clean band at sleeve-to-skin transition
+    final cuffDark = Color.lerp(shirtColor, Colors.black, 0.25)!;
+    final cuffLight = Color.lerp(shirtColor, Colors.white, 0.08)!;
+    // Dark cuff line (bottom edge of fabric)
+    final cuffDarkPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
-      ..color = Color.lerp(shirtColor, Colors.black, 0.22)!;
-    final hemPath = Path()
-      ..moveTo(armCx - shoulderArmW * 0.48, sleeveBottom)
+      ..strokeWidth = 1.2
+      ..color = cuffDark;
+    final cuffPath = Path()
+      ..moveTo(armCx - shoulderArmW * 0.46, sleeveBottom)
       ..quadraticBezierTo(
         armCx, sleeveBottom + 2,
-        armCx + shoulderArmW * 0.48, sleeveBottom,
+        armCx + shoulderArmW * 0.46, sleeveBottom,
       );
-    canvas.drawPath(hemPath, hemPaint);
+    canvas.drawPath(cuffPath, cuffDarkPaint);
+    // Light cuff highlight (top edge of cuff band for 3D rim)
+    final cuffHLPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.6
+      ..color = cuffLight.withValues(alpha: 0.5);
+    final cuffHLPath = Path()
+      ..moveTo(armCx - shoulderArmW * 0.44, sleeveBottom - 1)
+      ..quadraticBezierTo(
+        armCx, sleeveBottom + 1,
+        armCx + shoulderArmW * 0.44, sleeveBottom - 1,
+      );
+    canvas.drawPath(cuffHLPath, cuffHLPaint);
 
-    // ── Forearm (tapers from elbow to wrist) ──
-    // Interpolate width from shoulder width at elbow to wrist width at bottom
-    final elbowHalfW = shoulderArmW * 0.48;
-    final wristHalfW = wristArmW * 0.48;
+    // ── Forearm (tapers from elbow to wrist, child proportions) ──
+    final elbowHalfW = shoulderArmW * 0.46;
+    final wristHalfW = wristArmW * 0.46;
 
     final forearmPath = Path();
     forearmPath.moveTo(armCx - elbowHalfW, elbowY);
-    // Left contour — organic taper
+    // Outer contour — smooth organic taper with slight forearm swell
     forearmPath.cubicTo(
-      armCx - elbowHalfW * 1.05, (elbowY + forearmBottom) * 0.5,
-      armCx - wristHalfW * 1.1, forearmBottom - 4,
+      armCx - elbowHalfW * 1.08, elbowY + (forearmBottom - elbowY) * 0.35,
+      armCx - wristHalfW * 1.15, forearmBottom - (forearmBottom - elbowY) * 0.2,
       armCx - wristHalfW, forearmBottom,
     );
-    // Wrist curve
+    // Wrist curve — rounded end
     forearmPath.quadraticBezierTo(
-      armCx, forearmBottom + wristArmW * 0.25,
+      armCx, forearmBottom + wristArmW * 0.22,
       armCx + wristHalfW, forearmBottom,
     );
-    // Right contour — mirror taper
+    // Inner contour — mirror taper
     forearmPath.cubicTo(
-      armCx + wristHalfW * 1.1, forearmBottom - 4,
-      armCx + elbowHalfW * 1.05, (elbowY + forearmBottom) * 0.5,
+      armCx + wristHalfW * 1.15, forearmBottom - (forearmBottom - elbowY) * 0.2,
+      armCx + elbowHalfW * 1.08, elbowY + (forearmBottom - elbowY) * 0.35,
       armCx + elbowHalfW, elbowY,
     );
     forearmPath.close();
 
     final forearmRect = Rect.fromLTRB(
-      armCx - elbowHalfW * 1.1, elbowY,
-      armCx + elbowHalfW * 1.1, forearmBottom,
+      armCx - elbowHalfW * 1.15, elbowY,
+      armCx + elbowHalfW * 1.15, forearmBottom,
     );
     final forearmPaint = Paint()
       ..shader = LinearGradient(
         begin: side < 0 ? Alignment.centerLeft : Alignment.centerRight,
         end: side < 0 ? Alignment.centerRight : Alignment.centerLeft,
         colors: [shadow, highlight, skinColor, highlight, shadow],
-        stops: const [0.0, 0.15, 0.5, 0.85, 1.0],
+        stops: const [0.0, 0.12, 0.5, 0.88, 1.0],
       ).createShader(forearmRect);
     canvas.drawPath(forearmPath, forearmPaint);
 
-    // ── Elbow crease ──
+    // ── Elbow crease — subtle shadow with inner fold line ──
     final elbowCreasePaint = Paint()
-      ..color = shadow.withValues(alpha: 0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+      ..color = shadow.withValues(alpha: 0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(armCx, elbowY + 1),
-        width: elbowHalfW * 1.4,
-        height: 3,
+        center: Offset(armCx, elbowY + 0.5),
+        width: elbowHalfW * 1.6,
+        height: 3.5,
       ),
       elbowCreasePaint,
     );
+    // Inner fold line for depth
+    final foldPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5
+      ..color = shadow.withValues(alpha: 0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1);
+    canvas.drawLine(
+      Offset(armCx - elbowHalfW * 0.6, elbowY + 1),
+      Offset(armCx + elbowHalfW * 0.6, elbowY + 1),
+      foldPaint,
+    );
 
-    if (boneRotation.abs() > 0.001) {
+    if (totalRotation.abs() > 0.001) {
       canvas.restore();
     }
   }
