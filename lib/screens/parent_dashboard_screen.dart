@@ -8,6 +8,7 @@ import '../services/review_service.dart';
 import '../services/stats_service.dart';
 import '../services/streak_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/game_animations.dart';
 import 'onboarding_tutorial_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1158,21 +1159,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   void _replayTutorial(BuildContext context) {
     Navigator.push(
       context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => OnboardingTutorialScreen(
-          onComplete: () => Navigator.pop(context),
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      ),
+      GameAnimations.smoothRoute(OnboardingTutorialScreen(
+        onComplete: () => Navigator.pop(context),
+      )),
     );
   }
 

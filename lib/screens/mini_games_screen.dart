@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import '../theme/game_animations.dart';
 import '../services/progress_service.dart';
 import '../services/audio_service.dart';
 import '../services/high_score_service.dart';
@@ -383,7 +384,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
       glowColor: glow,
       floatIndex: index,
       onTap: () async {
-        await Navigator.push(context, _smoothRoute(game));
+        await Navigator.push(context, GameAnimations.smoothRoute(game));
         if (!mounted) return;
         // Record mini game played with personality service
         if (widget.profileId.isNotEmpty) {
@@ -471,7 +472,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
           playerName: widget.playerName,
           freePlay: freePlay,
         );
-        await Navigator.push(context, _smoothRoute(game));
+        await Navigator.push(context, GameAnimations.smoothRoute(game));
         if (!mounted) return;
         setState(() {}); // refresh coin display
         if (widget.profileId.isNotEmpty) {
@@ -492,28 +493,6 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
         );
   }
 
-  PageRouteBuilder _smoothRoute(Widget page) {
-    return PageRouteBuilder(
-      pageBuilder: (_, __, ___) => page,
-      transitionsBuilder: (_, animation, __, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.04),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
-          ),
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 350),
-    );
-  }
 }
 
 // ── Compact floating game button ──────────────────────────────────────────

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
+import 'theme/game_animations.dart';
 import 'screens/home_screen.dart';
 import 'screens/name_setup_screen.dart';
 import 'screens/onboarding_tutorial_screen.dart';
@@ -183,34 +184,22 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
     nav.push(
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => NameSetupScreen(
-          onNameSubmitted: (name) async {
-            final profileId = _settingsService.activeProfileId;
-            if (profileId != null) {
-              // Rename the active profile instead of creating a new one
-              await _settingsService.renameProfile(profileId, name);
-            } else {
-              await _settingsService.setPlayerName(name);
-            }
-            setState(() {});
-            _generatePhrasesInBackground(name);
-            nav.pop();
-          },
-          onBack: () => nav.pop(),
-          audioService: _audioService,
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-              child: child,
-            ),
-          );
+      GameAnimations.smoothRoute(NameSetupScreen(
+        onNameSubmitted: (name) async {
+          final profileId = _settingsService.activeProfileId;
+          if (profileId != null) {
+            // Rename the active profile instead of creating a new one
+            await _settingsService.renameProfile(profileId, name);
+          } else {
+            await _settingsService.setPlayerName(name);
+          }
+          setState(() {});
+          _generatePhrasesInBackground(name);
+          nav.pop();
         },
-      ),
+        onBack: () => nav.pop(),
+        audioService: _audioService,
+      )),
     );
   }
 

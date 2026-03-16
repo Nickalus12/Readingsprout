@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../data/dolch_words.dart';
 import '../models/word.dart';
 import '../theme/app_theme.dart';
+import '../theme/game_animations.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/audio_service.dart';
@@ -147,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     Navigator.push(
       context,
-      _smoothRoute(GameScreen(
+      GameAnimations.smoothRoute(GameScreen(
         level: level,
         tier: tier,
         progressService: widget.progressService,
@@ -598,7 +599,7 @@ class _HomeScreenState extends State<HomeScreen>
                             }
                             Navigator.push(
                               context,
-                              _smoothRoute(LevelSelectScreen(
+                              GameAnimations.smoothRoute(LevelSelectScreen(
                                 progressService: widget.progressService,
                                 audioService: widget.audioService,
                                 profileService: widget.profileService,
@@ -731,7 +732,7 @@ class _HomeScreenState extends State<HomeScreen>
                             semanticLabel: 'My Profile',
                             onTap: () => Navigator.push(
                               context,
-                              _smoothRoute(ProfileScreen(
+                              GameAnimations.smoothRoute(ProfileScreen(
                                 profileService: widget.profileService!,
                                 progressService: widget.progressService,
                                 audioService: widget.audioService,
@@ -748,7 +749,7 @@ class _HomeScreenState extends State<HomeScreen>
                           semanticLabel: 'Alphabet Practice',
                           onTap: () => Navigator.push(
                             context,
-                            _smoothRoute(AlphabetScreen(
+                            GameAnimations.smoothRoute(AlphabetScreen(
                               audioService: widget.audioService,
                             )),
                           ),
@@ -759,7 +760,7 @@ class _HomeScreenState extends State<HomeScreen>
                           semanticLabel: 'Mini Games',
                           onTap: () => Navigator.push(
                             context,
-                            _smoothRoute(MiniGamesScreen(
+                            GameAnimations.smoothRoute(MiniGamesScreen(
                               progressService: widget.progressService,
                               audioService: widget.audioService,
                               highScoreService: widget.highScoreService,
@@ -951,7 +952,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     Navigator.push(
       context,
-      _smoothRoute(GameScreen(
+      GameAnimations.smoothRoute(GameScreen(
         level: firstLevel,
         tier: 1,
         progressService: widget.progressService,
@@ -981,7 +982,7 @@ class _HomeScreenState extends State<HomeScreen>
           Navigator.pop(context); // close dialog
           Navigator.push(
             context,
-            _smoothRoute(ParentDashboardScreen(
+            GameAnimations.smoothRoute(ParentDashboardScreen(
               progressService: widget.progressService,
               statsService: widget.statsService!,
               streakService: widget.streakService,
@@ -995,28 +996,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  PageRouteBuilder _smoothRoute(Widget page) {
-    return PageRouteBuilder(
-      pageBuilder: (_, __, ___) => page,
-      transitionsBuilder: (_, animation, __, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.04),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
-          ),
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 350),
-    );
-  }
 }
 
 class _StatBadge extends StatefulWidget {

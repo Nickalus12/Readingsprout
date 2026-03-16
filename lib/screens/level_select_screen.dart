@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/app_theme.dart';
+import '../theme/game_animations.dart';
 import '../data/dolch_words.dart';
 import '../models/progress.dart';
 import '../services/progress_service.dart';
@@ -579,40 +580,21 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
 
     await Navigator.push(
       context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => GameScreen(
-          level: level,
-          progressService: widget.progressService,
-          audioService: widget.audioService,
-          profileService: widget.profileService,
-          statsService: widget.statsService,
-          streakService: widget.streakService,
-          personalityService: widget.personalityService,
-          reviewService: widget.reviewService,
-          adaptiveDifficultyService: widget.adaptiveDifficultyService,
-          musicService: widget.musicService,
-          playerName: widget.playerName,
-          profileId: widget.profileId,
-          tier: selectedTier.value,
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.04),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 350),
-      ),
+      GameAnimations.smoothRoute(GameScreen(
+        level: level,
+        progressService: widget.progressService,
+        audioService: widget.audioService,
+        profileService: widget.profileService,
+        statsService: widget.statsService,
+        streakService: widget.streakService,
+        personalityService: widget.personalityService,
+        reviewService: widget.reviewService,
+        adaptiveDifficultyService: widget.adaptiveDifficultyService,
+        musicService: widget.musicService,
+        playerName: widget.playerName,
+        profileId: widget.profileId,
+        tier: selectedTier.value,
+      )),
     );
 
     // After returning from GameScreen, check for newly mastered zones

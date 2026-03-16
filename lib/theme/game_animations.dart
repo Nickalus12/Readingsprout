@@ -200,6 +200,30 @@ class GameAnimations {
         ),
       ];
 
+  /// Smooth page route with fade + subtle slide-up.
+  /// Use for all Navigator.push calls across the app.
+  static PageRouteBuilder<T> smoothRoute<T>(Widget page) {
+    return PageRouteBuilder<T>(
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   /// Idle float — gentle up/down bobbing for idle elements
   static List<Effect> idleFloat({
     int index = 0,
