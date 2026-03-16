@@ -59,6 +59,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
   final List<_FreedAnimal> _freedAnimals = [];
   final List<_BackgroundBubble> _bgBubbles = [];
   final List<_RingBurst> _ringBursts = [];
+  final List<_ScorePopup> _scorePopups = [];
 
   late AnimationController _ticker;
   late ConfettiController _confettiController;
@@ -195,6 +196,13 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
         r.age += dt;
       }
       _ringBursts.removeWhere((r) => r.age > 0.5);
+
+      // Update score popups
+      for (final sp in _scorePopups) {
+        sp.age += dt;
+        sp.y -= 60 * dt;
+      }
+      _scorePopups.removeWhere((sp) => sp.age > 0.8);
 
       // Update screen shake
       if (_shakeTimer > 0) {
@@ -360,6 +368,13 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
     final points = _combo >= 3 ? 3 : (_combo >= 2 ? 2 : 1);
     _score += points;
     _animalsInWave++;
+
+    // Create floating score popup
+    _scorePopups.add(_ScorePopup(
+      x: bubble.x,
+      y: bubble.y,
+      points: points,
+    ));
 
     // Play the animal's word
     widget.audioService.playWord(bubble.animal.word);
@@ -660,6 +675,27 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
                 ),
               ),
 
+          // Floating score popups
+          for (final sp in _scorePopups)
+            if (sp.age < 0.8)
+              Positioned(
+                left: MediaQuery.of(context).size.width * sp.x - 20,
+                top: sp.y,
+                child: Opacity(
+                  opacity: (1.0 - sp.age / 0.8).clamp(0.0, 1.0),
+                  child: Text(
+                    '+${sp.points}',
+                    style: AppFonts.fredoka(
+                      fontSize: sp.points >= 3 ? 28 : 22,
+                      fontWeight: FontWeight.bold,
+                      color: sp.points >= 3
+                          ? AppColors.starGold
+                          : AppColors.electricBlue,
+                    ),
+                  ),
+                ),
+              ),
+
           // Countdown overlay
           if (_showCountdown)
             Container(
@@ -912,6 +948,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
       _popEffects.clear();
       _freedAnimals.clear();
       _ringBursts.clear();
+      _scorePopups.clear();
       _score = 0;
       _combo = 0;
       _comboTimer = 0;
@@ -1025,6 +1062,14 @@ class _BackgroundBubble {
     required this.wobblePhase,
     required this.opacity,
   });
+}
+
+class _ScorePopup {
+  double x, y;
+  final int points;
+  double age = 0;
+
+  _ScorePopup({required this.x, required this.y, required this.points});
 }
 
 class _RingBurst {
