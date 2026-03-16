@@ -168,7 +168,7 @@ class GameProgressDots extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(totalWords, (i) {
@@ -179,23 +179,23 @@ class GameProgressDots extends StatelessWidget {
 
           Widget dot = AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            margin: const EdgeInsets.symmetric(horizontal: 3),
-            width: isCurrent ? 24 : isDone ? 12 : 10,
-            height: isDone ? 12 : 10,
+            margin: const EdgeInsets.symmetric(horizontal: 2.5),
+            width: isCurrent ? 26 : isDone ? 14 : 10,
+            height: isDone ? 14 : 10,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(isDone ? 7 : 5),
               color: isDone
                   ? AppColors.success
                   : isCurrent
                       ? levelColors.first
-                      : AppColors.surface,
+                      : AppColors.surface.withValues(alpha: 0.5),
               border: Border.all(
                 color: isDone
-                    ? AppColors.success.withValues(alpha: 0.5)
+                    ? AppColors.success.withValues(alpha: 0.6)
                     : isCurrent
                         ? levelColors.first.withValues(alpha: 0.5)
-                        : AppColors.border.withValues(alpha: 0.3),
-                width: 1,
+                        : AppColors.border.withValues(alpha: 0.25),
+                width: isDone ? 1.5 : 1,
               ),
               boxShadow: (isDone || isCurrent)
                   ? [
@@ -203,12 +203,21 @@ class GameProgressDots extends StatelessWidget {
                         color: (isDone
                                 ? AppColors.success
                                 : levelColors.first)
-                            .withValues(alpha: 0.3),
-                        blurRadius: 4,
+                            .withValues(alpha: 0.35),
+                        blurRadius: 5,
                       ),
                     ]
                   : null,
             ),
+            child: isDone
+                ? Center(
+                    child: Icon(
+                      Icons.check_rounded,
+                      size: 10,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  )
+                : null,
           );
 
           // Brief scale pulse on the most recently completed dot
