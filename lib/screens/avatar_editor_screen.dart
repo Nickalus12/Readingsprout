@@ -120,7 +120,7 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
 
   // ── Header ──────────────────────────────────────────────────────────
 
-  bool _diceSpinning = false;
+  double _diceTurns = 0;
 
   Widget _buildHeader() {
     return Padding(
@@ -141,16 +141,27 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
             ),
           ),
           const Spacer(),
-          _CircleButton(
-            icon: Icons.casino_rounded,
-            spinning: _diceSpinning,
+          GestureDetector(
             onTap: () {
-              setState(() => _diceSpinning = true);
+              setState(() => _diceTurns += 1.0);
               _randomize();
-              Future.delayed(const Duration(milliseconds: 500), () {
-                if (mounted) setState(() => _diceSpinning = false);
-              });
             },
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: AnimatedRotation(
+                turns: _diceTurns,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOutCubic,
+                child: const Icon(Icons.casino_rounded,
+                    color: AppColors.secondaryText, size: 22),
+              ),
+            ),
           ),
         ],
       ),
@@ -1310,12 +1321,10 @@ class _TabDef {
 class _CircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final bool spinning;
 
   const _CircleButton({
     required this.icon,
     required this.onTap,
-    this.spinning = false,
   });
 
   @override
@@ -1330,14 +1339,7 @@ class _CircleButton extends StatelessWidget {
           color: AppColors.surface,
           border: Border.all(color: AppColors.border),
         ),
-        child: spinning
-            ? AnimatedRotation(
-                turns: 1.0,
-                duration: const Duration(milliseconds: 500),
-                curve: Curves.easeOutCubic,
-                child: Icon(icon, color: AppColors.secondaryText, size: 22),
-              )
-            : Icon(icon, color: AppColors.primaryText, size: 22),
+        child: Icon(icon, color: AppColors.primaryText, size: 22),
       ),
     );
   }
