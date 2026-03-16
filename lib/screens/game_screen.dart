@@ -1801,7 +1801,11 @@ class _KeyboardKeyState extends State<_KeyboardKey> {
     final keyHeight = (keyWidth * 1.3).clamp(28.0, maxKeyH);
     final fontSize = (keyWidth * 0.5).clamp(12.0, 20.0);
 
-    return GestureDetector(
+    return Semantics(
+      label: widget.letter.toUpperCase(),
+      hint: showHighlight ? 'Correct letter' : null,
+      button: true,
+      child: GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) {
         setState(() => _pressed = false);
@@ -1870,7 +1874,7 @@ class _KeyboardKeyState extends State<_KeyboardKey> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

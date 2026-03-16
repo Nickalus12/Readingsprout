@@ -26,7 +26,15 @@ class LetterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveColor = revealedColor ?? AppColors.success;
 
-    final tile = AnimatedContainer(
+    final semanticLabel = isRevealed
+        ? 'Letter ${letter.toUpperCase()}, completed'
+        : isActive
+            ? 'Next letter to type'
+            : 'Hidden letter';
+
+    final tile = Semantics(
+      label: semanticLabel,
+      child: AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       width: 56,
@@ -64,7 +72,7 @@ class LetterTile extends StatelessWidget {
           child: _buildContent(),
         ),
       ),
-    );
+    ));
 
     if (isActive) {
       return AnimatedGlowBorder(
