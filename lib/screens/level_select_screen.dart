@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/app_theme.dart';
@@ -53,10 +54,15 @@ class LevelSelectScreen extends StatefulWidget {
   State<LevelSelectScreen> createState() => _LevelSelectScreenState();
 }
 
-class _LevelSelectScreenState extends State<LevelSelectScreen> {
+class _LevelSelectScreenState extends State<LevelSelectScreen>
+    with TickerProviderStateMixin {
   // Track which zones are expanded. Default: expand the zone containing the
   // highest unlocked level, collapse others.
   late final Map<int, bool> _expanded;
+
+  /// Tracks which locked zone is currently shaking (gentle "not yet!" hint).
+  int? _shakingZoneIndex;
+  AnimationController? _lockedShakeController;
 
   /// Zone index for the animated background (based on highest unlocked level).
   late final int _activeZoneIndex;
@@ -81,6 +87,27 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     if (!_expanded.values.any((v) => v)) {
       _expanded[0] = true;
     }
+
+    _lockedShakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _lockedShakeController?.reset();
+          if (mounted) setState(() => _shakingZoneIndex = null);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _lockedShakeController?.dispose();
+    super.dispose();
+  }
+
+  void _shakeLockedZone(int zoneIndex) {
+    setState(() => _shakingZoneIndex = zoneIndex);
+    _lockedShakeController?.forward(from: 0);
   }
 
   @override
@@ -198,14 +225,30 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
       padding: EdgeInsets.only(bottom: 6 * sf),
       child: Column(
         children: [
-          // Zone header (tappable to expand/collapse)
+          // Zone header (tappable to expand/collapse, shake if locked)
           GestureDetector(
             onTap: zoneUnlocked
                 ? () => setState(() {
                       _expanded[zoneIndex] = !isExpanded;
                     })
-                : null,
-            child: AnimatedOpacity(
+                : () {
+                    // Gentle shake to indicate "not yet!"
+                    _shakeLockedZone(zoneIndex);
+                  },
+            child: AnimatedBuilder(
+              animation: _lockedShakeController!,
+              builder: (context, child) {
+                double offsetX = 0;
+                if (_shakingZoneIndex == zoneIndex && !zoneUnlocked) {
+                  final t = _lockedShakeController!.value;
+                  offsetX = sin(t * pi * 4) * 8 * (1.0 - t);
+                }
+                return Transform.translate(
+                  offset: Offset(offsetX, 0),
+                  child: child,
+                );
+              },
+              child: AnimatedOpacity(
               opacity: zoneUnlocked ? 1.0 : 0.55,
               duration: const Duration(milliseconds: 250),
               child: Container(
@@ -345,6 +388,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                 ),
               ),
             ),
+            ),
           )
               .animate()
               .fadeIn(
@@ -352,16 +396,15 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                 duration: 400.ms,
               ),
 
-          // Level cards (collapsible) — only show for unlocked zones
+          // Level cards (collapsible) — smooth spring expand/collapse
           if (zoneUnlocked)
-            AnimatedCrossFade(
-              firstChild: const SizedBox(width: double.infinity, height: 0),
-              secondChild: _buildLevelCards(zone, zoneIndex),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 300),
-              sizeCurve: Curves.easeInOut,
+            AnimatedSize(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: isExpanded
+                  ? _buildLevelCards(zone, zoneIndex)
+                  : const SizedBox(width: double.infinity, height: 0),
             ),
         ],
       ),
