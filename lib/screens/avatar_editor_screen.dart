@@ -1062,10 +1062,10 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
       child: GestureDetector(
         onTap: _save,
         child: Container(
-          width: 56,
-          height: 56,
+          width: 140,
+          height: 48,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(24),
             color: AppColors.success,
             boxShadow: [
               BoxShadow(
@@ -1075,10 +1075,20 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               ),
             ],
           ),
-          child: const Icon(
-            Icons.check_rounded,
-            color: Colors.white,
-            size: 32,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.check_rounded, color: Colors.white, size: 24),
+              const SizedBox(width: 6),
+              Text(
+                'Done',
+                style: AppFonts.fredoka(
+                  fontSize: 18,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
       ),
