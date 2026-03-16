@@ -102,10 +102,10 @@ class ChampionRetryOverlay extends StatelessWidget {
                     onTap: onSkip,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
+                          horizontal: 24, vertical: 14),
                       decoration: BoxDecoration(
                         color: AppColors.surface.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: AppColors.secondaryText.withValues(alpha: 0.3),
                         ),
@@ -115,7 +115,7 @@ class ChampionRetryOverlay extends StatelessWidget {
                         children: [
                           const Icon(
                             Icons.skip_next_rounded,
-                            size: 20,
+                            size: 26,
                             color: AppColors.secondaryText,
                           ),
                           const SizedBox(width: 6),
@@ -146,7 +146,7 @@ class ChampionRetryOverlay extends StatelessWidget {
                     onTap: onRetry,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
+                          horizontal: 28, vertical: 14),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -172,14 +172,14 @@ class ChampionRetryOverlay extends StatelessWidget {
                         children: [
                           const Icon(
                             Icons.refresh_rounded,
-                            size: 20,
+                            size: 26,
                             color: AppColors.electricBlue,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             'Try Again',
                             style: AppFonts.fredoka(
-                              fontSize: 16,
+                              fontSize: 18,
                               fontWeight: FontWeight.w600,
                               color: AppColors.electricBlue,
                             ),
