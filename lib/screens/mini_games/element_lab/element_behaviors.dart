@@ -1012,12 +1012,35 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   void simSnow(int x, int y, int idx) {
+    // Melt near heat sources
     if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
       if (!isNight || rng.nextBool()) {
         grid[idx] = El.water;
         life[idx] = 100;
         markProcessed(idx);
+        // Melting particle drip effect
+        queueReactionFlash(x, y, 150, 200, 255, 2);
         return;
+      }
+    }
+
+    // Gradual ambient melting during daytime (not night)
+    if (!isNight && rng.nextInt(200) == 0) {
+      // Check if near any warm element within 3 cells
+      for (int dy = -3; dy <= 3; dy++) {
+        for (int dx = -3; dx <= 3; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = x + dx;
+          final ny = y + dy;
+          if (!inBounds(nx, ny)) continue;
+          final n = grid[ny * gridW + nx];
+          if (n == El.fire || n == El.lava) {
+            grid[idx] = El.water;
+            life[idx] = 80;
+            markProcessed(idx);
+            return;
+          }
+        }
       }
     }
 
