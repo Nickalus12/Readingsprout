@@ -103,23 +103,43 @@ class GameHeader extends StatelessWidget {
                 .animate()
                 .fadeIn(delay: 200.ms, duration: 400.ms)
                 .scaleXY(begin: 0.8, end: 1.0, delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
-          // Word counter
+          // Word counter with visual progress ring
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: AppColors.surface.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: AppColors.border.withValues(alpha: 0.5),
               ),
             ),
-            child: Text(
-              '${currentWordIndex + 1}/$totalWords',
-              style: AppFonts.fredoka(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primaryText,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    value: totalWords > 0
+                        ? (currentWordIndex + 1) / totalWords
+                        : 0,
+                    strokeWidth: 2.5,
+                    backgroundColor: AppColors.border.withValues(alpha: 0.3),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      tierColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${currentWordIndex + 1}/$totalWords',
+                  style: AppFonts.fredoka(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryText,
+                  ),
+                ),
+              ],
             ),
           )
               .animate()
@@ -236,17 +256,19 @@ class GameStreakBadge extends StatelessWidget {
         return Transform.scale(scale: scale, child: child);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: flameColor.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
+          color: flameColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: flameColor.withValues(alpha: 0.3),
+            color: flameColor.withValues(alpha: 0.4),
+            width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: flameColor.withValues(alpha: 0.15),
-              blurRadius: 8,
+              color: flameColor.withValues(alpha: 0.25),
+              blurRadius: 14,
+              spreadRadius: 2,
             ),
           ],
         ),
@@ -255,15 +277,15 @@ class GameStreakBadge extends StatelessWidget {
           children: [
             Icon(
               Icons.local_fire_department_rounded,
-              size: 18,
+              size: 22,
               color: flameColor,
             ),
             const SizedBox(width: 4),
             Text(
               '$perfectStreak',
               style: AppFonts.fredoka(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
                 color: flameColor,
               ),
             ),
