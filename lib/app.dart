@@ -48,14 +48,19 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     super.initState();
     _lifecycleListener = AppLifecycleListener(
       onPause: () {
+        if (!_initialized) return;
         _adaptiveMusicService.pause();
         _progressService.flushSave();
       },
       onInactive: () {
+        if (!_initialized) return;
         _adaptiveMusicService.pause();
         _progressService.flushSave();
       },
-      onResume: () => _adaptiveMusicService.resume(),
+      onResume: () {
+        if (!_initialized) return;
+        _adaptiveMusicService.resume();
+      },
     );
     _init();
   }
