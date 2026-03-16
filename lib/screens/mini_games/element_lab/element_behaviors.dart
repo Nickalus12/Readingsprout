@@ -63,15 +63,17 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Water + Oil: oil floats
-    final uy2 = y - gravityDir;
-    if (inBounds(x, uy2) && grid[uy2 * gridW + x] == El.oil && !((flags[uy2 * gridW + x] & 0x80) == (simClock ? 0x80 : 0))) {
-      final ui2 = uy2 * gridW + x;
+    // Water + Oil: water sinks below oil (oil floats up)
+    // Check if there's oil BELOW — if so, water displaces it downward
+    if (inBounds(x, by) && grid[by * gridW + x] == El.oil && !((flags[by * gridW + x] & 0x80) == (simClock ? 0x80 : 0))) {
+      final bi = by * gridW + x;
+      final oilLife = life[bi];
+      grid[bi] = El.water;
+      life[bi] = mass;
       grid[idx] = El.oil;
-      grid[ui2] = El.water;
-      life[ui2] = mass;
+      life[idx] = oilLife;
       markProcessed(idx);
-      markProcessed(ui2);
+      markProcessed(bi);
       return;
     }
 
