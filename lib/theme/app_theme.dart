@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
   AppColors._();
@@ -107,12 +106,12 @@ class AppColors {
   ];
 }
 
-/// App-wide font helpers. Use these instead of GoogleFonts directly
-/// so the bundled pubspec fonts serve as automatic fallback when offline.
+/// App-wide font helpers using bundled fonts declared in pubspec.yaml.
+/// No network requests — works fully offline.
 class AppFonts {
   AppFonts._();
 
-  /// Fredoka text style with offline fallback to bundled font.
+  /// Fredoka text style from bundled font.
   static TextStyle fredoka({
     double? fontSize,
     FontWeight? fontWeight,
@@ -124,7 +123,8 @@ class AppFonts {
     TextDecoration? decoration,
     Color? decorationColor,
   }) {
-    return GoogleFonts.fredoka(
+    return TextStyle(
+      fontFamily: 'Fredoka',
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
@@ -134,10 +134,10 @@ class AppFonts {
       shadows: shadows,
       decoration: decoration,
       decorationColor: decorationColor,
-    ).copyWith(fontFamilyFallback: const ['Fredoka']);
+    );
   }
 
-  /// Nunito text style with offline fallback to bundled font.
+  /// Nunito text style from bundled font.
   static TextStyle nunito({
     double? fontSize,
     FontWeight? fontWeight,
@@ -149,7 +149,8 @@ class AppFonts {
     TextDecoration? decoration,
     Color? decorationColor,
   }) {
-    return GoogleFonts.nunito(
+    return TextStyle(
+      fontFamily: 'Nunito',
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
@@ -159,7 +160,7 @@ class AppFonts {
       shadows: shadows,
       decoration: decoration,
       decorationColor: decorationColor,
-    ).copyWith(fontFamilyFallback: const ['Nunito']);
+    );
   }
 }
 
@@ -225,7 +226,7 @@ class AppTheme {
         brightness: Brightness.dark,
         surface: AppColors.surface,
       ),
-      textTheme: GoogleFonts.fredokaTextTheme(ThemeData.dark().textTheme).copyWith(
+      textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Fredoka').copyWith(
         displayLarge: AppFonts.fredoka(
           fontSize: 48,
           fontWeight: FontWeight.w600,
