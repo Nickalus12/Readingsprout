@@ -1194,20 +1194,21 @@ class FacePainter extends CustomPainter {
     _drawEars(canvas, w, h);
 
     // ── Face with warm-to-cool 3D gradient ──
+    // Centered highlight for rounder child face (not asymmetric adult lighting)
     final faceRect = Rect.fromLTWH(0, 0, w, h);
-    // Warm highlight on forehead, cool shadow on jaw
-    final warmHighlight = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.15) ?? skinColor);
-    final coolShadow = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.12) ?? skinColor);
+    final warmHighlight = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.18) ?? skinColor);
+    final coolShadow = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.10) ?? skinColor);
     final gradient = RadialGradient(
-      center: const Alignment(-0.1, -0.35),
-      radius: 0.95,
+      // Centered slightly above middle for natural overhead lighting
+      center: const Alignment(0.0, -0.30),
+      radius: 0.90,
       colors: [
         warmHighlight,
         skinColor,
-        (Color.lerp(skinColor, coolShadow, 0.4) ?? skinColor),
+        (Color.lerp(skinColor, coolShadow, 0.35) ?? skinColor),
         coolShadow,
       ],
-      stops: const [0.0, 0.35, 0.7, 1.0],
+      stops: const [0.0, 0.32, 0.68, 1.0],
     );
     final gradientPaint = Paint()
       ..shader = gradient.createShader(faceRect);
@@ -1299,29 +1300,29 @@ class FacePainter extends CustomPainter {
     }
     canvas.restore(); // end SSS + temple clip
 
-    // ── Subtle rim light (warm edge highlight on the lit side) ──
+    // ── Top rim light (warm highlight at forehead for 3D roundness) ──
     final rimLight = Paint()
       ..shader = RadialGradient(
-        center: const Alignment(-0.6, -0.4),
-        radius: 1.1,
+        center: const Alignment(0.0, -0.55),
+        radius: 0.7,
         colors: [
-          const Color(0xFFFFF0D0).withValues(alpha: 0.08),
+          const Color(0xFFFFF0D0).withValues(alpha: 0.10),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.4],
+        stops: const [0.0, 0.5],
       ).createShader(faceRect);
     canvas.drawPath(facePath, rimLight);
 
-    // ── Cool edge shadow (right/bottom ambient occlusion) ──
+    // ── Bottom edge shadow (chin/jaw ambient occlusion) ──
     final edgeAO = Paint()
       ..shader = RadialGradient(
-        center: const Alignment(0.4, 0.5),
-        radius: 0.8,
+        center: const Alignment(0.0, 0.55),
+        radius: 0.7,
         colors: [
           Colors.transparent,
-          const Color(0xFF4A3A6E).withValues(alpha: 0.07),
+          const Color(0xFF4A3A6E).withValues(alpha: 0.08),
         ],
-        stops: const [0.5, 1.0],
+        stops: const [0.45, 1.0],
       ).createShader(faceRect);
     canvas.drawPath(facePath, edgeAO);
 
