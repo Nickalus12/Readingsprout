@@ -373,7 +373,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _onKeyPressed(String key) {
-    if (_showingCelebration || _levelComplete) return;
+    if (_showingCelebration || _levelComplete || _championRetryPrompt) return;
 
     final expectedLetter = _targetText[_currentLetterIndex];
 
@@ -717,6 +717,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _levelCompletePhrase =
             PhraseTemplates.randomZoneLevelComplete(_zoneKey, widget.playerName);
       });
+    } else if (_isChampion && _championWordFailed) {
+      // Champion word failed — show retry prompt instead of auto-advancing
+      setState(() {
+        _showingCelebration = false;
+        _championRetryPrompt = true;
+      });
     } else {
       // Next word
       setState(() {
@@ -727,6 +733,34 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
       Future.delayed(
           const Duration(milliseconds: 400), _announceCurrentWord);
+    }
+  }
+
+  /// Retry the current champion word (reset just this word's state).
+  void _retryChampionWord() {
+    setState(() {
+      _championRetryPrompt = false;
+      _initRevealedLetters();
+    });
+    Future.delayed(const Duration(milliseconds: 300), _announceCurrentWord);
+  }
+
+  /// Skip the failed champion word and move to the next one.
+  void _skipChampionWord() {
+    setState(() {
+      _championRetryPrompt = false;
+      if (_currentWordIndex < _words.length - 1) {
+        _currentWordIndex++;
+        _initRevealedLetters();
+      } else {
+        // Was last word — go to level complete
+        _levelComplete = true;
+        _levelCompletePhrase =
+            PhraseTemplates.randomZoneLevelComplete(_zoneKey, widget.playerName);
+      }
+    });
+    if (!_levelComplete && _currentWordIndex < _words.length) {
+      Future.delayed(const Duration(milliseconds: 300), _announceCurrentWord);
     }
   }
 
@@ -936,6 +970,64 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                     hintRevealing: _hintRevealing,
                                     shakeAnimation: _shakeAnimation,
                                   ),
+
+                                  // Buy Hint button (Adventurer/Champion only)
+                                  if (!_isExplorer &&
+                                      !_showingCelebration &&
+                                      !_levelComplete &&
+                                      _currentLetterIndex < _targetText.length)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4, bottom: 2),
+                                      child: GestureDetector(
+                                        onTap: _purchasedHintUsed ? null : _buyHint,
+                                        child: AnimatedOpacity(
+                                          opacity: _purchasedHintUsed ? 0.4 : 1.0,
+                                          duration: const Duration(milliseconds: 200),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: _purchasedHintUsed
+                                                  ? AppColors.surface.withValues(alpha: 0.4)
+                                                  : AppColors.starGold.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: _purchasedHintUsed
+                                                    ? AppColors.border.withValues(alpha: 0.3)
+                                                    : AppColors.starGold.withValues(alpha: 0.25),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  _purchasedHintUsed ? Icons.check_rounded : Icons.lightbulb_rounded,
+                                                  size: 14,
+                                                  color: _purchasedHintUsed ? AppColors.secondaryText : AppColors.starGold,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  _purchasedHintUsed ? 'Hint used' : 'Hint  $_hintCost',
+                                                  style: AppFonts.nunito(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: _purchasedHintUsed ? AppColors.secondaryText : AppColors.starGold,
+                                                  ),
+                                                ),
+                                                if (!_purchasedHintUsed) ...[
+                                                  const SizedBox(width: 2),
+                                                  Icon(
+                                                    Icons.monetization_on_rounded,
+                                                    size: 12,
+                                                    color: AppColors.starGold.withValues(alpha: 0.8),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
                                   SizedBox(height: gap2),
 
                                   // On-screen keyboard or letter tracing canvas
@@ -1003,6 +1095,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     zoneIndex: _zoneIndex,
                     inLevelStreak: _inLevelStreak,
                     zoneEncouragement: _zoneEncouragement,
+                    tier: widget.tier,
+                    mistakes: _mistakesThisWord,
+                    isPerfectChampionRun: _isChampion && _perfectStreak > 0 && _mistakesThisWord == 0,
+                  ),
+
+                // ── Champion retry prompt ───────────────────
+                if (_championRetryPrompt)
+                  _ChampionRetryOverlay(
+                    word: _currentWord.text,
+                    onRetry: _retryChampionWord,
+                    onSkip: _skipChampionWord,
                   ),
 
                 // ── Standard confetti ─────────────────────
