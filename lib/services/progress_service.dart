@@ -72,12 +72,17 @@ class ProgressService {
   void _loadProgress() {
     final raw = _prefs.getString(_key);
     if (raw != null) {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      _progress = decoded.map((key, value) => MapEntry(
-            int.parse(key),
-            LevelProgress.fromJson(value as Map<String, dynamic>),
-          ));
-      _migrateOldProgress();
+      try {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        _progress = decoded.map((key, value) => MapEntry(
+              int.parse(key),
+              LevelProgress.fromJson(value as Map<String, dynamic>),
+            ));
+        _migrateOldProgress();
+      } catch (e) {
+        debugPrint('ProgressService: failed to decode progress, resetting: $e');
+        _progress = {};
+      }
     } else {
       _progress = {};
     }
@@ -363,6 +368,13 @@ class ProgressService {
     }
     return count;
   }
+
+  void dispose() {
+    _saveTimer?.cancel();
+    if (_dirty) _flushSave();
+  }
+
+  void flushSave() => _flushSave();
 
   /// Reset all progress
   Future<void> resetAll() async {

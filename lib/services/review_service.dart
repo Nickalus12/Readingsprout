@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/review_data.dart';
 
@@ -36,11 +37,16 @@ class ReviewService {
   void _loadReviews() {
     final raw = _prefs.getString(_key);
     if (raw != null) {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      _reviews = decoded.map((key, value) => MapEntry(
-            key,
-            ReviewData.fromJson(value as Map<String, dynamic>),
-          ));
+      try {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        _reviews = decoded.map((key, value) => MapEntry(
+              key,
+              ReviewData.fromJson(value as Map<String, dynamic>),
+            ));
+      } catch (e) {
+        debugPrint('ReviewService: failed to decode reviews, resetting: $e');
+        _reviews = {};
+      }
     } else {
       _reviews = {};
     }

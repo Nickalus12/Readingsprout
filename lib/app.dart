@@ -126,6 +126,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     _reviewService.switchProfile(profileId);
     _statsService.switchProfile(profileId);
     _adaptiveDifficultyService.switchProfile(profileId);
+    _personalityService.switchProfile(profileId);
     _profileService.switchProfile(profileId);
     _audioService.setActiveProfile(profileId.isEmpty ? null : profileId);
   }
