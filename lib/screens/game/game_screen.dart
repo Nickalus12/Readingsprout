@@ -148,6 +148,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// Random instance for tracing probability.
   final Random _tracingRandom = Random();
 
+  // ── Inactivity detection (encouraging nudge after 5s idle) ───
+  Timer? _idleTimer;
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    if (_showingCelebration || _levelComplete || _championRetryPrompt) return;
+    _idleTimer = Timer(const Duration(seconds: 5), _onIdleTimeout);
+  }
+
+  void _onIdleTimeout() {
+    if (!mounted || _showingCelebration || _levelComplete) return;
+    // Gentle encouraging expression + think animation (head tilt)
+    _avatarController.setExpression(
+      AvatarExpression.happy,
+      duration: const Duration(seconds: 3),
+    );
+    _avatarController.playAnimation('think');
+    // Highlight the correct key as a gentle hint
+    if (_currentLetterIndex < _targetText.length) {
+      setState(() => _nudgeKey = _targetText[_currentLetterIndex].toUpperCase());
+      _nudgeController.forward(from: 0);
+    }
+  }
+
   // ── Zone info cache ────────────────────────────────────────────
   late final int _zoneIndex;
   late final String _zoneKey;
@@ -283,6 +307,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     // Announce the first word after a brief delay
     Future.delayed(const Duration(milliseconds: 600), _announceCurrentWord);
+
+    // Start idle detection
+    _resetIdleTimer();
   }
 
   void _initRevealedLetters() {
@@ -375,6 +402,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _onKeyPressed(String key) {
     if (_showingCelebration || _levelComplete || _championRetryPrompt) return;
+    _resetIdleTimer();
 
     final expectedLetter = _targetText[_currentLetterIndex];
 
@@ -657,6 +685,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       Future.delayed(const Duration(milliseconds: 1800), () {
         if (mounted) setState(() => _showStreakMessage = false);
       });
+      // Avatar escalating excitement on streak milestones
+      if (_inLevelStreak >= 7) {
+        _avatarController.playAnimation('celebrate');
+      } else if (_inLevelStreak >= 5) {
+        _avatarController.playAnimation('clap');
+      } else {
+        _avatarController.playAnimation('thumbsUp');
+      }
     }
 
     // Zone-themed encouragement text for celebration overlay
@@ -694,6 +730,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     Haptics.success();
 
+    _idleTimer?.cancel(); // Stop idle detection during celebration
     setState(() => _showingCelebration = true);
 
     // Celebrate — give the child plenty of time to enjoy it
@@ -706,6 +743,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _levelConfettiController.play();
       widget.audioService.playLevelCompleteEffect();
       _avatarController.setExpression(AvatarExpression.excited, duration: const Duration(seconds: 4));
+      _avatarController.playAnimation('celebrate');
       _playZoneLevelComplete();
 
       setState(() {
@@ -730,6 +768,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
       Future.delayed(
           const Duration(milliseconds: 400), _announceCurrentWord);
+      _resetIdleTimer();
     }
   }
 
@@ -780,6 +819,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _sessionTimer.elapsed,
       );
     }
+    _idleTimer?.cancel();
     _avatarController.dispose();
     _shakeController.removeStatusListener(_onShakeStatus);
     _shakeController.dispose();
