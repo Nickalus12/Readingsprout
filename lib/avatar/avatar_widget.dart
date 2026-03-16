@@ -1834,38 +1834,51 @@ class EyesPainter extends CustomPainter {
     );
   }
 
-  /// Dual specular highlights with slight blue tint (Pixar catch-lights).
+  /// Dual specular highlights — larger and brighter for Pixar-quality
+  /// catch-lights that make the eyes feel alive and sparkly.
   void _drawHighlights(Canvas canvas, Offset center, double r) {
-    // Primary: large soft oval at upper-left
-    final bigCenter = center.translate(r * 0.24, -r * 0.24);
+    // Primary: large bright oval at upper-left (main window reflection)
+    final bigCenter = center.translate(r * 0.26, -r * 0.26);
     final bigRect =
-        Rect.fromCenter(center: bigCenter, width: r * 0.48, height: r * 0.36);
+        Rect.fromCenter(center: bigCenter, width: r * 0.56, height: r * 0.42);
     canvas.drawOval(
       bigRect,
       Paint()
         ..shader = RadialGradient(
           colors: [
-            const Color(0xFFF0F4FF).withValues(alpha: 0.95),
-            const Color(0xFFE8EEFF).withValues(alpha: 0.40),
+            Colors.white.withValues(alpha: 0.98),
+            const Color(0xFFF0F4FF).withValues(alpha: 0.65),
+            const Color(0xFFE8EEFF).withValues(alpha: 0.20),
             Colors.transparent,
           ],
-          stops: const [0.0, 0.55, 1.0],
+          stops: const [0.0, 0.35, 0.65, 1.0],
         ).createShader(bigRect),
     );
 
-    // Secondary: smaller dimmer spot at lower-right
-    final smallCenter = center.translate(-r * 0.14, r * 0.20);
-    final smallRect = Rect.fromCircle(center: smallCenter, radius: r * 0.10);
+    // Secondary: crisp round spot at lower-right (fill light)
+    final smallCenter = center.translate(-r * 0.16, r * 0.22);
+    final smallR = r * 0.14;
+    final smallRect = Rect.fromCircle(center: smallCenter, radius: smallR);
     canvas.drawCircle(
       smallCenter,
-      r * 0.10,
+      smallR,
       Paint()
         ..shader = RadialGradient(
           colors: [
-            const Color(0xFFE8F0FF).withValues(alpha: 0.72),
+            Colors.white.withValues(alpha: 0.82),
+            const Color(0xFFE8F0FF).withValues(alpha: 0.30),
             Colors.transparent,
           ],
+          stops: const [0.0, 0.5, 1.0],
         ).createShader(smallRect),
+    );
+
+    // Tertiary: tiny sparkle dot for extra life (Pixar signature)
+    final sparkleCenter = center.translate(r * 0.12, -r * 0.38);
+    canvas.drawCircle(
+      sparkleCenter,
+      r * 0.05,
+      Paint()..color = Colors.white.withValues(alpha: 0.70),
     );
   }
 
@@ -3218,25 +3231,28 @@ class CheekPainter extends CustomPainter {
     final rightCheek = Offset(w * 0.82, h * 0.50);
 
     switch (style) {
-      case 1: // Rosy — gaussian-blurred blush with expression intensity
+      case 1: // Rosy — warm gaussian blush, more visible for kid appeal
         final rosyMul = switch (expression) {
-          AvatarExpression.excited => 1.35,
-          AvatarExpression.happy => 1.2,
-          AvatarExpression.surprised => 1.15,
+          AvatarExpression.excited => 1.45,
+          AvatarExpression.happy => 1.30,
+          AvatarExpression.surprised => 1.20,
           _ => 1.0,
         };
         for (final center in [leftCheek, rightCheek]) {
+          // Larger blush area for cute child look
           final rect = Rect.fromCenter(
-              center: center, width: w * 0.24, height: h * 0.60);
+              center: center, width: w * 0.28, height: h * 0.68);
+          // Warmer coral-pink tone instead of cool pink
+          const blushColor = Color(0xFFFF8090);
           final gradient = RadialGradient(
             colors: [
-              const Color(0xFFFF7090).withValues(alpha: (0.50 * rosyMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF7090).withValues(alpha: (0.30 * rosyMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF7090).withValues(alpha: (0.12 * rosyMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF7090).withValues(alpha: (0.03 * rosyMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.55 * rosyMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.35 * rosyMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.15 * rosyMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.04 * rosyMul).clamp(0.0, 1.0)),
               Colors.transparent,
             ],
-            stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+            stops: const [0.0, 0.22, 0.48, 0.72, 1.0],
           );
           canvas.drawOval(
             rect,
@@ -3274,24 +3290,27 @@ class CheekPainter extends CustomPainter {
           }
         }
 
-      case 3: // Blush — wide gaussian gradient with MaskFilter
+      case 3: // Blush — wide warm gradient with MaskFilter
         final blushMul = switch (expression) {
-          AvatarExpression.excited => 1.3,
-          AvatarExpression.happy => 1.15,
+          AvatarExpression.excited => 1.4,
+          AvatarExpression.happy => 1.25,
+          AvatarExpression.surprised => 1.15,
           _ => 1.0,
         };
         for (final center in [leftCheek, rightCheek]) {
           final rect = Rect.fromCenter(
-              center: center, width: w * 0.30, height: h * 0.75);
+              center: center, width: w * 0.32, height: h * 0.78);
+          // Warmer rose tone
+          const blushColor = Color(0xFFFF7090);
           final gradient = RadialGradient(
             colors: [
-              const Color(0xFFFF6090).withValues(alpha: (0.40 * blushMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF6090).withValues(alpha: (0.22 * blushMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF6090).withValues(alpha: (0.08 * blushMul).clamp(0.0, 1.0)),
-              const Color(0xFFFF6090).withValues(alpha: (0.02 * blushMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.48 * blushMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.28 * blushMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.10 * blushMul).clamp(0.0, 1.0)),
+              blushColor.withValues(alpha: (0.03 * blushMul).clamp(0.0, 1.0)),
               Colors.transparent,
             ],
-            stops: const [0.0, 0.3, 0.55, 0.8, 1.0],
+            stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
           );
           canvas.drawOval(
             rect,
