@@ -95,6 +95,10 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
   String _newAnimalBanner = '';
   double _newAnimalBannerTimer = 0;
 
+  // Idle hint — shows if no pop in a while
+  double _idleTimer = 0;
+  static const _idleThreshold = 4.0;
+
   // Animals available in current wave
   List<_AnimalData> _availableAnimals = [];
 
@@ -219,6 +223,9 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
       if (_newAnimalBannerTimer > 0) {
         _newAnimalBannerTimer -= dt;
       }
+
+      // Idle hint timer
+      _idleTimer += dt;
 
       // Update background
       _updateBackgroundBubbles(dt);
@@ -357,6 +364,9 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
 
     // Screen shake — subtle but satisfying
     _shakeTimer = 0.15;
+
+    // Reset idle hint
+    _idleTimer = 0;
 
     // Track discovered animals
     _discoveredAnimals.add(bubble.animal.word);
@@ -675,6 +685,42 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
                 ),
               ),
 
+          // Idle hint for young players
+          if (_idleTimer > _idleThreshold && _gameStarted && !_gameOver && _bubbles.isNotEmpty)
+            Positioned(
+              bottom: 40,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 500),
+                  builder: (context, value, child) => Opacity(
+                    opacity: value,
+                    child: child,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.electricBlue.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      'Tap the bubbles!',
+                      style: AppFonts.fredoka(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.electricBlue,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // Floating score popups
           for (final sp in _scorePopups)
             if (sp.age < 0.8)
@@ -823,6 +869,14 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
                         color: AppColors.starGold,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_discoveredAnimals.length} words learned!',
+                      style: AppFonts.fredoka(
+                        fontSize: 14,
+                        color: AppColors.emerald,
+                      ),
+                    ),
                     if (_bestCombo >= 3) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -968,6 +1022,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
       _shakeY = 0;
       _shakeTimer = 0;
       _discoveredAnimals.clear();
+      _idleTimer = 0;
     });
     _ticker.reset();
     _lastTime = 0;
