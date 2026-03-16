@@ -180,8 +180,10 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Splash
+    // Splash with visual particles
     if (velY[idx] >= 3 && inBounds(x, by) && grid[by * gridW + x] != El.empty) {
+      // Spawn splash droplet particles
+      queueReactionFlash(x, y, 100, 180, 255, (velY[idx] ~/ 2).clamp(2, 4));
       for (int i = 0; i < (velY[idx] ~/ 2).clamp(1, 3); i++) {
         final sx = x + (rng.nextBool() ? 1 : -1) * (1 + rng.nextInt(2));
         final sy = y - g * rng.nextInt(2);
