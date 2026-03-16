@@ -1215,8 +1215,15 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final uy = y - gravityDir;
+    // Wind-responsive drift: smoke drifts more in wind direction
+    int drift = rng.nextInt(3) - 1;
+    if (windForce != 0) {
+      // Smoke is very wind-responsive — bias drift toward wind
+      final windBias = windForce > 0 ? 1 : -1;
+      if (rng.nextInt(3) < 2) drift = windBias;
+    }
+
     if (inBounds(x, uy)) {
-      final drift = rng.nextInt(3) - 1;
       final nx = x + drift;
       if (inBounds(nx, uy) && grid[uy * gridW + nx] == El.empty) {
         swap(idx, uy * gridW + nx);
@@ -1227,7 +1234,10 @@ extension ElementBehaviors on SimulationEngine {
         return;
       }
     }
-    final side = rng.nextBool() ? x - 1 : x + 1;
+    // Lateral spread — more in wind direction
+    final side = windForce != 0
+        ? x + (windForce > 0 ? 1 : -1)
+        : (rng.nextBool() ? x - 1 : x + 1);
     if (inBounds(side, y) && grid[y * gridW + side] == El.empty) {
       swap(idx, y * gridW + side);
     }
