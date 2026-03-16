@@ -12,7 +12,6 @@ dependencies:
   flutter_soloud: ^3.5.0        # High-performance audio engine (SoLoud)
   shared_preferences: ^2.3.0    # Persist progress & settings locally
   confetti: ^0.8.0              # Celebration confetti animations
-  google_fonts: ^8.0.2          # Beautiful typography
   flutter_animate: ^4.5.0       # Smooth, declarative animations
   path_provider: ^2.1.0         # Find app directories for audio storage
   uuid: ^4.0.0                  # Unique IDs for custom words
