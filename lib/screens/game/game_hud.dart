@@ -17,6 +17,7 @@ class GameHeader extends StatelessWidget {
   final int totalWords;
   final ProfileService? profileService;
   final AvatarController avatarController;
+  final double energyLevel;
 
   const GameHeader({
     super.key,
@@ -27,6 +28,7 @@ class GameHeader extends StatelessWidget {
     required this.totalWords,
     this.profileService,
     required this.avatarController,
+    this.energyLevel = 0.5,
   });
 
   @override
@@ -109,6 +111,7 @@ class GameHeader extends StatelessWidget {
                   size: 42,
                   showBackground: false,
                   controller: avatarController,
+                  energyLevel: energyLevel,
                 ),
               ),
             )

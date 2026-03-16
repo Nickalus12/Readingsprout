@@ -176,6 +176,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   late final int _zoneIndex;
   late final String _zoneKey;
 
+  // ── Personality-driven energy level for avatar idle animation ──
+  double _avatarEnergy = 0.5;
+
   // ── Animation controllers ────────────────────────────────────────
 
   late AnimationController _shakeController;
@@ -300,9 +303,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Wire amplitude-based lip sync to avatar
     _avatarController.bindAmplitude(widget.audioService.mouthAmplitude);
 
-    // Notify personality service of session start
+    // Notify personality service of session start and get energy level
     if (widget.profileId.isNotEmpty) {
       widget.personalityService?.onSessionStart(widget.profileId);
+      final mood = widget.personalityService?.computeMood(widget.profileId);
+      if (mood != null) _avatarEnergy = mood.energyLevel;
     }
 
     // Announce the first word after a brief delay
@@ -890,6 +895,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         totalWords: _words.length,
                         profileService: widget.profileService,
                         avatarController: _avatarController,
+                        energyLevel: _avatarEnergy,
                       ),
                       if (_levelComplete)
                         Expanded(
