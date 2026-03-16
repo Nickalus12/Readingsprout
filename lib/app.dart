@@ -17,6 +17,7 @@ import 'services/adaptive_music_service.dart';
 import 'services/avatar_personality_service.dart';
 import 'services/stats_service.dart';
 import 'services/adaptive_difficulty_service.dart';
+import 'services/first_time_hints_service.dart';
 import 'avatar/shader_loader.dart';
 import 'widgets/floating_hearts_bg.dart';
 
@@ -42,6 +43,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
   late final AvatarPersonalityService _personalityService;
   late final AdaptiveDifficultyService _adaptiveDifficultyService;
   late final AdaptiveMusicService _adaptiveMusicService;
+  late final FirstTimeHintsService _hintsService;
   late SharedPreferences _prefs;
   bool _initialized = false;
   bool _showOnboarding = false;
@@ -83,6 +85,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     _personalityService = AvatarPersonalityService();
     _adaptiveDifficultyService = AdaptiveDifficultyService();
     _adaptiveMusicService = AdaptiveMusicService();
+    _hintsService = FirstTimeHintsService();
 
     // Get SharedPreferences once, share across all services
     final prefs = await SharedPreferences.getInstance();
@@ -129,6 +132,9 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
       }),
       ShaderLoader.init().catchError((e) {
         debugPrint('ShaderLoader init failed: $e');
+      }),
+      _hintsService.init(prefs).catchError((e) {
+        debugPrint('FirstTimeHintsService init failed: $e');
       }),
     ]);
     debugPrint('All services initialized in ${initSw.elapsedMilliseconds}ms');
@@ -310,6 +316,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
       reviewService: _reviewService,
       adaptiveDifficultyService: _adaptiveDifficultyService,
       musicService: _adaptiveMusicService,
+      hintsService: _hintsService,
       playerName: _settingsService.playerName,
       profileId: _settingsService.activeProfileId ?? '',
       onChangeName: _onChangeName,
