@@ -1811,7 +1811,8 @@ class _StarFieldPainter extends CustomPainter {
   final List<_Star> stars;
   final _ShootingStar? shootingStar;
 
-  _StarFieldPainter({required this.stars, this.shootingStar});
+  _StarFieldPainter({required this.stars, this.shootingStar, Listenable? repaintSignal})
+      : super(repaint: repaintSignal);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1889,5 +1890,5 @@ class _StarFieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _StarFieldPainter old) => true;
+  bool shouldRepaint(covariant _StarFieldPainter old) => false;
 }
