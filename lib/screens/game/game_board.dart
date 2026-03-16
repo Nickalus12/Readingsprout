@@ -78,7 +78,17 @@ class HearWordButton extends StatelessWidget {
           .animate(onPlay: (c) => c.repeat(reverse: true))
           .scaleXY(begin: 1.0, end: 1.04, duration: 600.ms, curve: Curves.easeInOut);
     }
-    return button;
+    // Gentle shimmer on idle to invite tapping
+    return button
+        .animate(
+          onPlay: (c) => c.repeat(),
+          delay: 2000.ms,
+        )
+        .shimmer(
+          duration: 1800.ms,
+          color: AppColors.electricBlue.withValues(alpha: 0.15),
+          delay: 3000.ms,
+        );
   }
 }
 
@@ -112,12 +122,17 @@ class GameLetterTiles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Detect if word is fully revealed (word complete — trigger wave)
+    final allRevealed = revealedLetters.every((r) => r);
+
     return AnimatedBuilder(
       animation: shakeAnimation,
       builder: (context, child) {
         double offsetX = 0;
         if (shaking) {
-          offsetX = sin(shakeAnimation.value * pi * 4) * 12;
+          // Gentle wobble: 2.5 oscillations, moderate amplitude, damped
+          final t = shakeAnimation.value;
+          offsetX = sin(t * pi * 2.5) * 8 * (1.0 - t * 0.5);
         }
         return Transform.translate(
           offset: Offset(offsetX, 0),
@@ -134,6 +149,11 @@ class GameLetterTiles extends StatelessWidget {
           final isPreRevealed = (isExplorer || isAdventurer) && i == 0;
           // During hint reveal (3rd wrong tap), briefly show the correct letter
           final hintReveal = hintRevealing && i == currentLetterIndex;
+          // Just revealed = this tile's index matches the letter just typed
+          final justRevealed = revealedLetters[i] &&
+              i == currentLetterIndex - 1 &&
+              !showingCelebration &&
+              !isPreRevealed;
           Widget tile = LetterTile(
             letter: targetText[i],
             isRevealed: revealedLetters[i] || hintReveal,
@@ -150,6 +170,31 @@ class GameLetterTiles extends StatelessWidget {
             tile = tile
                 .animate(key: const ValueKey('hint_bounce'))
                 .scaleXY(begin: 1.3, end: 1.0, duration: 400.ms, curve: Curves.elasticOut);
+          }
+          // Pop animation for a just-typed correct letter
+          if (justRevealed) {
+            tile = tile
+                .animate(key: ValueKey('pop_${currentWordIndex}_$i'))
+                .scaleXY(begin: 1.2, end: 1.0, duration: 300.ms, curve: Curves.elasticOut);
+          }
+          // Wave animation when word is complete (stagger each tile)
+          if (allRevealed && showingCelebration) {
+            tile = tile
+                .animate(key: ValueKey('wave_${currentWordIndex}_$i'))
+                .slideY(
+                  begin: 0,
+                  end: -0.15,
+                  delay: Duration(milliseconds: i * 60),
+                  duration: 200.ms,
+                  curve: Curves.easeOut,
+                )
+                .then()
+                .slideY(
+                  begin: -0.15,
+                  end: 0,
+                  duration: 200.ms,
+                  curve: Curves.bounceOut,
+                );
           }
           return tile;
         }),

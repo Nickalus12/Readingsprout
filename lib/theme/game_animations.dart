@@ -153,4 +153,66 @@ class GameAnimations {
       duration: 300.ms,
     ),
   ];
+
+  /// Gentle wobble for "not yet!" feedback on locked items (softer than errorShake)
+  static final List<Effect> lockedWobble = [
+    ShakeEffect(
+      duration: 400.ms,
+      hz: 2.5,
+      offset: const Offset(8, 0),
+      rotation: 0,
+      curve: Curves.easeOut,
+    ),
+  ];
+
+  /// Correct letter pop: elastic scale-down with brief green tint
+  static final List<Effect> letterPop = [
+    ScaleEffect(
+      begin: const Offset(1.2, 1.2),
+      end: const Offset(1, 1),
+      duration: 300.ms,
+      curve: Curves.elasticOut,
+    ),
+    TintEffect(
+      color: AppColors.success,
+      end: 0.2,
+      duration: 200.ms,
+    ),
+  ];
+
+  /// Staggered slide-in from left (for stat badges, list items)
+  static List<Effect> slideInLeft({
+    int index = 0,
+    Duration interval = const Duration(milliseconds: 120),
+  }) =>
+      [
+        FadeEffect(
+          delay: interval * index,
+          duration: 400.ms,
+          curve: Curves.easeOut,
+        ),
+        SlideEffect(
+          begin: const Offset(-0.15, 0),
+          end: Offset.zero,
+          delay: interval * index,
+          duration: 400.ms,
+          curve: Curves.easeOutCubic,
+        ),
+      ];
+
+  /// Idle float — gentle up/down bobbing for idle elements
+  static List<Effect> idleFloat({
+    int index = 0,
+    double amount = 0.06,
+    Duration duration = const Duration(milliseconds: 1800),
+  }) =>
+      [
+        SlideEffect(
+          begin: Offset.zero,
+          end: Offset(0, -amount),
+          delay: Duration(milliseconds: index * 200),
+          duration: duration,
+          curve: Curves.easeInOut,
+        ),
+      ];
 }

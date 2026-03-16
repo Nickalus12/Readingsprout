@@ -356,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     const SizedBox(height: 12),
 
-                    // ── Hero: Player name (tappable letters) ──
+                    // ── Hero: Player name (letter-by-letter entrance) ──
                     if (hasName)
                       Semantics(
                         label: 'Player name: ${widget.playerName}',
@@ -369,18 +369,22 @@ class _HomeScreenState extends State<HomeScreen>
                                 letter: widget.playerName[i],
                                 index: i,
                                 audioService: widget.audioService,
-                              ),
+                              )
+                                  .animate()
+                                  .fadeIn(
+                                    delay: Duration(milliseconds: 300 + i * 60),
+                                    duration: 400.ms,
+                                  )
+                                  .slideY(
+                                    begin: 0.4,
+                                    end: 0,
+                                    delay: Duration(milliseconds: 300 + i * 60),
+                                    duration: 400.ms,
+                                    curve: Curves.easeOutBack,
+                                  ),
                           ],
                         ),
-                      )
-                          .animate()
-                          .fadeIn(duration: 800.ms)
-                          .slideY(
-                            begin: 0.2,
-                            end: 0,
-                            curve: Curves.easeOutCubic,
-                            duration: 800.ms,
-                          ),
+                      ),
 
                     const SizedBox(height: 6),
 
@@ -416,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     const SizedBox(height: 20),
 
-                    // ── Stat badges ───────────────────────────
+                    // ── Stat badges (staggered entrance) ───────────────────────────
                     if (totalWords > 0 || widget.streakService.hasStreak)
                       Wrap(
                         alignment: WrapAlignment.center,
@@ -431,7 +435,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: '/ ${DolchWords.totalLevels * 3} Stars',
                               audioService: widget.audioService,
                               audioWord: 'stars',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 700.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 700.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                             _StatBadge(
                               icon: Icons.check_circle_rounded,
                               iconColor: AppColors.success,
@@ -439,7 +446,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: 'Words',
                               audioService: widget.audioService,
                               audioWord: 'words',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 820.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 820.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                             _StatBadge(
                               icon: Icons.monetization_on_rounded,
                               iconColor: AppColors.starGold,
@@ -447,7 +457,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: 'Coins',
                               audioService: widget.audioService,
                               audioWord: 'coins',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 940.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 940.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                           ],
                           if (widget.streakService.hasStreak)
                             StreakBadge(
@@ -457,11 +470,12 @@ class _HomeScreenState extends State<HomeScreen>
                                   widget.streakService.longestStreak,
                               showStreakFreezeInfo:
                                   widget.streakService.streakFreezeAvailable,
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 1060.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 1060.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                         ],
-                      )
-                          .animate()
-                          .fadeIn(delay: 700.ms, duration: 600.ms),
+                      ),
 
                     const SizedBox(height: 24),
 
@@ -941,10 +955,19 @@ class _HomeScreenState extends State<HomeScreen>
     return PageRouteBuilder(
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
-          opacity:
-              CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-          child: child,
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
         );
       },
       transitionDuration: const Duration(milliseconds: 350),
@@ -1244,21 +1267,35 @@ class _MenuIconButton extends StatefulWidget {
 
 class _MenuIconButtonState extends State<_MenuIconButton>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pressController;
+  late AnimationController _tapController;
+  double _scale = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _pressController = AnimationController(
+    _tapController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 120),
+      duration: const Duration(milliseconds: 300),
     );
   }
 
   @override
   void dispose() {
-    _pressController.dispose();
+    _tapController.dispose();
     super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) {
+    setState(() => _scale = 0.88);
+  }
+
+  void _onTapUp(TapUpDetails _) {
+    setState(() => _scale = 1.0);
+    widget.onTap();
+  }
+
+  void _onTapCancel() {
+    setState(() => _scale = 1.0);
   }
 
   @override
@@ -1267,36 +1304,26 @@ class _MenuIconButtonState extends State<_MenuIconButton>
       label: widget.semanticLabel,
       button: true,
       child: GestureDetector(
-        onTap: widget.onTap,
-        onTapDown: (_) => _pressController.forward(),
-        onTapUp: (_) => _pressController.reverse(),
-        onTapCancel: () => _pressController.reverse(),
-        child: AnimatedBuilder(
-          animation: _pressController,
-          builder: (context, child) {
-            final scale = 1.0 - _pressController.value * 0.08;
-            return Transform.scale(scale: scale, child: child);
-          },
+        onTapDown: _onTapDown,
+        onTapUp: _onTapUp,
+        onTapCancel: _onTapCancel,
+        child: AnimatedScale(
+          scale: _scale,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
           child: Container(
-            width: 56,
-            height: 56,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: AppColors.surface.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(18),
+              color: AppColors.surface.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: AppColors.border.withValues(alpha: 0.45),
+                color: AppColors.border.withValues(alpha: 0.4),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.violet.withValues(alpha: 0.06),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
-              ],
             ),
             child: Icon(
               widget.icon,
-              size: 26,
+              size: 24,
               color: AppColors.secondaryText,
             ),
           ),
