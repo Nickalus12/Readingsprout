@@ -260,9 +260,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             floating: false,
             pinned: true,
             backgroundColor: AppColors.background,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryText),
-              onPressed: () => Navigator.pop(context),
+            leading: Semantics(
+              label: 'Go back',
+              hint: 'Return to home screen',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryText),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 56, bottom: 14),
@@ -1053,6 +1058,66 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             ),
           ),
           TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _confirmResetFinal(context);
+            },
+            child: Text(
+              'Reset',
+              style: AppFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Second confirmation dialog — requires explicit "Yes, reset everything" tap.
+  void _confirmResetFinal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: AppColors.error, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Are you sure?',
+              style: AppFonts.fredoka(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppColors.error,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'All stars, words learned, streaks, and high scores will be permanently deleted. This action cannot be undone.',
+          style: AppFonts.nunito(
+            fontSize: 14,
+            color: AppColors.secondaryText,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Keep Progress',
+              style: AppFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.emerald,
+              ),
+            ),
+          ),
+          TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await widget.progressService.resetAll();
@@ -1074,7 +1139,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               );
             },
             child: Text(
-              'Reset',
+              'Yes, reset everything',
               style: AppFonts.nunito(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
