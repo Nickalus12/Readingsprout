@@ -28,6 +28,7 @@ class ReadingSproutApp extends StatefulWidget {
 
 class _ReadingSproutAppState extends State<ReadingSproutApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  late final AppLifecycleListener _lifecycleListener;
   late final ProgressService _progressService;
   late final AudioService _audioService;
   late final PlayerSettingsService _settingsService;
@@ -45,6 +46,22 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
   @override
   void initState() {
     super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onPause: () {
+        if (!_initialized) return;
+        _adaptiveMusicService.pause();
+        _progressService.flushSave();
+      },
+      onInactive: () {
+        if (!_initialized) return;
+        _adaptiveMusicService.pause();
+        _progressService.flushSave();
+      },
+      onResume: () {
+        if (!_initialized) return;
+        _adaptiveMusicService.resume();
+      },
+    );
     _init();
   }
 
@@ -66,6 +83,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     final prefs = await SharedPreferences.getInstance();
 
     // Initialize all services in parallel for faster startup
+    final initSw = Stopwatch()..start();
     await Future.wait([
       _progressService.init(prefs).catchError((e) {
         debugPrint('ProgressService init failed: $e');
@@ -107,6 +125,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
         debugPrint('ShaderLoader init failed: $e');
       }),
     ]);
+    debugPrint('All services initialized in ${initSw.elapsedMilliseconds}ms');
 
     // Connect Deepgram TTS to AudioService for runtime phrase playback
     _audioService.setDeepgramTts(_deepgramTtsService);
@@ -126,6 +145,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     _reviewService.switchProfile(profileId);
     _statsService.switchProfile(profileId);
     _adaptiveDifficultyService.switchProfile(profileId);
+    _personalityService.switchProfile(profileId);
     _profileService.switchProfile(profileId);
     _audioService.setActiveProfile(profileId.isEmpty ? null : profileId);
   }
@@ -193,6 +213,8 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
+    _progressService.dispose();
     _audioService.dispose();
     _adaptiveMusicService.dispose();
     super.dispose();
@@ -298,6 +320,8 @@ class _SplashScreen extends StatelessWidget {
                   'assets/images/logo.png',
                   width: 140,
                   height: 140,
+                  cacheWidth: 280,
+                  cacheHeight: 280,
                 ),
                 const SizedBox(height: 24),
                 Text(

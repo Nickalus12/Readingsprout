@@ -81,6 +81,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   // Rain particles
   late AnimationController _rainController;
   final List<_RainDrop> _rainDrops = [];
+  final _RainNotifier _rainNotifier = _RainNotifier();
 
   // Chain lightning (word complete)
   bool _chainActive = false;
@@ -126,6 +127,27 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
     });
   }
 
+  void _onBoltStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) {
+      setState(() => _activeBoltTileIndex = null);
+    }
+  }
+
+  void _onErrorStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) {
+      setState(() => _errorTileIndex = null);
+    }
+  }
+
+  void _onChainStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) {
+      setState(() => _chainActive = false);
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) _nextWord();
+      });
+    }
+  }
+
   void _initControllers() {
     _boltController = AnimationController(
       vsync: this,
@@ -134,21 +156,13 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
     _boltOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _boltController, curve: Curves.easeOut),
     );
-    _boltController.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _activeBoltTileIndex = null);
-      }
-    });
+    _boltController.addStatusListener(_onBoltStatus);
 
     _errorController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _errorController.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _errorTileIndex = null);
-      }
-    });
+    _errorController.addStatusListener(_onErrorStatus);
 
     _cloudBreathController = AnimationController(
       vsync: this,
@@ -169,28 +183,24 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
-    _rainController.addListener(() {
-      if (mounted) setState(() => _updateRain());
-    });
+    _rainController.addListener(_tickRain);
 
     _chainController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _chainController.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _chainActive = false);
-        // Move to next word after chain
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted) _nextWord();
-        });
-      }
-    });
+    _chainController.addStatusListener(_onChainStatus);
 
     _errorFlashController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
+  }
+
+  void _tickRain() {
+    if (!mounted) return;
+    _updateRain();
+    _rainNotifier.notify();
   }
 
   void _initRain() {
@@ -459,13 +469,18 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   @override
   void dispose() {
     _revealTimer?.cancel();
+    _boltController.removeStatusListener(_onBoltStatus);
     _boltController.dispose();
+    _errorController.removeStatusListener(_onErrorStatus);
     _errorController.dispose();
     _cloudBreathController.dispose();
     _cloudFlashController.dispose();
     _errorFlashController.dispose();
     _bgLightningController.dispose();
+    _rainController.removeListener(_tickRain);
     _rainController.dispose();
+    _rainNotifier.dispose();
+    _chainController.removeStatusListener(_onChainStatus);
     _chainController.dispose();
     _sessionTimer.stop();
     super.dispose();
@@ -800,14 +815,11 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   }
 
   Widget _buildRain() {
-    return AnimatedBuilder(
-      animation: _rainController,
-      builder: (context, _) {
-        return CustomPaint(
-          size: MediaQuery.of(context).size,
-          painter: _RainPainter(drops: _rainDrops),
-        );
-      },
+    return RepaintBoundary(
+      child: CustomPaint(
+        size: MediaQuery.of(context).size,
+        painter: _RainPainter(drops: _rainDrops, repaintNotifier: _rainNotifier),
+      ),
     );
   }
 
@@ -1428,10 +1440,15 @@ class _ChainLightningPainter extends CustomPainter {
 // Rain Painter
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _RainNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
 class _RainPainter extends CustomPainter {
   final List<_RainDrop> drops;
 
-  _RainPainter({required this.drops});
+  _RainPainter({required this.drops, required _RainNotifier repaintNotifier})
+      : super(repaint: repaintNotifier);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1452,7 +1469,7 @@ class _RainPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RainPainter old) => true;
+  bool shouldRepaint(covariant _RainPainter old) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -13,6 +13,50 @@ import '../../utils/haptics.dart';
 // Train starts on the RIGHT and chugs LEFT as words fuel it forward.
 // ---------------------------------------------------------------------------
 
+class _TrainSim extends ChangeNotifier {
+  final List<_SmokeParticle> smokeParticles = [];
+  double trainX = 0.95;
+  bool chugBurst = false;
+
+  final _rng = Random();
+
+  double _trainWidthFraction = 0.05;
+
+  void updateTrainWidth(int carCount) {
+    _trainWidthFraction = 0.05 + carCount * 0.04;
+  }
+
+  void tick() {
+    final maxParticles = chugBurst ? 16 : 8;
+    if (smokeParticles.length < maxParticles) {
+      smokeParticles.add(_SmokeParticle(
+        x: trainX - _trainWidthFraction + 0.02,
+        y: 0.30,
+        vx: 0.0005 + _rng.nextDouble() * 0.002,
+        vy: -(0.001 + _rng.nextDouble() * 0.003),
+        life: 1.0,
+        size: (chugBurst ? 6 : 4) + _rng.nextDouble() * 6,
+      ));
+    }
+
+    for (final p in smokeParticles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.015;
+      p.size += 0.3;
+    }
+    smokeParticles.removeWhere((p) => p.life <= 0);
+
+    notifyListeners();
+  }
+
+  void reset() {
+    smokeParticles.clear();
+    trainX = 0.95;
+    chugBurst = false;
+  }
+}
+
 class WordTrainGame extends StatefulWidget {
   final ProgressService progressService;
   final AudioService audioService;
@@ -37,21 +81,20 @@ class _WordTrainGameState extends State<WordTrainGame>
   static const _totalWords = 8;
 
   final _rng = Random();
+  final _sim = _TrainSim();
 
   // Words
   List<String> _wordPool = [];
   String _currentWord = '';
   int _wordsCompleted = 0;
 
-  // Train state — trainX is the RIGHT edge position as fraction of screen width.
-  // Starts near right edge (~0.95) and moves left toward the station (~0.10).
-  double _trainX = 0.95;
+  // Train state
   double _trainXTarget = 0.95;
-  List<String?> _trainCars = []; // filled letters in each car
+  List<String?> _trainCars = [];
   int _nextCarIndex = 0;
 
-  // Fuel gauge: fills as letters are placed, resets each word
-  double _fuelLevel = 0.0; // 0..1
+  // Fuel gauge
+  double _fuelLevel = 0.0;
 
   // Station letters
   List<_StationLetter> _stationLetters = [];
@@ -75,12 +118,6 @@ class _WordTrainGameState extends State<WordTrainGame>
   late AnimationController _smokeController;
   late AnimationController _fuelFlashController;
 
-  // Smoke particles
-  final List<_SmokeParticle> _smokeParticles = [];
-
-  // Chug burst state — extra smoke on word complete
-  bool _chugBurst = false;
-
   @override
   void initState() {
     super.initState();
@@ -95,9 +132,8 @@ class _WordTrainGameState extends State<WordTrainGame>
     );
     _trainMoveController.addListener(() {
       if (mounted) {
-        setState(() {
-          _trainX = _trainMoveAnim.value;
-        });
+        _sim.trainX = _trainMoveAnim.value;
+        _sim.notifyListeners();
       }
     });
 
@@ -148,7 +184,7 @@ class _WordTrainGameState extends State<WordTrainGame>
     _streak = 0;
     _gameOver = false;
     _isNewBest = false;
-    _trainX = 0.95;
+    _sim.trainX = 0.95;
     _trainXTarget = 0.95;
     _fuelLevel = 0.0;
 
@@ -167,8 +203,8 @@ class _WordTrainGameState extends State<WordTrainGame>
     _fuelLevel = 0.0;
     _wordTimer.reset();
     _wordTimer.start();
+    _sim.updateTrainWidth(_trainCars.length);
 
-    // Create station letters
     final needed = _currentWord.split('');
     final distractors = <String>[];
     const alphabet = 'abcdefghijklmnopqrstuvwxyz';
@@ -195,39 +231,7 @@ class _WordTrainGameState extends State<WordTrainGame>
 
   void _updateSmoke() {
     if (!mounted || _gameOver) return;
-
-    setState(() {
-      // Smoke comes from the chimney. The chimney is on the LEFT side of the
-      // engine (the front, since the train faces left). Smoke drifts to the
-      // RIGHT (positive x) and upward (negative y), trailing behind.
-      final maxParticles = _chugBurst ? 16 : 8;
-      if (_smokeParticles.length < maxParticles) {
-        _smokeParticles.add(_SmokeParticle(
-          x: _trainX - _trainWidthFraction + 0.02,
-          y: 0.30,
-          // Drift RIGHT (positive vx) to trail behind a left-moving train
-          vx: 0.0005 + _rng.nextDouble() * 0.002,
-          vy: -(0.001 + _rng.nextDouble() * 0.003),
-          life: 1.0,
-          size: (_chugBurst ? 6 : 4) + _rng.nextDouble() * 6,
-        ));
-      }
-
-      for (final p in _smokeParticles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.015;
-        p.size += 0.3;
-      }
-      _smokeParticles.removeWhere((p) => p.life <= 0);
-    });
-  }
-
-  /// Approximate width of engine+cars as screen fraction.
-  double get _trainWidthFraction {
-    // Engine ~50px, each car ~52px, at a ~400px-wide screen that's ~0.125 per car
-    // We just use a rough estimate for smoke positioning.
-    return 0.05 + _trainCars.length * 0.04;
+    _sim.tick();
   }
 
   void _onLetterDragStart(int index) {
@@ -254,7 +258,6 @@ class _WordTrainGameState extends State<WordTrainGame>
         _nextCarIndex < _currentWord.length ? _currentWord[_nextCarIndex] : '';
 
     if (_dragOffset.dy < -40 && letter.letter == expected) {
-      // Correct drop!
       Haptics.correct();
       widget.audioService.playLetter(letter.letter);
       _chugController.forward(from: 0.0);
@@ -263,18 +266,15 @@ class _WordTrainGameState extends State<WordTrainGame>
         _trainCars[_nextCarIndex] = letter.letter;
         letter.used = true;
         _nextCarIndex++;
-        // Fill fuel gauge proportionally
         _fuelLevel = _nextCarIndex / _currentWord.length;
       });
 
-      // Flash the fuel gauge
       _fuelFlashController.forward(from: 0.0);
 
       if (_nextCarIndex >= _currentWord.length) {
         _onWordComplete();
       }
     } else if (_dragOffset.dy < -40) {
-      // Wrong letter dropped
       Haptics.wrong();
       widget.audioService.playError();
       setState(() => _streak = 0);
@@ -299,23 +299,21 @@ class _WordTrainGameState extends State<WordTrainGame>
     setState(() {
       _score += wordScore;
       _wordsCompleted++;
-      _chugBurst = true;
     });
+    _sim.chugBurst = true;
 
-    // Chug the train forward (left) — each word moves it ~10.6% of the screen
-    // toward the destination at ~0.05.
     const chugDistance = (0.95 - 0.10) / _totalWords;
     final oldTarget = _trainXTarget;
     _trainXTarget = (oldTarget - chugDistance).clamp(0.05, 0.95);
 
-    _trainMoveAnim = Tween<double>(begin: _trainX, end: _trainXTarget).animate(
+    _trainMoveAnim = Tween<double>(begin: _sim.trainX, end: _trainXTarget).animate(
       CurvedAnimation(parent: _trainMoveController, curve: Curves.easeInOut),
     );
     _trainMoveController.forward(from: 0.0);
 
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted) {
-        setState(() => _chugBurst = false);
+        _sim.chugBurst = false;
       }
       if (mounted && !_gameOver) _nextWord();
     });
@@ -341,7 +339,7 @@ class _WordTrainGameState extends State<WordTrainGame>
   void _restart() {
     _completionController.reset();
     _trainMoveController.reset();
-    _smokeParticles.clear();
+    _sim.reset();
     _smokeController.repeat();
     _initGame();
     if (mounted) setState(() {});
@@ -355,6 +353,7 @@ class _WordTrainGameState extends State<WordTrainGame>
     _fuelFlashController.dispose();
     _smokeController.removeListener(_updateSmoke);
     _smokeController.dispose();
+    _sim.dispose();
     super.dispose();
   }
 
@@ -563,25 +562,19 @@ class _WordTrainGameState extends State<WordTrainGame>
   Widget _buildTrainArea() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return AnimatedBuilder(
-          animation: _smokeController,
-          builder: (context, _) {
-            return CustomPaint(
-              painter: _TrainPainter(
-                trainX: _trainX,
-                cars: _trainCars,
-                currentWord: _currentWord,
-                nextCarIndex: _nextCarIndex,
-                smokeParticles: _smokeParticles,
-                wordsCompleted: _wordsCompleted,
-                totalWords: _totalWords,
-                chugBounce: _chugController.isAnimating
-                    ? sin(_chugController.value * pi * 4) * 2
-                    : 0.0,
-              ),
-              size: Size(constraints.maxWidth, constraints.maxHeight),
-            );
-          },
+        return RepaintBoundary(
+          child: CustomPaint(
+            painter: _TrainPainter(
+              sim: _sim,
+              cars: _trainCars,
+              currentWord: _currentWord,
+              nextCarIndex: _nextCarIndex,
+              wordsCompleted: _wordsCompleted,
+              totalWords: _totalWords,
+              chugController: _chugController,
+            ),
+            size: Size(constraints.maxWidth, constraints.maxHeight),
+          ),
         );
       },
     );
@@ -837,31 +830,32 @@ class _SmokeParticle {
 // ---- Painters ----
 
 class _TrainPainter extends CustomPainter {
-  final double trainX;
+  final _TrainSim sim;
   final List<String?> cars;
   final String currentWord;
   final int nextCarIndex;
-  final List<_SmokeParticle> smokeParticles;
   final int wordsCompleted;
   final int totalWords;
-  final double chugBounce;
+  final AnimationController chugController;
 
   _TrainPainter({
-    required this.trainX,
+    required this.sim,
     required this.cars,
     required this.currentWord,
     required this.nextCarIndex,
-    required this.smokeParticles,
     required this.wordsCompleted,
     required this.totalWords,
-    required this.chugBounce,
-  });
+    required this.chugController,
+  }) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final trainX = sim.trainX;
+    final chugBounce = chugController.isAnimating
+        ? sin(chugController.value * pi * 4) * 2
+        : 0.0;
     final trackY = size.height * 0.75;
 
-    // Draw tracks
     final trackPaint = Paint()
       ..color = const Color(0xFF4A3520).withValues(alpha: 0.6)
       ..strokeWidth = 3
@@ -871,7 +865,6 @@ class _TrainPainter extends CustomPainter {
       Offset(size.width, trackY),
       trackPaint,
     );
-    // Rail ties
     final tiePaint = Paint()
       ..color = const Color(0xFF4A3520).withValues(alpha: 0.3)
       ..strokeWidth = 2;
@@ -884,11 +877,9 @@ class _TrainPainter extends CustomPainter {
       );
     }
 
-    // Draw destination station on the LEFT
     _drawStation(canvas, size, trackY);
 
-    // Draw smoke (trails to the right behind the train)
-    for (final p in smokeParticles) {
+    for (final p in sim.smokeParticles) {
       canvas.drawCircle(
         Offset(p.x * size.width, p.y * size.height),
         p.size,
@@ -899,22 +890,17 @@ class _TrainPainter extends CustomPainter {
       );
     }
 
-    // Engine faces LEFT. trainX is the fractional position of the engine's
-    // left (front) edge. Cars trail to the right behind it.
     const engineWidth = 50.0;
     const cabinWidth = 20.0;
     const carWidth = 44.0;
     const carSpacing = 8.0;
 
-    // Total train length in pixels
     final totalTrainPx =
         engineWidth + cars.length * (carWidth + carSpacing);
 
-    // The engine's front-left x position
     final engineFrontX = trainX * size.width - totalTrainPx / 2;
     final engineY = trackY - 35 + chugBounce;
 
-    // -- Engine body --
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(engineFrontX, engineY, engineWidth, 30),
@@ -923,7 +909,6 @@ class _TrainPainter extends CustomPainter {
       Paint()..color = const Color(0xFFCC3333),
     );
 
-    // Cabin (rear top of engine — right side since train faces left)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(
@@ -932,7 +917,6 @@ class _TrainPainter extends CustomPainter {
       ),
       Paint()..color = const Color(0xFFDD4444),
     );
-    // Window
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(
@@ -943,13 +927,11 @@ class _TrainPainter extends CustomPainter {
         ..color = const Color(0xFF88CCFF).withValues(alpha: 0.7),
     );
 
-    // Chimney (front of engine — left side)
     canvas.drawRect(
       Rect.fromLTWH(engineFrontX + 6, engineY - 12, 8, 12),
       Paint()..color = const Color(0xFF2A2A2A),
     );
 
-    // Cowcatcher (front — left side)
     final cowPath = Path()
       ..moveTo(engineFrontX, engineY + 30)
       ..lineTo(engineFrontX - 8, engineY + 30)
@@ -957,7 +939,6 @@ class _TrainPainter extends CustomPainter {
       ..close();
     canvas.drawPath(cowPath, Paint()..color = const Color(0xFF999999));
 
-    // Engine wheels
     canvas.drawCircle(
       Offset(engineFrontX + 12, trackY - 2 + chugBounce),
       8,
@@ -968,7 +949,6 @@ class _TrainPainter extends CustomPainter {
       8,
       Paint()..color = const Color(0xFF2A2A2A),
     );
-    // Wheel centers
     canvas.drawCircle(
       Offset(engineFrontX + 12, trackY - 2 + chugBounce),
       3,
@@ -980,7 +960,6 @@ class _TrainPainter extends CustomPainter {
       Paint()..color = const Color(0xFF666666),
     );
 
-    // -- Train cars (trail to the RIGHT behind the engine) --
     for (int i = 0; i < cars.length; i++) {
       final carX =
           engineFrontX + engineWidth + carSpacing + i * (carWidth + carSpacing);
@@ -988,7 +967,6 @@ class _TrainPainter extends CustomPainter {
       final filled = cars[i] != null;
       final isNext = i == nextCarIndex;
 
-      // Coupling
       canvas.drawLine(
         Offset(carX - carSpacing, trackY - 15 + chugBounce),
         Offset(carX, trackY - 15 + chugBounce),
@@ -997,7 +975,6 @@ class _TrainPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
 
-      // Car body
       final carColor = filled
           ? AppColors.success.withValues(alpha: 0.3)
           : isNext
@@ -1010,7 +987,6 @@ class _TrainPainter extends CustomPainter {
         ),
         Paint()..color = carColor,
       );
-      // Car border
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(carX, carY, carWidth, 26),
@@ -1026,7 +1002,6 @@ class _TrainPainter extends CustomPainter {
           ..strokeWidth = isNext ? 2 : 1,
       );
 
-      // Glow for next car
       if (isNext) {
         canvas.drawRRect(
           RRect.fromRectAndRadius(
@@ -1039,7 +1014,6 @@ class _TrainPainter extends CustomPainter {
         );
       }
 
-      // Letter in car
       if (filled) {
         final tp = TextPainter(
           text: TextSpan(
@@ -1078,7 +1052,6 @@ class _TrainPainter extends CustomPainter {
         );
       }
 
-      // Car wheels
       canvas.drawCircle(
         Offset(carX + 10, trackY - 2 + chugBounce),
         5,
@@ -1091,7 +1064,6 @@ class _TrainPainter extends CustomPainter {
       );
     }
 
-    // Ground / scenery
     canvas.drawRect(
       Rect.fromLTWH(0, trackY + 5, size.width, size.height - trackY - 5),
       Paint()..color = const Color(0xFF1A3020).withValues(alpha: 0.5),
@@ -1099,11 +1071,9 @@ class _TrainPainter extends CustomPainter {
   }
 
   void _drawStation(Canvas canvas, Size size, double trackY) {
-    // Station building on the left side
     const stationX = 10.0;
     final stationY = trackY - 55;
 
-    // Platform
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(stationX - 5, trackY - 5, 60, 10),
@@ -1112,7 +1082,6 @@ class _TrainPainter extends CustomPainter {
       Paint()..color = const Color(0xFF5A4030).withValues(alpha: 0.6),
     );
 
-    // Building
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(stationX, stationY, 50, 50),
@@ -1120,7 +1089,6 @@ class _TrainPainter extends CustomPainter {
       ),
       Paint()..color = const Color(0xFF2A4060).withValues(alpha: 0.6),
     );
-    // Roof
     final roofPath = Path()
       ..moveTo(stationX - 5, stationY)
       ..lineTo(stationX + 25, stationY - 18)
@@ -1130,7 +1098,6 @@ class _TrainPainter extends CustomPainter {
       roofPath,
       Paint()..color = const Color(0xFF8B4513).withValues(alpha: 0.6),
     );
-    // Door
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(stationX + 18, stationY + 25, 14, 25),
@@ -1138,7 +1105,6 @@ class _TrainPainter extends CustomPainter {
       ),
       Paint()..color = const Color(0xFF1A2A3A).withValues(alpha: 0.8),
     );
-    // Window glow
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(stationX + 8, stationY + 10, 10, 10),
@@ -1148,7 +1114,6 @@ class _TrainPainter extends CustomPainter {
         ..color = const Color(0xFFFFDD88).withValues(alpha: 0.5),
     );
 
-    // Station label
     final tp = TextPainter(
       text: TextSpan(
         text: 'STATION',
@@ -1163,7 +1128,6 @@ class _TrainPainter extends CustomPainter {
     )..layout();
     tp.paint(canvas, Offset(stationX + 25 - tp.width / 2, stationY - 28));
 
-    // Progress dots below station
     final dotY = trackY + 14;
     for (int i = 0; i < totalWords; i++) {
       final dotX = stationX + 4 + i * 6.0;
@@ -1179,5 +1143,8 @@ class _TrainPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _TrainPainter old) => true;
+  bool shouldRepaint(covariant _TrainPainter old) =>
+      old.nextCarIndex != nextCarIndex ||
+      old.wordsCompleted != wordsCompleted ||
+      old.currentWord != currentWord;
 }

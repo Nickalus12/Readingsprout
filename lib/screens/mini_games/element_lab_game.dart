@@ -108,7 +108,7 @@ const Map<int, String> _elementDescriptions = {
   El.rainbow: 'Floats upward with sparkles.\nChanges colors!',
   El.mud: 'Thick and slow.\nMade from dirt + lots of water.',
   El.steam: 'Rises up fast.\nCondenses back to water at the top.',
-  El.ant: 'Walks along surfaces.\nDrowns in water.\nRuns from fire.\nDissolved by acid.',
+  El.ant: 'Smart colony builders!\nLeave scent trails to find food.\nDrowns in water.\nRuns from fire.\nDissolved by acid.',
   El.oil: 'Floats on water.\nVery flammable!\nBurns longer than plant.',
   El.acid: 'Dissolves stone slowly.\nKills ants.\nMixes with water.\nDangerous!',
   El.glass: 'Made when lightning hits sand.\nSolid like stone but see-through.',
@@ -153,6 +153,25 @@ class _ElementLabGameState extends State<ElementLabGame>
   late Uint8List _flags; // per-cell flags (updated-this-frame, direction, etc.)
   late Int8List _velX; // horizontal velocity (ants, etc.)
   late Int8List _velY; // vertical velocity
+
+  // -- Dirty chunk system (Optimization 1) ------------------------------------
+  // 16x16 chunks — dimensions computed in _initGrid based on grid size
+  int _chunkCols = 0; // number of chunks horizontally
+  int _chunkRows = 0; // number of chunks vertically
+  late Uint8List _dirtyChunks;     // 1 = dirty this frame
+  late Uint8List _nextDirtyChunks; // accumulates dirty for next frame
+
+  // -- Clock bit for double-simulation prevention (Optimization 2) -----------
+  bool _simClock = false; // toggles each frame; bit 7 of _flags stores cell clock
+
+  // -- Pheromone grids (dual pheromone system for ant AI) ---------------------
+  late Uint8List _pheroFood; // food pheromone intensity per cell (0-255)
+  late Uint8List _pheroHome; // home pheromone intensity per cell (0-255)
+
+  // -- Colony tracking -------------------------------------------------------
+  int _colonyX = -1; // colony centroid X
+  int _colonyY = -1; // colony centroid Y
+  int _colonyUpdateFrame = 0; // last frame colony was recalculated
 
   // -- Rendering buffer (RGBA pixels) ----------------------------------------
   late Uint8List _pixels;
@@ -220,6 +239,16 @@ class _ElementLabGameState extends State<ElementLabGame>
   // -- Explosion queue -------------------------------------------------------
   final List<_Explosion> _pendingExplosions = [];
 
+  // -- Micro-particle effects (rendered in pixel buffer, not grid) ----------
+  // Each particle: [x, y, r, g, b, framesLeft]
+  final List<Int32List> _microParticles = [];
+  static const int _maxMicroParticles = 120;
+
+  // -- Cached glow buffers (rebuilt every 3rd frame) -----------------------
+  Uint8List? _cachedGlowR;
+  Uint8List? _cachedGlowG;
+  Uint8List? _cachedGlowB;
+
   // -- Lightning flash -------------------------------------------------------
   int _lightningFlashFrames = 0;
 
@@ -277,6 +306,7 @@ class _ElementLabGameState extends State<ElementLabGame>
 
   void _toggleDayNight() {
     setState(() => _isNight = !_isNight);
+    _markAllDirty();
     Haptics.tap();
   }
 
@@ -341,6 +371,21 @@ class _ElementLabGameState extends State<ElementLabGame>
     _velX = Int8List(totalCells);
     _velY = Int8List(totalCells);
     _pixels = Uint8List(totalCells * 4); // RGBA
+
+    // Initialize dirty chunk system (16x16 chunks)
+    _chunkCols = (_gridW + 15) ~/ 16; // ceil division
+    _chunkRows = (_gridH + 15) ~/ 16;
+    final totalChunks = _chunkCols * _chunkRows;
+    _dirtyChunks = Uint8List(totalChunks);
+    _nextDirtyChunks = Uint8List(totalChunks);
+    // Mark all chunks dirty on first frame
+    _dirtyChunks.fillRange(0, totalChunks, 1);
+
+    // Initialize pheromone grids for ant AI
+    _pheroFood = Uint8List(totalCells);
+    _pheroHome = Uint8List(totalCells);
+    _colonyX = -1;
+    _colonyY = -1;
 
     _generateStars();
     _gridInitialized = true;
@@ -420,6 +465,7 @@ class _ElementLabGameState extends State<ElementLabGame>
 
     _applyWind();
     _simulate();
+    _tickMicroParticles();
     _renderPixels();
     _buildImage();
   }
@@ -488,6 +534,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_shakeCooldown > 0) return;
     _shakeCooldown = 60; // 2 second cooldown at 30fps
     Haptics.tap();
+    _markAllDirty();
 
     // Random displacement
     for (int y = _gridH - 1; y >= 0; y--) {
@@ -523,11 +570,27 @@ class _ElementLabGameState extends State<ElementLabGame>
   // ── Physics simulation (single pass) ────────────────────────────────────
 
   void _simulate() {
-    // Clear update flags
-    _flags.fillRange(0, _flags.length, 0);
+    // Toggle simulation clock (Optimization 2: clock bit)
+    _simClock = !_simClock;
+    final currentClockBit = _simClock ? 0x80 : 0;
 
     // Process pending explosions
     _processExplosions();
+
+    // ── Pheromone evaporation (every 8 frames) ──────────────────────────
+    if (_frameCount % 8 == 0) {
+      _evaporatePheromones();
+    }
+
+    // ── Pheromone diffusion (every 4 frames) ────────────────────────────
+    if (_frameCount % 4 == 0) {
+      _diffusePheromones();
+    }
+
+    // ── Colony centroid update (every 30 frames ≈ 1 second) ─────────────
+    if (_frameCount % 30 == 0) {
+      _updateColonyCentroid();
+    }
 
     // Advance rainbow hue
     _rainbowHue = (_rainbowHue + 3) % 360;
@@ -535,21 +598,48 @@ class _ElementLabGameState extends State<ElementLabGame>
     // Decrease lightning flash
     if (_lightningFlashFrames > 0) _lightningFlashFrames--;
 
+    // Cache dirty chunks for read, nextDirty for write
+    final dc = _dirtyChunks;
+    final cols = _chunkCols;
+    final w = _gridW;
+
     // Scan from gravity-bottom to top, left-right alternating
     final leftToRight = _frameCount.isEven;
     final yStart = _gravityDir == 1 ? _gridH - 2 : 1;
     final yEnd = _gravityDir == 1 ? -1 : _gridH;
     final yStep = _gravityDir == 1 ? -1 : 1;
     for (int y = yStart; y != yEnd; y += yStep) {
+      final chunkY = y >> 4; // y ~/ 16
       final startX = leftToRight ? 0 : _gridW - 1;
       final endX = leftToRight ? _gridW : -1;
       final dx = leftToRight ? 1 : -1;
       for (int x = startX; x != endX; x += dx) {
-        final idx = y * _gridW + x;
-        if (_flags[idx] == 1) continue; // already moved this frame
+        // Optimization 1: Skip cells in clean chunks
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+
+        final idx = y * w + x;
+
+        // Optimization 2: Clock bit — skip if already processed this frame
+        // Check bit 7 matches current clock
+        final flagVal = _flags[idx];
+        if ((flagVal & 0x80) == currentClockBit) continue;
 
         final el = _grid[idx];
         if (el == El.empty) continue;
+
+        // Optimization 3: Static cell detection using bits 4-6 of _flags
+        // Bit 6 (0x40) = settled flag
+        // Bits 4-5 = stable counter (0-3)
+        if ((flagVal & 0x40) != 0) {
+          // Cell is settled — skip simulation but propagate dirty to next frame
+          // (chunk is already dirty so neighbors get checked)
+          continue;
+        }
+
+        // Save pre-simulation state for settled detection
+        final preEl = el;
+        final preIdx = idx;
 
         switch (el) {
           case El.sand:
@@ -598,8 +688,37 @@ class _ElementLabGameState extends State<ElementLabGame>
             _simAsh(x, y, idx);
           // stone and glass do nothing (immovable)
         }
+
+        // Optimization 3: Static cell detection — check if cell moved or changed
+        // If the cell is still at the same index with the same element type,
+        // it didn't move. Increment stable counter (bits 4-5).
+        if (_grid[preIdx] == preEl && (_flags[preIdx] & 0x80) != currentClockBit) {
+          // Cell didn't move (wasn't swapped — _swap sets clock bit)
+          final oldStable = (flagVal >> 4) & 0x03; // bits 4-5
+          final newStable = (oldStable + 1).clamp(0, 3);
+          if (newStable >= 3) {
+            // Mark as settled (bit 6) — preserve bits 4-5 at max
+            _flags[preIdx] = (_flags[preIdx] & 0x80) | 0x70; // settled + stable=3
+          } else {
+            // Increment stable counter, preserve clock bit
+            _flags[preIdx] = (_flags[preIdx] & 0x80) | (newStable << 4);
+          }
+          // Still mark chunk dirty since neighbors may need processing
+          _markDirty(x, y);
+        } else if (_grid[preIdx] != preEl) {
+          // Cell changed type (e.g. fire→ash, steam→empty, element died)
+          // Mark dirty and unsettle neighbors so they react next frame
+          _markDirty(x, y);
+          _unsettleNeighbors(x, y);
+        }
       }
     }
+
+    // Swap dirty chunk buffers for next frame
+    final tmp = _dirtyChunks;
+    _dirtyChunks = _nextDirtyChunks;
+    _nextDirtyChunks = tmp;
+    _nextDirtyChunks.fillRange(0, _nextDirtyChunks.length, 0);
   }
 
   // ── Element behaviors ───────────────────────────────────────────────────
@@ -609,7 +728,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_checkAdjacent(x, y, El.lightning)) {
       _grid[idx] = El.glass;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -617,7 +736,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_checkAdjacent(x, y, El.water)) {
       _grid[idx] = El.mud;
       _removeOneAdjacent(x, y, El.water);
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -629,12 +748,23 @@ class _ElementLabGameState extends State<ElementLabGame>
     final by = y + g;
     final uy = y - g;
 
+    // ── Mass initialization (upgrade legacy water with _life==0) ────────
+    // _life for water stores mass (20-240, 100=normal).
+    // Special values: 140-199 = ice-melt visual, 200+ = electrified.
+    final lifeVal = _life[idx];
+    final bool isSpecialState = lifeVal >= 140;
+    int mass = isSpecialState ? 100 : (lifeVal < 20 ? 100 : lifeVal);
+    // Fix legacy water that has _life=0
+    if (!isSpecialState && lifeVal < 20) {
+      _life[idx] = 100;
+    }
+
     // ── Neighbor reactions ──────────────────────────────────────────────
 
     // Check for adjacent ice → freeze (1 in 60 chance, slower than before)
     if (_rng.nextInt(60) == 0 && _checkAdjacent(x, y, El.ice)) {
       _grid[idx] = El.ice;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -652,7 +782,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (neighbor == El.fire || neighbor == El.lava) {
             _grid[idx] = El.steam;
             _life[idx] = 0;
-            _flags[idx] = 1;
+            _markProcessed(idx);
             return;
           }
         }
@@ -660,15 +790,14 @@ class _ElementLabGameState extends State<ElementLabGame>
     }
 
     // Water + Oil: oil floats — only swap if water is BELOW oil (water sinks under oil)
-    // The oil sim handles rising through water, so water just needs to sink past oil above it.
     final uy2 = y - _gravityDir;
-    if (_inBounds(x, uy2) && _grid[uy2 * _gridW + x] == El.oil && !(_flags[uy2 * _gridW + x] == 1)) {
+    if (_inBounds(x, uy2) && _grid[uy2 * _gridW + x] == El.oil && !((_flags[uy2 * _gridW + x] & 0x80) == (_simClock ? 0x80 : 0))) {
       final ui2 = uy2 * _gridW + x;
       _grid[idx] = El.oil;
       _grid[ui2] = El.water;
-      _life[ui2] = 0;
-      _flags[idx] = 1;
-      _flags[ui2] = 1;
+      _life[ui2] = mass; // preserve mass through oil swap
+      _markProcessed(idx);
+      _markProcessed(ui2);
       return;
     }
 
@@ -685,55 +814,92 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.tnt && _rng.nextInt(10) == 0) {
           _grid[ni] = El.sand;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Water absorbs smoke
         if (neighbor == El.smoke && _rng.nextInt(10) == 0) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Water + Rainbow → prismatic refraction (spawn extra rainbow)
         if (neighbor == El.rainbow && _rng.nextInt(40) == 0) {
-          // Find an empty cell nearby and spawn rainbow
           final rx = x + _rng.nextInt(3) - 1;
           final ry = uy;
           if (_inBounds(rx, ry) && _grid[ry * _gridW + rx] == El.empty) {
             _grid[ry * _gridW + rx] = El.rainbow;
             _life[ry * _gridW + rx] = 0;
-            _flags[ry * _gridW + rx] = 1;
+            _markProcessed(ry * _gridW + rx);
           }
         }
-        // Water nourishes plant (handled by making plant grow faster — set flag)
+        // Water nourishes plant
         if (neighbor == El.plant && _rng.nextInt(20) == 0) {
-          // Boost plant growth by decrementing its life timer
           if (_life[ni] > 2) _life[ni] -= 2;
         }
       }
     }
 
-    // ── Water column height (for leveling) ──────────────────────────────
-    // Count how tall this water column is (downward from this cell)
-    int colHeight = 1;
-    for (int cy = y + g; _inBounds(x, cy) && colHeight < 12; cy += g) {
-      final c = _grid[cy * _gridW + x];
-      if (c == El.water) {
-        colHeight++;
+    // ── Pressure calculation (scan down, max 8 cells) ───────────────────
+    // Each water cell below adds ~10 to pressure; clamped for performance
+    int pressure = 0;
+    for (int cy = y + g, depth = 0; depth < 8 && _inBounds(x, cy); cy += g, depth++) {
+      if (_grid[cy * _gridW + x] == El.water) {
+        pressure += 10;
       } else {
         break;
       }
     }
-    // Count water above too for total column
-    int above = 0;
-    for (int cy = y - g; _inBounds(x, cy) && above < 12; cy -= g) {
+    // Also count water above for total column (used for leveling)
+    int colAbove = 0;
+    for (int cy = y - g; _inBounds(x, cy) && colAbove < 12; cy -= g) {
       final c = _grid[cy * _gridW + x];
       if (c == El.water || c == El.oil) {
-        above++;
+        colAbove++;
       } else {
         break;
       }
     }
-    final totalCol = colHeight + above;
+    final totalCol = (pressure ~/ 10) + 1 + colAbove;
+
+    // ── Pressure-based mass compression ─────────────────────────────────
+    if (!isSpecialState) {
+      final targetMass = (100 + (pressure * 0.5).round()).clamp(20, 139);
+      if (mass < targetMass) {
+        mass = (mass + 3).clamp(20, 139);
+      } else if (mass > targetMass) {
+        mass = (mass - 3).clamp(20, 139);
+      }
+      _life[idx] = mass;
+    }
+
+    // ── Bubble generation under high pressure ───────────────────────────
+    if (mass > 130 && _rng.nextInt(500) == 0) {
+      final bubbleY = y - g;
+      if (_inBounds(x, bubbleY)) {
+        final bubbleIdx = bubbleY * _gridW + x;
+        if (_grid[bubbleIdx] == El.water) {
+          _grid[bubbleIdx] = El.bubble;
+          _life[bubbleIdx] = 0;
+          _markProcessed(bubbleIdx);
+        }
+      }
+    }
+
+    // ── Pressure-based vertical mass transfer ───────────────────────────
+    if (!isSpecialState && mass > 110 && _inBounds(x, uy)) {
+      final aboveI = uy * _gridW + x;
+      if (_grid[aboveI] == El.water && _life[aboveI] < 140) {
+        final aboveMass = _life[aboveI] < 20 ? 100 : _life[aboveI];
+        final diff = mass - aboveMass;
+        if (diff > 8) {
+          final transfer = (diff ~/ 4).clamp(1, 20);
+          mass = (mass - transfer).clamp(20, 139);
+          final newAbove = (aboveMass + transfer).clamp(20, 139);
+          _life[idx] = mass;
+          _life[aboveI] = newAbove;
+        }
+      }
+    }
 
     // ── Movement ──────────────────────────────────────────────────────
 
@@ -750,9 +916,12 @@ class _ElementLabGameState extends State<ElementLabGame>
         final sx = x + (_rng.nextBool() ? 1 : -1) * (1 + _rng.nextInt(2));
         final sy = y - g * _rng.nextInt(2);
         if (_inBounds(sx, sy) && _grid[sy * _gridW + sx] == El.empty) {
-          _grid[sy * _gridW + sx] = El.water;
-          _life[sy * _gridW + sx] = 0;
-          _flags[sy * _gridW + sx] = 1;
+          final splashIdx = sy * _gridW + sx;
+          _grid[splashIdx] = El.water;
+          // Split mass between splash droplets
+          final splashMass = (mass ~/ 2).clamp(20, 139);
+          _life[splashIdx] = splashMass;
+          _markProcessed(splashIdx);
           _grid[idx] = El.empty;
           _life[idx] = 0;
           _velY[idx] = 0;
@@ -763,8 +932,10 @@ class _ElementLabGameState extends State<ElementLabGame>
     _velY[idx] = 0;
 
     // Use momentum: prefer previous flow direction
+    // Random bias each frame to prevent oscillation
     final momentum = _velX[idx];
-    final dl = momentum != 0 ? (momentum > 0) : _rng.nextBool();
+    final frameBias = _rng.nextBool();
+    final dl = momentum != 0 ? (momentum > 0) : frameBias;
     final x1 = dl ? x + 1 : x - 1;
     final x2 = dl ? x - 1 : x + 1;
 
@@ -780,8 +951,27 @@ class _ElementLabGameState extends State<ElementLabGame>
       return;
     }
 
-    // Flow sideways — base 2 + pressure from column height
-    final flowDist = 2 + (totalCol ~/ 2).clamp(0, 5);
+    // ── Pressure-driven lateral flow ────────────────────────────────────
+    final flowDist = 2 + (pressure ~/ 15).clamp(0, 5);
+
+    // Mass-differential flow: prefer flowing toward lower-mass neighbors
+    if (!isSpecialState) {
+      for (final dir in dl ? [1, -1] : [-1, 1]) {
+        final nx = x + dir;
+        if (!_inBounds(nx, y)) continue;
+        final ni = y * _gridW + nx;
+        if (_grid[ni] == El.water && _life[ni] < 140) {
+          final neighborMass = _life[ni] < 20 ? 100 : _life[ni];
+          final diff = mass - neighborMass;
+          if (diff > 5) {
+            final transfer = (diff ~/ 3).clamp(1, 20);
+            _life[idx] = (mass - transfer).clamp(20, 139);
+            _life[ni] = (neighborMass + transfer).clamp(20, 139);
+          }
+        }
+      }
+    }
+
     for (int d = 1; d <= flowDist; d++) {
       final sx1 = dl ? x + d : x - d;
       final sx2 = dl ? x - d : x + d;
@@ -797,24 +987,18 @@ class _ElementLabGameState extends State<ElementLabGame>
       }
     }
 
-    // ── Surface leveling — actively seek lower adjacent columns ────────
-    // If this cell is at the surface (empty above), check if adjacent
-    // columns are shorter. If so, move there to equalize water level.
-    final aboveIdx = _inBounds(x, uy) ? _grid[uy * _gridW + x] : -1;
-    if (aboveIdx == El.empty || aboveIdx == -1) {
-      // We're at the water surface — count adjacent column heights
+    // ── Surface leveling — water seeks its own level ────────────────────
+    final aboveEl = _inBounds(x, uy) ? _grid[uy * _gridW + x] : -1;
+    if (aboveEl == El.empty || aboveEl == -1) {
       for (final dir in [1, -1]) {
         final nx = x + dir;
         if (!_inBounds(nx, y)) continue;
         final nIdx = y * _gridW + nx;
-        // Adjacent cell at same level must be empty (we'd flow there)
         if (_grid[nIdx] != El.empty) continue;
-        // Check: is there a solid or water below that empty cell?
         final belowNx = y + g;
         if (!_inBounds(nx, belowNx)) continue;
         final belowCell = _grid[belowNx * _gridW + nx];
-        if (belowCell == El.empty) continue; // would fall, not level
-        // Count adjacent column height
+        if (belowCell == El.empty) continue;
         int adjCol = 0;
         for (int cy = y + g; _inBounds(nx, cy) && adjCol < 12; cy += g) {
           if (_grid[cy * _gridW + nx] == El.water) {
@@ -823,19 +1007,17 @@ class _ElementLabGameState extends State<ElementLabGame>
             break;
           }
         }
-        // Move if our column is taller
         if (totalCol > adjCol + 1) {
           _velX[idx] = dir;
           _swap(idx, nIdx);
           return;
         }
       }
-      // Also try 2-3 cells out for faster leveling on flat surfaces
+      // Extended surface leveling: scan up to 4 cells out
       for (final dir in [1, -1]) {
-        for (int d = 2; d <= 3; d++) {
+        for (int d = 2; d <= 4; d++) {
           final nx = x + dir * d;
           if (!_inBounds(nx, y)) continue;
-          // All cells between must be empty
           bool pathClear = true;
           for (int pd = 1; pd < d; pd++) {
             final px = x + dir * pd;
@@ -849,9 +1031,48 @@ class _ElementLabGameState extends State<ElementLabGame>
           final belowNx = y + g;
           if (!_inBounds(nx, belowNx)) continue;
           if (_grid[belowNx * _gridW + nx] == El.empty) continue;
-          _velX[idx] = dir;
-          _swap(idx, y * _gridW + nx);
-          return;
+
+          // Count target column height for mass-aware leveling
+          int targetCol = 0;
+          for (int cy = y + g; _inBounds(nx, cy) && targetCol < 12; cy += g) {
+            if (_grid[cy * _gridW + nx] == El.water) {
+              targetCol++;
+            } else {
+              break;
+            }
+          }
+          if (totalCol > targetCol + 1) {
+            _velX[idx] = dir;
+            _swap(idx, y * _gridW + nx);
+            return;
+          }
+        }
+      }
+
+      // ── Smooth mass-based surface leveling ──────────────────────────
+      if (!isSpecialState) {
+        for (final dir in [1, -1]) {
+          for (int d = 1; d <= 4; d++) {
+            final nx = x + dir * d;
+            if (!_inBounds(nx, y)) break;
+            final ni = y * _gridW + nx;
+            if (_grid[ni] != El.water) break;
+            final naboveY = y - g;
+            if (!_inBounds(nx, naboveY)) continue;
+            if (_grid[naboveY * _gridW + nx] != El.empty) continue;
+            final nlife = _life[ni];
+            if (nlife >= 140) continue;
+            final nMass = nlife < 20 ? 100 : nlife;
+            final mDiff = mass - nMass;
+            if (mDiff.abs() > 3) {
+              final transfer = (mDiff ~/ 3).clamp(-5, 5);
+              final newMass = (mass - transfer).clamp(20, 139);
+              final newNMass = (nMass + transfer).clamp(20, 139);
+              _life[idx] = newMass;
+              _life[ni] = newNMass;
+              mass = newMass;
+            }
+          }
         }
       }
     }
@@ -866,13 +1087,13 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_life[idx] > 40 + _rng.nextInt(40)) {
       _grid[idx] = El.ash;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       // Spawn smoke above ~50% of the time
       final uy = y - _gravityDir;
       if (_rng.nextBool() && _inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
         _grid[uy * _gridW + x] = El.smoke;
         _life[uy * _gridW + x] = 0;
-        _flags[uy * _gridW + x] = 1;
+        _markProcessed(uy * _gridW + x);
       }
       return;
     }
@@ -891,31 +1112,31 @@ class _ElementLabGameState extends State<ElementLabGame>
           _life[ni] = 0;
           _grid[idx] = El.empty;
           _life[idx] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           return;
         }
         if ((neighbor == El.plant || neighbor == El.seed) && _rng.nextInt(2) == 0) {
           // Fire spreads to plant/seed aggressively
           _grid[ni] = El.fire;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         if (neighbor == El.wood && _rng.nextInt(4) == 0) {
           _grid[ni] = El.fire;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         if (neighbor == El.oil) {
           // Oil is very flammable — always ignites
           _grid[ni] = El.fire;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Ash is already burned — fire does nothing to it
         if (neighbor == El.ice) {
           _grid[ni] = El.water;
           _life[ni] = 150; // melting visual
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         if (neighbor == El.tnt) {
           _pendingExplosions.add(_Explosion(nx, ny, _calculateTNTRadius(nx, ny)));
@@ -944,7 +1165,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_checkAdjacent(x, y, El.fire) || _checkAdjacent(x, y, El.lava)) {
       _grid[idx] = El.water;
       _life[idx] = 150; // melting visual flag
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
     // Temperature balance: ice surrounded by 3+ water cells melts (slower at night)
@@ -964,7 +1185,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (waterCount >= 3) {
         _grid[idx] = El.water;
         _life[idx] = 150;
-        _flags[idx] = 1;
+        _markProcessed(idx);
       }
     }
   }
@@ -993,7 +1214,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.ice) {
           _grid[ni] = El.water;
           _life[ni] = 150;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         if (neighbor == El.water) {
           _electrifyWater(nx, ny);
@@ -1001,7 +1222,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.sand) {
           _grid[ni] = El.glass;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         if (neighbor == El.metal) {
           _conductMetal(nx, ny);
@@ -1023,7 +1244,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_grid[ni] == El.empty) {
       _grid[ni] = El.lightning;
       _life[ni] = _life[idx];
-      _flags[ni] = 1;
+      _markProcessed(ni);
       _grid[idx] = El.empty;
       _life[idx] = 0;
     }
@@ -1046,7 +1267,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     final sType = _velX[idx].clamp(1, 5);
     _life[idx]++;
     if (_checkAdjacent(x, y, El.fire) || _checkAdjacent(x, y, El.lava)) {
-      _grid[idx] = El.ash; _life[idx] = 0; _velX[idx] = 0; _flags[idx] = 1; return;
+      _grid[idx] = El.ash; _life[idx] = 0; _velX[idx] = 0; _markProcessed(idx); return;
     }
     if (_checkAdjacent(x, y, El.acid)) {
       _grid[idx] = El.empty; _life[idx] = 0; _velX[idx] = 0; return;
@@ -1058,7 +1279,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (soilM >= _plantMinMoist[sType]) {
         if (_life[idx] > 30) {
           _grid[idx] = El.plant; _life[idx] = 50;
-          _setPlantData(idx, sType, kStSprout); _velY[idx] = 1; _flags[idx] = 1; return;
+          _setPlantData(idx, sType, kStSprout); _velY[idx] = 1; _markProcessed(idx); return;
         }
         return;
       } else if (_life[idx] > 60) {
@@ -1130,7 +1351,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (wc >= 3) {
         _grid[idx] = El.mud;
         _life[idx] = 0;
-        _flags[idx] = 1;
+        _markProcessed(idx);
         return;
       }
     }
@@ -1146,7 +1367,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             final ni = ny * _gridW + nx;
             _grid[ni] = El.empty;
             _life[ni] = 0;
-            _flags[ni] = 1;
+            _markProcessed(ni);
             _life[idx] = (_life[idx] + 1).clamp(0, 5);
             break;
           }
@@ -1178,36 +1399,37 @@ class _ElementLabGameState extends State<ElementLabGame>
   /// Push a water cell to the nearest empty cell above or beside.
   void _displaceWater(int wx, int wy) {
     final wi = wy * _gridW + wx;
+    final preservedMass = _life[wi]; // preserve water mass
     for (int r = 1; r <= 10; r++) {
       final uy = wy - _gravityDir * r;
       if (_inBounds(wx, uy) && _grid[uy * _gridW + wx] == El.empty) {
         _grid[uy * _gridW + wx] = El.water;
-        _life[uy * _gridW + wx] = 0;
-        _flags[uy * _gridW + wx] = 1;
+        _life[uy * _gridW + wx] = preservedMass;
+        _markProcessed(uy * _gridW + wx);
         _grid[wi] = El.empty;
         _life[wi] = 0;
-        _flags[wi] = 1;
+        _markProcessed(wi);
         return;
       }
       for (final dx in [r, -r]) {
         final nx = wx + dx;
         if (_inBounds(nx, wy) && _grid[wy * _gridW + nx] == El.empty) {
           _grid[wy * _gridW + nx] = El.water;
-          _life[wy * _gridW + nx] = 0;
-          _flags[wy * _gridW + nx] = 1;
+          _life[wy * _gridW + nx] = preservedMass;
+          _markProcessed(wy * _gridW + nx);
           _grid[wi] = El.empty;
           _life[wi] = 0;
-          _flags[wi] = 1;
+          _markProcessed(wi);
           return;
         }
         final uy2 = wy - _gravityDir * r;
         if (_inBounds(nx, uy2) && _grid[uy2 * _gridW + nx] == El.empty) {
           _grid[uy2 * _gridW + nx] = El.water;
-          _life[uy2 * _gridW + nx] = 0;
-          _flags[uy2 * _gridW + nx] = 1;
+          _life[uy2 * _gridW + nx] = preservedMass;
+          _markProcessed(uy2 * _gridW + nx);
           _grid[wi] = El.empty;
           _life[wi] = 0;
-          _flags[wi] = 1;
+          _markProcessed(wi);
           return;
         }
       }
@@ -1232,8 +1454,8 @@ class _ElementLabGameState extends State<ElementLabGame>
           _grid[idx] = El.empty;
           _life[idx] = 0;
           _velY[idx] = 0;
-          _flags[idx] = 1;
-          _flags[below] = 1;
+          _markProcessed(idx);
+          _markProcessed(below);
         } else {
           _displaceWater(x, by);
           if (_grid[below] == El.empty) {
@@ -1243,15 +1465,15 @@ class _ElementLabGameState extends State<ElementLabGame>
             _grid[idx] = El.empty;
             _life[idx] = 0;
             _velY[idx] = 0;
-            _flags[idx] = 1;
-            _flags[below] = 1;
+            _markProcessed(idx);
+            _markProcessed(below);
           } else {
             _grid[idx] = El.water;
             _grid[below] = elType;
             _life[below] = _life[idx];
-            _life[idx] = 0;
-            _flags[idx] = 1;
-            _flags[below] = 1;
+            _life[idx] = 100; // water mass
+            _markProcessed(idx);
+            _markProcessed(below);
           }
         }
         return;
@@ -1280,12 +1502,12 @@ class _ElementLabGameState extends State<ElementLabGame>
     // ── Instant death: fire, lava, lightning → ash ──
     if (_checkAdjacent(x, y, El.fire) || _checkAdjacent(x, y, El.lava)) {
       _grid[idx] = El.fire; _life[idx] = 0; _velX[idx] = 0; _velY[idx] = 0;
-      _flags[idx] = 1; return;
+      _markProcessed(idx); return;
     }
     // Acid dissolves over ~20 frames
     if (_checkAdjacent(x, y, El.acid) && _rng.nextInt(3) == 0) {
       _grid[idx] = El.empty; _life[idx] = 0; _velX[idx] = 0; _velY[idx] = 0;
-      _flags[idx] = 1; return;
+      _markProcessed(idx); return;
     }
 
     // ── Dead plant decomposes to dirt after ~120 frames ──
@@ -1293,7 +1515,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       _velY[idx] = (_velY[idx] + 1).clamp(0, 127).toInt();
       if (_velY[idx] > 120) {
         _grid[idx] = El.dirt; _life[idx] = 0; _velX[idx] = 0; _velY[idx] = 0;
-        _flags[idx] = 1;
+        _markProcessed(idx);
       }
       return;
     }
@@ -1379,7 +1601,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final ni = uy * _gridW + x;
         _grid[ni] = El.plant; _life[ni] = _life[idx];
         _setPlantData(ni, kPlantGrass, kStGrowing); _velY[ni] = (curSize + 1);
-        _flags[ni] = 1;
+        _markProcessed(ni);
         _velY[idx] = (curSize + 1);
       }
     }
@@ -1392,7 +1614,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final ni = y * _gridW + side;
         _grid[ni] = El.plant; _life[ni] = _life[idx];
         _setPlantData(ni, kPlantGrass, kStSprout); _velY[ni] = 1;
-        _flags[ni] = 1;
+        _markProcessed(ni);
       }
     }
   }
@@ -1408,7 +1630,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final newSize = curSize + 1;
         _setPlantData(ni, kPlantFlower, newSize >= 4 ? kStMature : kStGrowing);
         _velY[ni] = newSize;
-        _flags[ni] = 1;
+        _markProcessed(ni);
         _velY[idx] = newSize;
       }
     }
@@ -1426,7 +1648,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final isTrunk = newSize < 7;
         _setPlantData(ni, kPlantTree, isTrunk ? kStGrowing : kStMature);
         _velY[ni] = newSize;
-        _flags[ni] = 1;
+        _markProcessed(ni);
         _velY[idx] = newSize;
       }
       // Canopy: spread sideways — wider spread at greater height
@@ -1440,7 +1662,7 @@ class _ElementLabGameState extends State<ElementLabGame>
               final ni = sy * _gridW + side;
               _grid[ni] = El.plant; _life[ni] = _life[idx];
               _setPlantData(ni, kPlantTree, kStMature); _velY[ni] = curSize;
-              _flags[ni] = 1;
+              _markProcessed(ni);
               break; // one per side per tick
             }
           }
@@ -1452,7 +1674,7 @@ class _ElementLabGameState extends State<ElementLabGame>
               final ni = y * _gridW + side;
               _grid[ni] = El.plant; _life[ni] = _life[idx];
               _setPlantData(ni, kPlantTree, kStMature); _velY[ni] = curSize;
-              _flags[ni] = 1;
+              _markProcessed(ni);
             }
           }
         }
@@ -1470,7 +1692,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final newSize = curSize + 1;
         _setPlantData(ni, kPlantMushroom, newSize >= 2 ? kStMature : kStGrowing);
         _velY[ni] = newSize;
-        _flags[ni] = 1;
+        _markProcessed(ni);
         _velY[idx] = newSize;
       }
     }
@@ -1485,7 +1707,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           final ni = y * _gridW + sx;
           _grid[ni] = El.plant; _life[ni] = _life[idx];
           _setPlantData(ni, kPlantMushroom, kStSprout); _velY[ni] = 1;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           break;
         }
       }
@@ -1523,7 +1745,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         final ni = ny * _gridW + nx;
         _grid[ni] = El.plant; _life[ni] = _life[idx];
         _setPlantData(ni, kPlantVine, kStGrowing);
-        _velY[ni] = (curSize + 1); _flags[ni] = 1;
+        _velY[ni] = (curSize + 1); _markProcessed(ni);
         _velY[idx] = (curSize + 1);
       }
     }
@@ -1536,7 +1758,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_life[idx] > 200 + _rng.nextInt(50)) {
       _grid[idx] = El.stone;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -1553,10 +1775,10 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.water) {
           _grid[idx] = El.stone;
           _life[idx] = 0;
-          _flags[idx] = 1;
+          _markProcessed(idx);
           _grid[ni] = El.steam;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           // Spawn 2-3 extra steam cells nearby (explosive evaporation)
           final extraSteam = 2 + _rng.nextInt(2);
           for (int s = 0; s < extraSteam; s++) {
@@ -1565,7 +1787,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             if (_inBounds(sx, sy) && _grid[sy * _gridW + sx] == El.empty) {
               _grid[sy * _gridW + sx] = El.steam;
               _life[sy * _gridW + sx] = 0;
-              _flags[sy * _gridW + sx] = 1;
+              _markProcessed(sy * _gridW + sx);
             }
           }
           return;
@@ -1574,10 +1796,10 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.ice) {
           _grid[idx] = El.stone;
           _life[idx] = 0;
-          _flags[idx] = 1;
+          _markProcessed(idx);
           _grid[ni] = El.water;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           return;
         }
         // Ignite flammables
@@ -1586,13 +1808,13 @@ class _ElementLabGameState extends State<ElementLabGame>
             _rng.nextInt(2) == 0) {
           _grid[ni] = El.fire;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Melt snow
         if (neighbor == El.snow) {
           _grid[ni] = El.water;
-          _life[ni] = 0;
-          _flags[ni] = 1;
+          _life[ni] = 100; // water mass
+          _markProcessed(ni);
         }
       }
     }
@@ -1633,8 +1855,8 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_checkAdjacent(x, y, El.fire) || _checkAdjacent(x, y, El.lava)) {
       if (!_isNight || _rng.nextBool()) {
         _grid[idx] = El.water;
-        _life[idx] = 0;
-        _flags[idx] = 1;
+        _life[idx] = 100; // water mass
+        _markProcessed(idx);
         return;
       }
     }
@@ -1649,7 +1871,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (_inBounds(nx, ny) && _grid[ny * _gridW + nx] == El.water) {
             _grid[ny * _gridW + nx] = El.ice;
             _life[ny * _gridW + nx] = 0;
-            _flags[ny * _gridW + nx] = 1;
+            _markProcessed(ny * _gridW + nx);
             break;
           }
         }
@@ -1671,7 +1893,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (snowAbove >= 3) {
       _grid[idx] = El.ice;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -1729,13 +1951,13 @@ class _ElementLabGameState extends State<ElementLabGame>
         _grid[idx] = El.ash;
         _life[idx] = 0;
         _velY[idx] = 0;
-        _flags[idx] = 1;
+        _markProcessed(idx);
         // Spawn smoke above
         final uy = y - _gravityDir;
         if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
           _grid[uy * _gridW + x] = El.smoke;
           _life[uy * _gridW + x] = 0;
-          _flags[uy * _gridW + x] = 1;
+          _markProcessed(uy * _gridW + x);
         }
       }
       return;
@@ -1756,13 +1978,14 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (_inBounds(x, by)) {
         final bi = by * _gridW + x;
         if (_grid[bi] == El.water) {
+          final waterMass = _life[bi]; // preserve water mass
           _grid[idx] = El.water;
-          _life[idx] = 0;
+          _life[idx] = waterMass < 20 ? 100 : waterMass;
           _grid[bi] = El.wood;
           _life[bi] = 0;
           _velY[bi] = 3; // keep waterlogged
-          _flags[idx] = 1;
-          _flags[bi] = 1;
+          _markProcessed(idx);
+          _markProcessed(bi);
           return;
         }
       }
@@ -1789,7 +2012,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (_life[idx] > 120) {
         _grid[idx] = El.dirt;
         _life[idx] = 0;
-        _flags[idx] = 1;
+        _markProcessed(idx);
         return;
       }
     }
@@ -1805,8 +2028,8 @@ class _ElementLabGameState extends State<ElementLabGame>
           final ni = ny * _gridW + nx;
           if (_grid[ni] == El.empty && _checkAdjacent(nx, ny, El.water)) {
             _grid[ni] = El.water;
-            _life[ni] = 0;
-            _flags[ni] = 1;
+            _life[ni] = 100; // water mass
+            _markProcessed(ni);
             return;
           }
         }
@@ -1826,7 +2049,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       visited.add(curIdx);
       if (_grid[curIdx] != El.water) continue;
       _life[curIdx] = 200; // electrified visual
-      _flags[curIdx] = 1;
+      _markProcessed(curIdx);
       count++;
       final cx = curIdx % _gridW;
       final cy = curIdx ~/ _gridW;
@@ -1843,7 +2066,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             // Destroy life in electrified water
             _grid[ni] = El.empty;
             _life[ni] = 0;
-            _flags[ni] = 1;
+            _markProcessed(ni);
           }
         }
       }
@@ -1875,7 +2098,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             queue.add(ni);
           } else if (_grid[ni] == El.water) {
             _life[ni] = 200; // electrify water
-            _flags[ni] = 1;
+            _markProcessed(ni);
             sparks++;
           } else if (_grid[ni] == El.tnt) {
             _pendingExplosions.add(_Explosion(nx, ny, _calculateTNTRadius(nx, ny)));
@@ -1885,18 +2108,18 @@ class _ElementLabGameState extends State<ElementLabGame>
             if (_grid[ni] == El.sand) {
               _grid[ni] = El.glass;
               _life[ni] = 0;
-              _flags[ni] = 1;
+              _markProcessed(ni);
               sparks++;
             } else if (_grid[ni] == El.ice) {
               _grid[ni] = El.water;
               _life[ni] = 150;
-              _flags[ni] = 1;
+              _markProcessed(ni);
               sparks++;
             } else if (_grid[ni] == El.plant || _grid[ni] == El.seed ||
                        _grid[ni] == El.oil || _grid[ni] == El.wood) {
               _grid[ni] = El.fire;
               _life[ni] = 0;
-              _flags[ni] = 1;
+              _markProcessed(ni);
               sparks++;
             }
           }
@@ -1950,9 +2173,9 @@ class _ElementLabGameState extends State<ElementLabGame>
           _grid[ai] = El.bubble;
           _life[ai] = _life[idx];
           _grid[idx] = El.water;
-          _life[idx] = 0;
-          _flags[ai] = 1;
-          _flags[idx] = 1;
+          _life[idx] = 100; // water mass
+          _markProcessed(ai);
+          _markProcessed(idx);
           return;
         }
         // Reached surface — pop!
@@ -1966,8 +2189,8 @@ class _ElementLabGameState extends State<ElementLabGame>
             final ny = y + dy;
             if (_inBounds(nx, ny) && _grid[ny * _gridW + nx] == El.empty) {
               _grid[ny * _gridW + nx] = El.water;
-              _life[ny * _gridW + nx] = 0;
-              _flags[ny * _gridW + nx] = 1;
+              _life[ny * _gridW + nx] = 60; // small droplet mass
+              _markProcessed(ny * _gridW + nx);
             }
           }
           return;
@@ -2000,7 +2223,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             _life[ni] = (_life[ni] + 1).clamp(0, 4); // increase moisture
             _grid[idx] = El.empty; // ash consumed
             _life[idx] = 0;
-            _flags[idx] = 1;
+            _markProcessed(idx);
             return;
           }
         }
@@ -2052,14 +2275,15 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (_life[idx] % 3 == 0 && _inBounds(x, by)) {
           final bi = by * _gridW + x;
           if (_grid[bi] == El.water) {
+            final waterMass2 = _life[bi]; // preserve water mass
             _grid[idx] = El.water;
             _grid[bi] = El.ash;
             _life[bi] = _life[idx];
             _velX[bi] = _velX[idx];
-            _life[idx] = 0;
+            _life[idx] = waterMass2 < 20 ? 100 : waterMass2;
             _velX[idx] = 0;
-            _flags[idx] = 1;
-            _flags[bi] = 1;
+            _markProcessed(idx);
+            _markProcessed(bi);
             return;
           }
         }
@@ -2170,7 +2394,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       final waterChance = _isNight ? 2 : 3;
       _grid[idx] = _rng.nextInt(waterChance) == 0 ? El.water : El.empty;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -2178,8 +2402,8 @@ class _ElementLabGameState extends State<ElementLabGame>
     final condenseChance = _isNight ? 15 : 30;
     if (_rng.nextInt(condenseChance) == 0 && _checkAdjacent(x, y, El.water)) {
       _grid[idx] = El.water;
-      _life[idx] = 0;
-      _flags[idx] = 1;
+      _life[idx] = 100; // water mass
+      _markProcessed(idx);
       return;
     }
 
@@ -2201,14 +2425,90 @@ class _ElementLabGameState extends State<ElementLabGame>
     }
   }
 
+  // ── Pheromone system ──────────────────────────────────────────────────────
+
+  /// Evaporate both pheromone grids — decay each cell by 1 (called every 8 frames).
+  void _evaporatePheromones() {
+    final total = _gridW * _gridH;
+    final pf = _pheroFood;
+    final ph = _pheroHome;
+    for (int i = 0; i < total; i++) {
+      if (pf[i] > 0) pf[i] = pf[i] - 1;
+      if (ph[i] > 0) ph[i] = ph[i] - 1;
+    }
+  }
+
+  /// Diffuse pheromones to cardinal neighbors (called every 4 frames).
+  /// Each cell with pheromone > 2 spreads 1/8 of its value to 4 neighbors.
+  void _diffusePheromones() {
+    final w = _gridW;
+    final h = _gridH;
+    final g = _grid;
+    final pf = _pheroFood;
+    final ph = _pheroHome;
+
+    // Process food pheromone diffusion
+    for (int y = 1; y < h - 1; y++) {
+      final row = y * w;
+      for (int x = 1; x < w - 1; x++) {
+        final i = row + x;
+        final fv = pf[i];
+        if (fv > 2) {
+          final spread = fv >> 3; // 1/8
+          if (spread > 0) {
+            // Only spread to empty cells
+            if (g[i - 1] == El.empty) pf[i - 1] = (pf[i - 1] + spread).clamp(0, 255);
+            if (g[i + 1] == El.empty) pf[i + 1] = (pf[i + 1] + spread).clamp(0, 255);
+            if (g[i - w] == El.empty) pf[i - w] = (pf[i - w] + spread).clamp(0, 255);
+            if (g[i + w] == El.empty) pf[i + w] = (pf[i + w] + spread).clamp(0, 255);
+          }
+        }
+        final hv = ph[i];
+        if (hv > 2) {
+          final spread = hv >> 3;
+          if (spread > 0) {
+            if (g[i - 1] == El.empty) ph[i - 1] = (ph[i - 1] + spread).clamp(0, 255);
+            if (g[i + 1] == El.empty) ph[i + 1] = (ph[i + 1] + spread).clamp(0, 255);
+            if (g[i - w] == El.empty) ph[i - w] = (ph[i - w] + spread).clamp(0, 255);
+            if (g[i + w] == El.empty) ph[i + w] = (ph[i + w] + spread).clamp(0, 255);
+          }
+        }
+      }
+    }
+  }
+
+  /// Update colony centroid by averaging positions of all ants.
+  void _updateColonyCentroid() {
+    int sumX = 0, sumY = 0, count = 0;
+    final w = _gridW;
+    final total = w * _gridH;
+    for (int i = 0; i < total; i++) {
+      if (_grid[i] == El.ant) {
+        sumX += i % w;
+        sumY += i ~/ w;
+        count++;
+      }
+    }
+    if (count > 0) {
+      _colonyX = sumX ~/ count;
+      _colonyY = sumY ~/ count;
+    }
+  }
+
+  // ── Ant AI system ──────────────────────────────────────────────────────────
   // Ant states stored in _velY:
-  //   0 = explorer/forager (searching for dirt or food)
+  //   0 = explorer (searching outward for dirt/food)
   //   1 = digger (actively tunneling into dirt)
   //   2 = carrier (carrying dirt to surface to build mound)
   //   3 = returning (heading back to colony after depositing)
+  //   4 = forager (recruited, following food pheromone to food source)
   //  10+ = drowning counter (in water)
   // _life stores "home X" coordinate (0-159) so ants remember their colony.
   // _velX stores movement direction (-1 or 1).
+  //
+  // Dual pheromone system:
+  //   _pheroFood[idx] — deposited by returning/carrier ants; guides explorers to food
+  //   _pheroHome[idx] — deposited by exploring/foraging ants; guides returners home
 
   /// Check if a cell is "underground" (has solid above it, toward surface).
   bool _isUnderground(int x, int y) {
@@ -2220,14 +2520,26 @@ class _ElementLabGameState extends State<ElementLabGame>
            above == El.sand || above == El.ant;
   }
 
+  // Ant state constants
+  static const int _antExplorerState = 0;
+  static const int _antDiggerState = 1;
+  static const int _antCarrierState = 2;
+  static const int _antReturningState = 3;
+  static const int _antForagerState = 4;
+  static const int _antDrowningBase = 10;
+
   void _simAnt(int x, int y, int idx) {
-    if (_frameCount % 2 != 0) return;
+    int state = _velY[idx];
+
+    // Carrier ants (hasFood) move every frame; others every 2 frames
+    final isCarrying = (state == _antCarrierState);
+    if (!isCarrying && _frameCount % 2 != 0) return;
 
     final g = _gravityDir;
     final by = y + g;
     final uy = y - g;
-    int state = _velY[idx];
     final homeX = _life[idx]; // colony X position
+    final w = _gridW;
 
     // ── Hazards ──────────────────────────────────────────────────────
 
@@ -2243,8 +2555,8 @@ class _ElementLabGameState extends State<ElementLabGame>
         for (int dx = -1; dx <= 1; dx++) {
           final nx2 = x + dx, ny2 = y + dy;
           if (!_inBounds(nx2, ny2)) continue;
-          if (_grid[ny2 * _gridW + nx2] == El.empty && !_checkAdjacent(nx2, ny2, El.fire)) {
-            _swap(idx, ny2 * _gridW + nx2);
+          if (_grid[ny2 * w + nx2] == El.empty && !_checkAdjacent(nx2, ny2, El.fire)) {
+            _swap(idx, ny2 * w + nx2);
             return;
           }
         }
@@ -2255,20 +2567,18 @@ class _ElementLabGameState extends State<ElementLabGame>
 
     // Drowning in water
     if (_checkAdjacent(x, y, El.water)) {
-      if (state < 10) {
-        _velY[idx] = 10; // enter drowning state
-        state = 10;
+      if (state < _antDrowningBase) {
+        _velY[idx] = _antDrowningBase;
+        state = _antDrowningBase;
       }
-      // Swim upward
       if (_inBounds(x, uy) && _rng.nextInt(3) == 0) {
-        final ac = _grid[uy * _gridW + x];
-        if (ac == El.empty || ac == El.water) { _swap(idx, uy * _gridW + x); return; }
+        final ac = _grid[uy * w + x];
+        if (ac == El.empty || ac == El.water) { _swap(idx, uy * w + x); return; }
       }
-      // Try sideways escape
       for (final dir in [1, -1]) {
         final sx = x + dir;
-        if (_inBounds(sx, y) && _grid[y * _gridW + sx] == El.empty) {
-          _swap(idx, y * _gridW + sx); return;
+        if (_inBounds(sx, y) && _grid[y * w + sx] == El.empty) {
+          _swap(idx, y * w + sx); return;
         }
       }
       _velY[idx] = (state + 1);
@@ -2277,45 +2587,131 @@ class _ElementLabGameState extends State<ElementLabGame>
       }
       return;
     }
-    // Exited water — restore previous state
-    if (state >= 10) { _velY[idx] = 0; state = 0; }
+    if (state >= _antDrowningBase) { _velY[idx] = 0; state = 0; }
 
     // ── Initialize home position ──────────────────────────────────────
     if (_life[idx] == 0) {
-      // New ant — set home X to current position
       _life[idx] = x.clamp(1, 255);
+      // Set initial colony position from first ant
+      if (_colonyX < 0) { _colonyX = x; _colonyY = y; }
     }
     if (_velX[idx] == 0) _velX[idx] = _rng.nextBool() ? 1 : -1;
 
     // ── Gravity — fall if no ground ───────────────────────────────────
-    if (_inBounds(x, by) && _grid[by * _gridW + x] == El.empty) {
-      _swap(idx, by * _gridW + x);
+    if (_inBounds(x, by) && _grid[by * w + x] == El.empty) {
+      _swap(idx, by * w + x);
       return;
     }
 
-    // ── STATE MACHINE ─────────────────────────────────────────────────
+    // ── Pheromone deposit ─────────────────────────────────────────────
+    // Explorers/foragers deposit home pheromone as they move outward
+    if (state == _antExplorerState || state == _antForagerState) {
+      if (_pheroHome[idx] < 120) _pheroHome[idx] = 120;
+    }
+    // Carriers/returners deposit food pheromone as they head home
+    if (state == _antCarrierState || state == _antReturningState) {
+      if (_pheroFood[idx] < 120) _pheroFood[idx] = 120;
+    }
 
+    // ── Colony distance check — far ants tend to return ───────────────
+    if (_colonyX >= 0 && state == _antExplorerState) {
+      final dist = (x - _colonyX).abs() + (y - _colonyY).abs();
+      if (dist > 60 && _rng.nextInt(8) == 0) {
+        _velY[idx] = _antReturningState;
+        state = _antReturningState;
+      }
+    }
+
+    // ── Recruitment: nearby ants detect strong food pheromone ─────────
+    if (state == _antExplorerState && _frameCount % 4 == 0) {
+      // Check 5-cell radius for strong food pheromone → become forager
+      int bestPhero = 0;
+      for (int dy = -5; dy <= 5; dy++) {
+        for (int dx = -5; dx <= 5; dx++) {
+          final nx2 = x + dx, ny2 = y + dy;
+          if (!_inBounds(nx2, ny2)) continue;
+          final ni = ny2 * w + nx2;
+          if (_pheroFood[ni] > bestPhero) bestPhero = _pheroFood[ni];
+        }
+      }
+      if (bestPhero > 100 && _rng.nextInt(3) == 0) {
+        _velY[idx] = _antForagerState;
+        state = _antForagerState;
+      }
+    }
+
+    // ── STATE MACHINE ─────────────────────────────────────────────────
     final underground = _isUnderground(x, y);
     final nearDirt = _checkAdjacent(x, y, El.dirt);
 
     switch (state) {
-      case 0: // EXPLORER — search for dirt to dig
+      case _antExplorerState:
         _antExplore(x, y, idx, homeX, nearDirt, underground);
-      case 1: // DIGGER — tunnel into dirt, pick up material
+      case _antDiggerState:
         _antDig(x, y, idx, underground);
-      case 2: // CARRIER — bring dirt to surface, build mound
+      case _antCarrierState:
         _antCarry(x, y, idx, homeX);
-      case 3: // RETURNING — head back to colony entrance, then explore again
+      case _antReturningState:
         _antReturn(x, y, idx, homeX);
+      case _antForagerState:
+        _antForage(x, y, idx, homeX, nearDirt);
     }
   }
 
+  /// Choose direction using weighted pheromone sampling.
+  /// Checks 3 forward-facing cells and picks the one with highest
+  /// (pheromone + random noise). Returns chosen direction or current dir.
+  int _antPheromoneDir(int x, int y, int dir, Uint8List pheroGrid) {
+    final w = _gridW;
+    // 5% exploration noise — random direction
+    if (_rng.nextInt(20) == 0) return _rng.nextBool() ? 1 : -1;
+
+    // Forward cells: straight, forward-left, forward-right
+    // "Forward" = in direction of dir horizontally
+    final candidates = <int, int>{}; // direction → weighted score
+    // Straight ahead
+    final fwdX = x + dir;
+    if (_inBounds(fwdX, y)) {
+      final fi = y * w + fwdX;
+      candidates[dir] = pheroGrid[fi] + _rng.nextInt(10);
+    }
+    // Forward-up (diagonal)
+    final uy = y - _gravityDir;
+    if (_inBounds(fwdX, uy)) {
+      final fi = uy * w + fwdX;
+      // Use dir as key (biased toward forward)
+      final score = pheroGrid[fi] + _rng.nextInt(10);
+      if (!candidates.containsKey(dir) || score > candidates[dir]!) {
+        candidates[dir] = score;
+      }
+    }
+    // Opposite side (to consider turning)
+    final bwdX = x - dir;
+    if (_inBounds(bwdX, y)) {
+      final fi = y * w + bwdX;
+      candidates[-dir] = pheroGrid[fi] + _rng.nextInt(10);
+    }
+
+    if (candidates.isEmpty) return dir;
+
+    // Pick highest-scored direction
+    int bestDir = dir;
+    int bestScore = -1;
+    for (final entry in candidates.entries) {
+      if (entry.value > bestScore) {
+        bestScore = entry.value;
+        bestDir = entry.key;
+      }
+    }
+    // Only follow pheromone if the signal is meaningful
+    return bestScore > 5 ? bestDir : dir;
+  }
+
   void _antExplore(int x, int y, int idx, int homeX, bool nearDirt, bool underground) {
-    final dir = _velX[idx];
+    int dir = _velX[idx];
 
     // If adjacent to dirt and not too many ants nearby, start digging
     if (nearDirt && _rng.nextInt(4) == 0) {
-      // Count nearby ants — don't overcrowd one dig site
       int nearbyAnts = 0;
       for (int dy = -2; dy <= 2; dy++) {
         for (int dx = -2; dx <= 2; dx++) {
@@ -2323,10 +2719,13 @@ class _ElementLabGameState extends State<ElementLabGame>
         }
       }
       if (nearbyAnts < 5) {
-        _velY[idx] = 1; // switch to digger
+        _velY[idx] = _antDiggerState;
         return;
       }
     }
+
+    // Use food pheromone to guide toward food sources
+    dir = _antPheromoneDir(x, y, dir, _pheroFood);
 
     // Scan for dirt — prefer it over empty space
     int targetDir = dir;
@@ -2341,13 +2740,11 @@ class _ElementLabGameState extends State<ElementLabGame>
           foundTarget = true;
           break;
         }
-        // Also follow other ants (social behavior)
         if (sc == El.ant && _rng.nextInt(3) == 0) {
           targetDir = sd;
           foundTarget = true;
           break;
         }
-        // Avoid hazards
         if (sc == El.water || sc == El.acid || sc == El.lava || sc == El.fire) {
           if (sd == dir) targetDir = -dir;
           break;
@@ -2356,43 +2753,120 @@ class _ElementLabGameState extends State<ElementLabGame>
       if (foundTarget) break;
     }
 
+    // Near colony with no food found? Bias away from strong home pheromone
+    if (!foundTarget && _colonyX >= 0) {
+      final dist = (x - _colonyX).abs() + (y - _colonyY).abs();
+      if (dist < 10 && _rng.nextInt(3) == 0) {
+        // Head away from colony (toward unexplored)
+        targetDir = (x >= _colonyX) ? 1 : -1;
+      }
+    }
+
     _antMove(x, y, idx, targetDir);
+  }
+
+  void _antForage(int x, int y, int idx, int homeX, bool nearDirt) {
+    int dir = _velX[idx];
+
+    // Forager found dirt — deposit food pheromone burst and start digging
+    if (nearDirt) {
+      _pheroFood[idx] = 200; // strong burst at food source
+      // Recruit nearby ants
+      _antRecruitNearby(x, y);
+      _velY[idx] = _antDiggerState;
+      return;
+    }
+
+    // Follow food pheromone toward food sources
+    dir = _antPheromoneDir(x, y, dir, _pheroFood);
+
+    // Scan for dirt like explorer but with more determination
+    int targetDir = dir;
+    bool foundTarget = false;
+    for (int scanD = 1; scanD <= 12; scanD++) {
+      for (final sd in [dir, -dir]) {
+        final sx = x + sd * scanD;
+        if (!_inBounds(sx, y)) continue;
+        final sc = _grid[y * _gridW + sx];
+        if (sc == El.dirt || sc == El.mud) {
+          targetDir = sd;
+          foundTarget = true;
+          break;
+        }
+        if (sc == El.water || sc == El.acid || sc == El.lava || sc == El.fire) {
+          if (sd == dir) targetDir = -dir;
+          break;
+        }
+      }
+      if (foundTarget) break;
+    }
+
+    // If wandering too long as forager without finding food, revert to explorer
+    if (!foundTarget && _rng.nextInt(60) == 0) {
+      _velY[idx] = _antExplorerState;
+    }
+
+    _antMove(x, y, idx, targetDir);
+  }
+
+  /// Recruit nearby ants within 5 cells to become foragers.
+  void _antRecruitNearby(int x, int y) {
+    final w = _gridW;
+    for (int dy = -5; dy <= 5; dy++) {
+      for (int dx = -5; dx <= 5; dx++) {
+        final nx2 = x + dx, ny2 = y + dy;
+        if (!_inBounds(nx2, ny2)) continue;
+        final ni = ny2 * w + nx2;
+        if (_grid[ni] == El.ant && _velY[ni] == _antExplorerState) {
+          if (_rng.nextInt(2) == 0) {
+            _velY[ni] = _antForagerState;
+            // Point recruited ant toward the food
+            _velX[ni] = dx >= 0 ? 1 : -1;
+          }
+        }
+      }
+    }
   }
 
   void _antDig(int x, int y, int idx, bool underground) {
     final g = _gravityDir;
     final by = y + g;
     final dir = _velX[idx];
+    final w = _gridW;
 
     // Try to dig downward first (create vertical shafts)
-    if (_inBounds(x, by) && _grid[by * _gridW + x] == El.dirt) {
+    if (_inBounds(x, by) && _grid[by * w + x] == El.dirt) {
       if (_rng.nextInt(3) == 0) {
-        _grid[by * _gridW + x] = El.empty;
-        _life[by * _gridW + x] = 0;
-        _swap(idx, by * _gridW + x);
-        _velY[idx] = 2; // picked up dirt, now carry it
+        _grid[by * w + x] = El.empty;
+        _life[by * w + x] = 0;
+        _swap(idx, by * w + x);
+        _velY[idx] = _antCarrierState;
+        // Deposit strong food pheromone at dig site
+        _pheroFood[by * w + x] = 200;
         return;
       }
     }
 
     // Dig sideways (create horizontal tunnels)
     final nx = x + dir;
-    if (_inBounds(nx, y) && _grid[y * _gridW + nx] == El.dirt) {
+    if (_inBounds(nx, y) && _grid[y * w + nx] == El.dirt) {
       if (_rng.nextInt(4) == 0) {
-        _grid[y * _gridW + nx] = El.empty;
-        _life[y * _gridW + nx] = 0;
-        _swap(idx, y * _gridW + nx);
-        _velY[idx] = 2; // carrying dirt
+        _grid[y * w + nx] = El.empty;
+        _life[y * w + nx] = 0;
+        _swap(idx, y * w + nx);
+        _velY[idx] = _antCarrierState;
+        _pheroFood[y * w + nx] = 200;
         return;
       }
     }
 
     // Dig diagonally down (creates branching tunnels)
-    if (_inBounds(nx, by) && _grid[by * _gridW + nx] == El.dirt && _rng.nextInt(5) == 0) {
-      _grid[by * _gridW + nx] = El.empty;
-      _life[by * _gridW + nx] = 0;
-      _swap(idx, by * _gridW + nx);
-      _velY[idx] = 2; // carrying dirt
+    if (_inBounds(nx, by) && _grid[by * w + nx] == El.dirt && _rng.nextInt(5) == 0) {
+      _grid[by * w + nx] = El.empty;
+      _life[by * w + nx] = 0;
+      _swap(idx, by * w + nx);
+      _velY[idx] = _antCarrierState;
+      _pheroFood[by * w + nx] = 200;
       return;
     }
 
@@ -2401,9 +2875,10 @@ class _ElementLabGameState extends State<ElementLabGame>
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           final cx = x + dx, cy = y + dy;
-          if (_inBounds(cx, cy) && _grid[cy * _gridW + cx] == El.dirt) {
-            _grid[cy * _gridW + cx] = El.empty;
-            _life[cy * _gridW + cx] = 0;
+          if (_inBounds(cx, cy) && _grid[cy * w + cx] == El.dirt) {
+            _grid[cy * w + cx] = El.empty;
+            _life[cy * w + cx] = 0;
+            _markDirty(cx, cy);
           }
         }
       }
@@ -2411,7 +2886,7 @@ class _ElementLabGameState extends State<ElementLabGame>
 
     // No dirt to dig — either explore for more or switch to carrier
     if (!_checkAdjacent(x, y, El.dirt)) {
-      _velY[idx] = 0; // back to explorer
+      _velY[idx] = _antExplorerState;
     }
 
     _antMove(x, y, idx, dir);
@@ -2420,86 +2895,88 @@ class _ElementLabGameState extends State<ElementLabGame>
   void _antCarry(int x, int y, int idx, int homeX) {
     final g = _gravityDir;
     final uy = y - g;
+    final w = _gridW;
+
+    // Deposit food pheromone as carrier moves (breadcrumb trail)
+    if (_pheroFood[idx] < 80) _pheroFood[idx] = 80;
 
     // Head toward surface (move upward)
     if (_inBounds(x, uy)) {
-      final aboveCell = _grid[uy * _gridW + x];
+      final aboveCell = _grid[uy * w + x];
       if (aboveCell == El.empty) {
-        _swap(idx, uy * _gridW + x);
+        _swap(idx, uy * w + x);
         return;
       }
     }
 
     // At surface or can't go higher — deposit dirt
     final atSurface = !_inBounds(x, uy) ||
-        (_grid[uy * _gridW + x] == El.empty && !_isUnderground(x, y));
+        (_grid[uy * w + x] == El.empty && !_isUnderground(x, y));
 
     if (atSurface || !_inBounds(x, uy)) {
-      // Build mound: deposit dirt near the colony entrance
-      // Try to place dirt beside or above current position (building up)
-      final depositY = uy; // place above ant
-      // Try placing at the mound center (home X) first
+      final depositY = uy;
       final toHome = (homeX - x).sign;
       for (final depositX in [x + toHome, x, x - toHome]) {
-        if (_inBounds(depositX, depositY) && _grid[depositY * _gridW + depositX] == El.empty) {
-          _grid[depositY * _gridW + depositX] = El.dirt;
-          _life[depositY * _gridW + depositX] = 0;
-          _velY[idx] = 3; // switch to returning
+        if (_inBounds(depositX, depositY) && _grid[depositY * w + depositX] == El.empty) {
+          _grid[depositY * w + depositX] = El.dirt;
+          _life[depositY * w + depositX] = 0;
+          _markDirty(depositX, depositY);
+          _velY[idx] = _antReturningState;
           return;
         }
       }
-      // Can't place above, try sideways
       for (final dx in [1, -1]) {
         final sx = x + dx;
-        if (_inBounds(sx, y) && _grid[y * _gridW + sx] == El.empty) {
-          _grid[y * _gridW + sx] = El.dirt;
-          _life[y * _gridW + sx] = 0;
-          _velY[idx] = 3;
+        if (_inBounds(sx, y) && _grid[y * w + sx] == El.empty) {
+          _grid[y * w + sx] = El.dirt;
+          _life[y * w + sx] = 0;
+          _markDirty(sx, y);
+          _velY[idx] = _antReturningState;
           return;
         }
       }
-      // Stuck with dirt — just drop state
-      _velY[idx] = 0;
+      _velY[idx] = _antExplorerState;
       return;
     }
 
-    // Move toward home X while heading up
+    // Move toward home X while heading up — follow home pheromone
+    final pheroDir = _antPheromoneDir(x, y, _velX[idx], _pheroHome);
     final toHome = (homeX - x).sign;
-    final moveDir = toHome != 0 ? toHome : _velX[idx];
+    final moveDir = toHome != 0 ? toHome : pheroDir;
     _antMove(x, y, idx, moveDir);
   }
 
   void _antReturn(int x, int y, int idx, int homeX) {
     final g = _gravityDir;
     final by = y + g;
+    final w = _gridW;
 
-    // Head back toward home X and down into the colony
+    // Follow home pheromone to find way back
     final toHome = (homeX - x).sign;
 
     // If near home X, head back underground
     if ((x - homeX).abs() <= 2) {
-      // Try to go down into the tunnels
-      if (_inBounds(x, by) && _grid[by * _gridW + x] == El.empty) {
-        _swap(idx, by * _gridW + x);
-        _velY[idx] = 0; // back to explorer once underground
+      if (_inBounds(x, by) && _grid[by * w + x] == El.empty) {
+        _swap(idx, by * w + x);
+        _velY[idx] = _antExplorerState;
         return;
       }
-      // Look for a tunnel entrance nearby
       for (final dx in [0, 1, -1, 2, -2]) {
         final tx = x + dx;
-        if (_inBounds(tx, by) && _grid[by * _gridW + tx] == El.empty) {
-          if (_inBounds(tx, y) && _grid[y * _gridW + tx] == El.empty) {
-            _swap(idx, y * _gridW + tx);
+        if (_inBounds(tx, by) && _grid[by * w + tx] == El.empty) {
+          if (_inBounds(tx, y) && _grid[y * w + tx] == El.empty) {
+            _swap(idx, y * w + tx);
             return;
           }
         }
       }
-      _velY[idx] = 0; // can't find tunnel, explore again
+      _velY[idx] = _antExplorerState;
       return;
     }
 
-    // Walk toward home
-    final moveDir = toHome != 0 ? toHome : _velX[idx];
+    // Use home pheromone for navigation with homeX as fallback
+    final pheroDir = _antPheromoneDir(x, y, _velX[idx], _pheroHome);
+    final moveDir = toHome != 0 ? toHome : pheroDir;
     _antMove(x, y, idx, moveDir);
   }
 
@@ -2507,26 +2984,27 @@ class _ElementLabGameState extends State<ElementLabGame>
   void _antMove(int x, int y, int idx, int moveDir) {
     final g = _gravityDir;
     final uy = y - g;
+    final w = _gridW;
     final nx = x + moveDir;
 
     // Walk along surface
-    if (_inBounds(nx, y) && _grid[y * _gridW + nx] == El.empty) {
+    if (_inBounds(nx, y) && _grid[y * w + nx] == El.empty) {
       _velX[idx] = moveDir;
-      _swap(idx, y * _gridW + nx);
+      _swap(idx, y * w + nx);
       return;
     }
 
     // Step up 1 cell (climb over obstacle)
-    if (_inBounds(nx, uy) && _grid[uy * _gridW + nx] == El.empty) {
+    if (_inBounds(nx, uy) && _grid[uy * w + nx] == El.empty) {
       _velX[idx] = moveDir;
-      _swap(idx, uy * _gridW + nx);
+      _swap(idx, uy * w + nx);
       return;
     }
 
     // Wall climb straight up
-    if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
-      if (!_inBounds(nx, y) || _grid[y * _gridW + nx] != El.empty) {
-        _swap(idx, uy * _gridW + x);
+    if (_inBounds(x, uy) && _grid[uy * w + x] == El.empty) {
+      if (!_inBounds(nx, y) || _grid[y * w + nx] != El.empty) {
+        _swap(idx, uy * w + x);
         return;
       }
     }
@@ -2541,7 +3019,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_checkAdjacent(x, y, El.fire)) {
       _grid[idx] = El.fire;
       _life[idx] = 0;
-      _flags[idx] = 1;
+      _markProcessed(idx);
       return;
     }
 
@@ -2554,14 +3032,15 @@ class _ElementLabGameState extends State<ElementLabGame>
 
     // Float on water: if oil is sitting ON water (water is above), rise upward
     final uy = y - _gravityDir;
-    if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.water && _flags[uy * _gridW + x] != 1) {
+    if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.water && ((_flags[uy * _gridW + x] & 0x80) != (_simClock ? 0x80 : 0))) {
       final ui = uy * _gridW + x;
+      final waterMass3 = _life[ui]; // preserve water mass
       _grid[ui] = El.oil;
       _life[ui] = _life[idx];
       _grid[idx] = El.water;
-      _life[idx] = 0;
-      _flags[ui] = 1;
-      _flags[idx] = 1;
+      _life[idx] = waterMass3 < 20 ? 100 : waterMass3;
+      _markProcessed(ui);
+      _markProcessed(idx);
       return;
     }
 
@@ -2614,7 +3093,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.stone && _rng.nextInt(15) == 0) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           _grid[idx] = El.empty;
           _life[idx] = 0;
           return;
@@ -2623,7 +3102,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.glass && _rng.nextInt(10) == 0) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           _grid[idx] = El.empty;
           _life[idx] = 0;
           return;
@@ -2632,26 +3111,26 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.ant) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Mix with water — dilutes
         if (neighbor == El.water && _rng.nextInt(8) == 0) {
           _grid[idx] = El.water;
-          _life[idx] = 0;
-          _flags[idx] = 1;
+          _life[idx] = 100; // water mass
+          _markProcessed(idx);
           return;
         }
         // Dissolve plant/seed
         if ((neighbor == El.plant || neighbor == El.seed) && _rng.nextInt(3) == 0) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
         // Dissolve wood slowly
         if (neighbor == El.wood && _rng.nextInt(12) == 0) {
           _grid[ni] = El.empty;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
           _grid[idx] = El.empty;
           _life[idx] = 0;
           return;
@@ -2660,7 +3139,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         if (neighbor == El.water && _rng.nextInt(20) == 0) {
           _grid[ni] = El.bubble;
           _life[ni] = 0;
-          _flags[ni] = 1;
+          _markProcessed(ni);
         }
       }
     }
@@ -2706,10 +3185,12 @@ class _ElementLabGameState extends State<ElementLabGame>
       }
       // Sink through water
       if ((elType == El.sand || elType == El.dirt || elType == El.seed) && belowEl == El.water) {
+        final sinkWaterMass = _life[below]; // preserve water mass
         _grid[idx] = El.water;
+        _life[idx] = sinkWaterMass < 20 ? 100 : sinkWaterMass;
         _grid[below] = elType;
-        _flags[idx] = 1;
-        _flags[below] = 1;
+        _markProcessed(idx);
+        _markProcessed(below);
         return;
       }
     }
@@ -2748,14 +3229,83 @@ class _ElementLabGameState extends State<ElementLabGame>
     _velX[b] = tmpVx;
     _velY[b] = tmpVy;
 
-    _flags[a] = 1;
-    _flags[b] = 1;
+    // Set clock bit to current _simClock and clear settled bits for both cells
+    final clockBit = _simClock ? 0x80 : 0;
+    _flags[a] = clockBit;
+    _flags[b] = clockBit;
+
+    // Mark both source and destination chunks dirty
+    final w = _gridW;
+    _markDirty(a % w, a ~/ w);
+    _markDirty(b % w, b ~/ w);
   }
 
   // Inlined for hot-path performance — avoid function call overhead.
   @pragma('vm:prefer-inline')
   bool _inBounds(int x, int y) =>
       x >= 0 && x < _gridW && y >= 0 && y < _gridH;
+
+  /// Mark the chunk containing (x,y) as dirty for the next frame.
+  /// Also marks adjacent chunks if the cell is on a chunk boundary (within 1 cell of edge).
+  @pragma('vm:prefer-inline')
+  void _markDirty(int x, int y) {
+    final cx = x >> 4; // x ~/ 16
+    final cy = y >> 4; // y ~/ 16
+    final cols = _chunkCols;
+    final nd = _nextDirtyChunks;
+    nd[cy * cols + cx] = 1;
+    // Check chunk boundary adjacency (within 1 cell of edge)
+    final lx = x & 15; // x % 16
+    final ly = y & 15; // y % 16
+    if (lx == 0 && cx > 0) nd[cy * cols + cx - 1] = 1;
+    if (lx == 15 && cx < cols - 1) nd[cy * cols + cx + 1] = 1;
+    final rows = _chunkRows;
+    if (ly == 0 && cy > 0) nd[(cy - 1) * cols + cx] = 1;
+    if (ly == 15 && cy < rows - 1) nd[(cy + 1) * cols + cx] = 1;
+    // Corner adjacency
+    if (lx == 0 && ly == 0 && cx > 0 && cy > 0) nd[(cy - 1) * cols + cx - 1] = 1;
+    if (lx == 15 && ly == 0 && cx < cols - 1 && cy > 0) nd[(cy - 1) * cols + cx + 1] = 1;
+    if (lx == 0 && ly == 15 && cx > 0 && cy < rows - 1) nd[(cy + 1) * cols + cx - 1] = 1;
+    if (lx == 15 && ly == 15 && cx < cols - 1 && cy < rows - 1) nd[(cy + 1) * cols + cx + 1] = 1;
+  }
+
+  /// Mark all chunks dirty (used on reset, clear, undo, etc.)
+  void _markAllDirty() {
+    _dirtyChunks.fillRange(0, _dirtyChunks.length, 1);
+    _nextDirtyChunks.fillRange(0, _nextDirtyChunks.length, 1);
+  }
+
+  /// Mark a cell as processed this frame (sets clock bit, clears settled/stable bits)
+  /// and marks the chunk dirty. Replaces all direct `_flags[idx] = 1` in element behaviors.
+  @pragma('vm:prefer-inline')
+  void _markProcessed(int idx) {
+    _flags[idx] = _simClock ? 0x80 : 0;
+    final w = _gridW;
+    _markDirty(idx % w, idx ~/ w);
+  }
+
+  /// Clear settled flag on all 8 neighbors of (x,y) — called when a cell changes state
+  /// so neighbors re-evaluate.
+  @pragma('vm:prefer-inline')
+  void _unsettleNeighbors(int x, int y) {
+    final w = _gridW;
+    final maxX = w - 1;
+    final maxY = _gridH - 1;
+    if (y > 0) {
+      final rowAbove = (y - 1) * w;
+      if (x > 0)    _flags[rowAbove + x - 1] &= 0x80; // keep clock, clear rest
+                     _flags[rowAbove + x]     &= 0x80;
+      if (x < maxX) _flags[rowAbove + x + 1] &= 0x80;
+    }
+    if (x > 0)    _flags[y * w + x - 1] &= 0x80;
+    if (x < maxX) _flags[y * w + x + 1] &= 0x80;
+    if (y < maxY) {
+      final rowBelow = (y + 1) * w;
+      if (x > 0)    _flags[rowBelow + x - 1] &= 0x80;
+                     _flags[rowBelow + x]     &= 0x80;
+      if (x < maxX) _flags[rowBelow + x + 1] &= 0x80;
+    }
+  }
 
   /// Optimized 8-neighbor check. Unrolled for performance.
   @pragma('vm:prefer-inline')
@@ -2793,7 +3343,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (_grid[ni] == elType) {
             _grid[ni] = El.empty;
             _life[ni] = 0;
-            _flags[ni] = 1;
+            _markProcessed(ni);
             return;
           }
         }
@@ -2802,6 +3352,7 @@ class _ElementLabGameState extends State<ElementLabGame>
   }
 
   void _processExplosions() {
+    if (_pendingExplosions.isEmpty) return;
     for (final exp in _pendingExplosions) {
       final r = exp.radius;
       for (int dy = -r; dy <= r; dy++) {
@@ -2814,6 +3365,7 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (_grid[ni] != El.stone && _grid[ni] != El.glass && _grid[ni] != El.metal) {
             _grid[ni] = El.empty;
             _life[ni] = 0;
+            _markDirty(nx, ny);
           }
         }
       }
@@ -2828,11 +3380,43 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (_grid[fi] == El.empty) {
             _grid[fi] = El.fire;
             _life[fi] = 0;
+            _markDirty(fx, fy);
           }
         }
       }
     }
     _pendingExplosions.clear();
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /// Linearly interpolate between two RGB colors. [t] ranges 0..255.
+  static int _lerpC(int a, int b, int t) => (a + ((b - a) * t) ~/ 255).clamp(0, 255);
+
+  /// Spawn a micro-particle (rendered in pixel buffer only, not in _grid).
+  void _spawnParticle(int x, int y, int r, int g, int b, int frames) {
+    if (_microParticles.length >= _maxMicroParticles) return;
+    _microParticles.add(Int32List.fromList([x, y, r, g, b, frames]));
+  }
+
+  /// Advance micro-particles: move upward, fade, remove expired.
+  void _tickMicroParticles() {
+    for (int i = _microParticles.length - 1; i >= 0; i--) {
+      final p = _microParticles[i];
+      p[5]--; // frames left
+      if (p[5] <= 0) {
+        _microParticles.removeAt(i);
+        continue;
+      }
+      // Move upward (most particles rise)
+      p[1] -= 1;
+      // Slight horizontal drift
+      if (_rng.nextInt(3) == 0) p[0] += _rng.nextInt(3) - 1;
+      // Fade brightness
+      p[2] = (p[2] * 220) ~/ 256;
+      p[3] = (p[3] * 220) ~/ 256;
+      p[4] = (p[4] * 220) ~/ 256;
+    }
   }
 
   // ── Pixel rendering ─────────────────────────────────────────────────────
@@ -2843,22 +3427,30 @@ class _ElementLabGameState extends State<ElementLabGame>
     final h = _gridH;
     final g = _grid;
     final t = _dayNightT;
+    final fc = _frameCount;
 
-    // Pre-computed background colors
-    final bgR = (10 - t * 6).round().clamp(0, 255);
-    final bgG = (10 - t * 6).round().clamp(0, 255);
-    final bgB = (26 - t * 10).round().clamp(0, 255);
+    // Pre-computed background colors (base: near-black, not pure black)
+    final baseBgR = (12 - t * 6).round().clamp(0, 255);
+    final baseBgG = (12 - t * 6).round().clamp(0, 255);
+    final baseBgB = (28 - t * 10).round().clamp(0, 255);
 
     // Night glow multiplier for fire/lava halos
     final glowMul = 1.0 + t * 1.5;
-    final glowIntR = (12 * glowMul).round();
-    final glowIntG = (4 * glowMul).round();
+    // Glow intensities for ring-1 (adjacent) and ring-2 (diagonal/2-cell)
+    final glow1R = (14 * glowMul).round();
+    final glow1G = (5 * glowMul).round();
+    final glow2R = (7 * glowMul).round();
+    final glow2G = (2 * glowMul).round();
+    // Lightning glow — bright white-blue, 3-cell radius
+    final lGlow1 = (25 * glowMul).round();
+    final lGlow2 = (14 * glowMul).round();
+    final lGlow3 = (6 * glowMul).round();
 
     // Star set for quick lookup (only at night)
     final starSet = t > 0.05 ? Set<int>.from(_starPositions) : <int>{};
 
     // Pre-compute glow only every 3rd frame (fire moves slowly)
-    final doGlow = _frameCount % 3 == 0;
+    final doGlow = fc % 3 == 0;
 
     // Pre-compute integer night factors (avoid per-pixel float math)
     final nightBoost = (t * 30).round();
@@ -2869,49 +3461,145 @@ class _ElementLabGameState extends State<ElementLabGame>
     final nightDimWater = (256 * (1.0 - t * 0.15)).round();
     final nightDimGeneral = (256 * (1.0 - t * 0.2)).round();
 
+    // ── Build glow map for emissive cells (fire, lava, lightning) ──
+    // Only rebuild every 3rd frame. Uses a flat int buffer for R/G/B additive glow.
+    Uint8List? glowR8, glowG8, glowB8;
+    if (doGlow) {
+      glowR8 = Uint8List(total);
+      glowG8 = Uint8List(total);
+      glowB8 = Uint8List(total);
+      for (int i = 0; i < total; i++) {
+        final el = g[i];
+        if (el != El.fire && el != El.lava && el != El.lightning) continue;
+        final ex = i % w;
+        final ey = i ~/ w;
+        if (el == El.lightning) {
+          // Lightning: white-blue glow, 3-cell radius
+          for (int dy = -3; dy <= 3; dy++) {
+            final ny = ey + dy;
+            if (ny < 0 || ny >= h) continue;
+            for (int dx = -3; dx <= 3; dx++) {
+              final nx = ex + dx;
+              if (nx < 0 || nx >= w) continue;
+              final dist = dx.abs() + dy.abs(); // Manhattan distance
+              if (dist == 0) continue;
+              final ni = ny * w + nx;
+              if (g[ni] != El.empty) continue;
+              int intensity;
+              if (dist <= 1) intensity = lGlow1;
+              else if (dist <= 2) intensity = lGlow2;
+              else intensity = lGlow3;
+              glowR8![ni] = (glowR8[ni] + intensity).clamp(0, 255);
+              glowG8![ni] = (glowG8[ni] + intensity).clamp(0, 255);
+              glowB8![ni] = (glowB8[ni] + (intensity * 2 ~/ 3)).clamp(0, 255);
+            }
+          }
+        } else {
+          // Fire/Lava: warm orange glow, 2-cell radius
+          final isFire = el == El.fire;
+          for (int dy = -2; dy <= 2; dy++) {
+            final ny = ey + dy;
+            if (ny < 0 || ny >= h) continue;
+            for (int dx = -2; dx <= 2; dx++) {
+              final nx = ex + dx;
+              if (nx < 0 || nx >= w) continue;
+              final dist = dx.abs() + dy.abs();
+              if (dist == 0) continue;
+              final ni = ny * w + nx;
+              if (g[ni] != El.empty) continue;
+              if (dist <= 1) {
+                glowR8![ni] = (glowR8[ni] + glow1R).clamp(0, 255);
+                if (isFire) glowG8![ni] = (glowG8[ni] + glow1G).clamp(0, 255);
+              } else {
+                glowR8![ni] = (glowR8[ni] + glow2R).clamp(0, 255);
+                if (isFire) glowG8![ni] = (glowG8[ni] + glow2G).clamp(0, 255);
+              }
+            }
+          }
+        }
+      }
+      // Cache for non-glow frames
+      _cachedGlowR = glowR8;
+      _cachedGlowG = glowG8;
+      _cachedGlowB = glowB8;
+    } else {
+      glowR8 = _cachedGlowR;
+      glowG8 = _cachedGlowG;
+      glowB8 = _cachedGlowB;
+    }
+
     for (int i = 0; i < total; i++) {
       final el = g[i];
       final pi4 = i * 4;
       if (el == El.empty) {
-        // Lightweight glow check: only check cardinal neighbors (4 not 8)
-        int glowR = 0, glowG = 0;
-        if (doGlow) {
-          final x = i % w;
-          final y = i ~/ w;
-          // Check 4 cardinal neighbors only (much faster than 8)
-          if (y > 0)     { final n = g[i - w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
-          if (y < h - 1) { final n = g[i + w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
-          if (x > 0)     { final n = g[i - 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
-          if (x < w - 1) { final n = g[i + 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
+        // Background gradient: slightly lighter at top (sky), darker at bottom
+        final y = i ~/ w;
+        final gradientShift = (4 - (y * 6) ~/ h).clamp(0, 6); // +4 at top, ~0 at bottom
+        int emptyR = (baseBgR + gradientShift).clamp(0, 30);
+        int emptyG = (baseBgG + gradientShift).clamp(0, 30);
+        int emptyB = (baseBgB + gradientShift + 2).clamp(0, 40); // slightly more blue at top
+
+        // Apply glow from nearby emissive cells
+        if (glowR8 != null) {
+          final gr = glowR8[i];
+          final gg = glowG8![i];
+          final gb = glowB8![i];
+          if (gr > 0 || gg > 0 || gb > 0) {
+            emptyR = (emptyR + gr).clamp(0, 255);
+            emptyG = (emptyG + gg).clamp(0, 255);
+            emptyB = (emptyB + gb).clamp(0, 255);
+          }
         }
-        if (glowR > 0) {
-          _pixels[pi4] = (bgR + glowR.clamp(0, 60)).clamp(0, 255);
-          _pixels[pi4 + 1] = (bgG + glowG.clamp(0, 20)).clamp(0, 255);
-          _pixels[pi4 + 2] = bgB;
-          _pixels[pi4 + 3] = 255;
-        } else if (starSet.contains(i)) {
+
+        // Apply pheromone trail tints
+        final foodP = _pheroFood[i];
+        final homeP = _pheroHome[i];
+        if (foodP > 8 || homeP > 8) {
+          final foodR = foodP > 8 ? (foodP >> 4) : 0;
+          final foodG2 = foodP > 8 ? (foodP >> 3) : 0;
+          final homeB = homeP > 8 ? (homeP >> 4) : 0;
+          emptyR = (emptyR + foodR).clamp(0, 255);
+          emptyG = (emptyG + foodG2).clamp(0, 255);
+          emptyB = (emptyB + homeB).clamp(0, 255);
+        }
+
+        if (starSet.contains(i)) {
           // Twinkling stars at night
-          final twinkle = ((_frameCount + i * 17) % 40);
+          final twinkle = ((fc + i * 17) % 40);
           if (twinkle < 6) {
             final brightness = twinkle < 3 ? 200 : 140;
             final starBright = (brightness * t).round();
-            _pixels[pi4] = (bgR + starBright).clamp(0, 255);
-            _pixels[pi4 + 1] = (bgG + starBright).clamp(0, 255);
-            _pixels[pi4 + 2] = (bgB + starBright).clamp(0, 255);
-            _pixels[pi4 + 3] = 255;
-          } else {
-            _pixels[pi4] = bgR;
-            _pixels[pi4 + 1] = bgG;
-            _pixels[pi4 + 2] = bgB;
-            _pixels[pi4 + 3] = 255;
+            emptyR = (emptyR + starBright).clamp(0, 255);
+            emptyG = (emptyG + starBright).clamp(0, 255);
+            emptyB = (emptyB + starBright).clamp(0, 255);
           }
-        } else {
-          _pixels[pi4] = bgR;
-          _pixels[pi4 + 1] = bgG;
-          _pixels[pi4 + 2] = bgB;
-          _pixels[pi4 + 3] = 255;
         }
+
+        _pixels[pi4] = emptyR;
+        _pixels[pi4 + 1] = emptyG;
+        _pixels[pi4 + 2] = emptyB;
+        _pixels[pi4 + 3] = 255;
         continue;
+      }
+
+      // ── Spawn micro-particles from active elements ──
+      if (fc % 2 == 0) {
+        final x = i % w;
+        final y = i ~/ w;
+        if (el == El.fire || el == El.lava) {
+          // Spark scatter: occasional bright pixel upward
+          if (_rng.nextInt(200) < 2 && y > 1) {
+            // Lava: orange-yellow sparks; Fire: bright yellow-white sparks
+            final sparkG = el == El.lava ? 160 : 240;
+            final sparkB = el == El.lava ? 30 : 100;
+            _spawnParticle(x + _rng.nextInt(3) - 1, y - 1, 255, sparkG, sparkB, 4 + _rng.nextInt(3));
+          }
+        } else if (el == El.sand) {
+          // Dust motes: when sand is falling (cell below is empty or we just arrived)
+          if (_rng.nextInt(400) < 1 && y > 1 && y < h - 1 && g[(y + 1) * w + x] == El.empty) {
+            _spawnParticle(x, y - 1, 194, 178, 128, 3);
+          }
+        }
       }
 
       final c = _getElementColor(el, i);
@@ -2931,7 +3619,7 @@ class _ElementLabGameState extends State<ElementLabGame>
         } else if (el == El.water) {
           final wx = i % w;
           final isTop = i >= w && g[i - w] != El.water;
-          if (isTop && ((_frameCount + wx * 3) % 12 < 3)) {
+          if (isTop && ((fc + wx * 3) % 12 < 3)) {
             r = (r + nightShimmer).clamp(0, 255);
             g2 = (g2 + nightShimmer).clamp(0, 255);
             b = (b + nightShimmer).clamp(0, 255);
@@ -2955,6 +3643,18 @@ class _ElementLabGameState extends State<ElementLabGame>
       _pixels[pi4 + 2] = b.clamp(0, 255);
       _pixels[pi4 + 3] = a;
     }
+
+    // ── Render micro-particles on top (additive blend into pixel buffer) ──
+    for (final p in _microParticles) {
+      final px = p[0];
+      final py = p[1];
+      if (px < 0 || px >= w || py < 0 || py >= h) continue;
+      final pi4 = (py * w + px) * 4;
+      // Additive blend: brighten existing pixel
+      _pixels[pi4] = (_pixels[pi4] + p[2]).clamp(0, 255);
+      _pixels[pi4 + 1] = (_pixels[pi4 + 1] + p[3]).clamp(0, 255);
+      _pixels[pi4 + 2] = (_pixels[pi4 + 2] + p[4]).clamp(0, 255);
+    }
   }
 
   Color _getElementColor(int el, int idx) {
@@ -2963,14 +3663,26 @@ class _ElementLabGameState extends State<ElementLabGame>
 
     switch (el) {
       case El.fire:
-        final phase = (_life[idx] + _frameCount) % 20;
-        if (phase < 7) {
-          return Color.fromARGB(255, (255 + variation).clamp(200, 255), (102 + variation).clamp(60, 140), 0);
+        // Life increases 0->40-80 then dies. Low=fresh(hot), high=dying(cool tips)
+        final fireLife = _life[idx];
+        final flicker = (_frameCount + idx * 3) % 6;
+        if (fireLife < 8) {
+          // Just spawned — bright yellow-white core (bottom of flame)
+          final wb = flicker < 3 ? 30 : 0;
+          return Color.fromARGB(255, 255, (240 + wb + variation).clamp(210, 255), (140 + wb).clamp(100, 180));
         }
-        if (phase < 14) {
-          return Color.fromARGB(255, (255 + variation).clamp(200, 255), (34 + variation).clamp(0, 80), 0);
+        if (fireLife < 20) {
+          // Middle flame: bright orange
+          return Color.fromARGB(255, (255 + variation).clamp(230, 255), (130 + variation + (flicker < 3 ? 20 : 0)).clamp(80, 170), 0);
         }
-        return Color.fromARGB(255, 255, (170 + variation).clamp(130, 210), 0);
+        if (fireLife < 35) {
+          // Upper flame: orange-red
+          return Color.fromARGB(255, (240 + variation).clamp(200, 255), (60 + variation).clamp(20, 90), 0);
+        }
+        // Dying tips: dark red, fading out
+        final remaining = (80 - fireLife).clamp(1, 45);
+        final tipAlpha = (remaining * 5 + 55).clamp(55, 255);
+        return Color.fromARGB(tipAlpha, (180 + variation).clamp(140, 210), (20 + variation).clamp(0, 40), 0);
 
       case El.lightning:
         return _frameCount.isEven
@@ -2997,8 +3709,11 @@ class _ElementLabGameState extends State<ElementLabGame>
         }
 
       case El.steam:
-        final alpha = (180 - _life[idx] * 2).clamp(60, 180);
-        return Color.fromARGB(alpha, 220 + variation, 220 + variation, 240);
+        final steamLife = _life[idx];
+        final alpha = (180 - steamLife * 2).clamp(60, 180);
+        // Wispy bright spots that shimmer as steam rises
+        final wisp = (_frameCount + idx * 5) % 8 < 2 ? 20 : 0;
+        return Color.fromARGB(alpha, (220 + variation + wisp).clamp(200, 255), (220 + variation + wisp).clamp(200, 255), (240 + wisp).clamp(230, 255));
 
       case El.water:
         // Electrified water
@@ -3007,30 +3722,52 @@ class _ElementLabGameState extends State<ElementLabGame>
           if (_life[idx] < 200) _life[idx] = 0;
           return const Color(0xFFFFFF66);
         }
-        // Melting transition from ice
+        // Melting transition from ice (smooth thermal transition)
         if (_life[idx] >= 140 && _life[idx] < 200) {
           _life[idx]--;
-          final blend = (_life[idx] - 140) / 10.0;
+          final tFrac = ((_life[idx] - 140) * 255 ~/ 60).clamp(0, 255);
           return Color.fromARGB(
             255,
-            (30 + blend * 140).round().clamp(0, 255),
-            (100 + blend * 120).round().clamp(0, 255),
+            _lerpC(30, 170, tFrac),
+            _lerpC(100, 220, tFrac),
             255,
           );
         }
-        // Water shimmer — top edge is lighter
+        // Depth-based blue gradient with shimmer
         final wx = idx % _gridW;
         final wy = idx ~/ _gridW;
         final isTop = wy > 0 && _grid[(wy - 1) * _gridW + wx] != El.water &&
             _grid[(wy - 1) * _gridW + wx] != El.oil;
         if (isTop) {
-          return Color.fromARGB(255, (80 + variation).clamp(50, 110), 180, 255);
+          // Surface: lighter, cyan-tinted, with subtle shimmer
+          final shimmer = ((_frameCount + wx * 3) % 10 < 2) ? 20 : 0;
+          return Color.fromARGB(255, (80 + shimmer).clamp(50, 120), (190 + shimmer).clamp(170, 220), 255);
         }
-        return Color.fromARGB(255, (30 + variation).clamp(10, 60), (100 + variation).clamp(80, 130), 255);
+        // Measure depth: count water cells above
+        int depth = 0;
+        for (int cy = wy - 1; cy >= 0 && depth < 8; cy--) {
+          if (_grid[cy * _gridW + wx] == El.water) depth++;
+          else break;
+        }
+        // Surface->deep: lighter cyan -> standard blue -> dark saturated
+        if (depth < 2) {
+          return Color.fromARGB(255, (50 + variation).clamp(30, 70), (140 + variation).clamp(120, 160), 255);
+        } else if (depth < 5) {
+          return Color.fromARGB(255, (30 + variation).clamp(10, 50), (100 + variation).clamp(80, 120), 240);
+        } else {
+          return Color.fromARGB(255, (15 + variation).clamp(5, 30), (70 + variation).clamp(50, 90), 210);
+        }
 
       case El.sand:
-        final v = ((idx % 7) * 3 + variation).clamp(0, 30);
-        return Color.fromARGB(255, 222 - v, 184 - v, 135 - v);
+        // 4 warm tones for rich pixel-art sand texture
+        final sx = idx % _gridW;
+        final sy = idx ~/ _gridW;
+        switch ((sx + sy) % 4) {
+          case 0: return const Color.fromARGB(255, 194, 178, 128); // base
+          case 1: return const Color.fromARGB(255, 210, 190, 138); // lighter
+          case 2: return const Color.fromARGB(255, 182, 162, 112); // darker
+          default: return const Color.fromARGB(255, 200, 172, 120); // yellower
+        }
 
       case El.tnt:
         final tx = idx % _gridW;
@@ -3040,15 +3777,29 @@ class _ElementLabGameState extends State<ElementLabGame>
 
       case El.ant:
         final antState = _velY[idx];
-        if (antState == 2) {
-          // Carrier — brownish tint (carrying dirt)
+        if (antState == _antCarrierState) {
+          // Carrier — brownish tint (carrying dirt) with bright food pixel
+          final ay = idx ~/ _gridW;
+          final aboveIdx = idx - _gridW;
+          // Render bright dirt-colored pixel "on top" if this is top pixel of ant
+          if (ay > 0 && _grid[aboveIdx] != El.ant) {
+            return const Color(0xFF8B6914); // food color on head
+          }
           return const Color(0xFF3D2B1F);
         }
-        if (antState == 1) {
+        if (antState == _antDiggerState) {
           // Digger — slightly reddish (active worker)
           return const Color(0xFF2A1111);
         }
-        // Explorer/returning — normal dark ant
+        if (antState == _antForagerState) {
+          // Forager — slightly greenish tint (on a mission)
+          return const Color(0xFF1A2A11);
+        }
+        if (antState == _antReturningState) {
+          // Returning — slight blue tint
+          return const Color(0xFF111122);
+        }
+        // Explorer — normal dark ant
         return (idx % 3 == 0)
             ? const Color(0xFF333333)
             : const Color(0xFF111111);
@@ -3058,14 +3809,23 @@ class _ElementLabGameState extends State<ElementLabGame>
         return Color.fromARGB(255, (139 - v).clamp(100, 150), (115 - v).clamp(80, 130), (85 - v).clamp(50, 100));
 
       case El.dirt:
-        // Moisture gradient: 0=dry sandy brown, 5=dark rich brown/muddy
+        // 3 brown tones + moisture gradient: 0=dry, 5=dark/muddy
         final moisture = _life[idx].clamp(0, 5);
         final mFrac = moisture / 5.0;
-        final v = ((idx % 5) * 5 + variation).clamp(0, 30);
-        // Dry: (139,105,20) → Moist: (80,55,15) (darker, richer)
-        final dr = (139 - mFrac * 59 - v).round().clamp(60, 150);
-        final dg = (105 - mFrac * 50 - v).round().clamp(40, 120);
-        final db = (20 + v - mFrac * 5).round().clamp(10, 50);
+        final dx = idx % _gridW;
+        final dy = idx ~/ _gridW;
+        final dirtVar = (dx * 3 + dy * 5) % 3;
+        // Base tones: rich brown, dark brown, reddish brown
+        int baseR, baseG, baseB;
+        switch (dirtVar) {
+          case 0: baseR = 139; baseG = 105; baseB = 20; // rich brown
+          case 1: baseR = 120; baseG = 85;  baseB = 18; // dark brown
+          default: baseR = 145; baseG = 95;  baseB = 25; // reddish brown
+        }
+        // Apply moisture darkening
+        final dr = (baseR - mFrac * 59).round().clamp(60, 150);
+        final dg = (baseG - mFrac * 50).round().clamp(40, 120);
+        final db = (baseB - mFrac * 5).round().clamp(10, 50);
         return Color.fromARGB(255, dr, dg, db);
 
       case El.plant:
@@ -3115,11 +3875,31 @@ class _ElementLabGameState extends State<ElementLabGame>
         }
 
       case El.ice:
-        return Color.fromARGB(255, (170 + variation).clamp(150, 200), (221 + variation).clamp(200, 240), 255);
+        // Crystalline texture: pale blue base with white highlight facets
+        final ix = idx % _gridW;
+        final iy = idx ~/ _gridW;
+        if ((ix + iy) % 3 == 0) {
+          // White crystal highlights
+          return const Color.fromARGB(255, 230, 240, 255);
+        }
+        // Slightly different blue shades for crystal facets
+        final facet = (ix * 5 + iy * 9) % 3;
+        switch (facet) {
+          case 0: return Color.fromARGB(255, (175 + variation).clamp(155, 200), (225 + variation).clamp(205, 245), 255);
+          case 1: return Color.fromARGB(255, (160 + variation).clamp(140, 185), (210 + variation).clamp(190, 230), 248);
+          default: return Color.fromARGB(255, (185 + variation).clamp(165, 210), (230 + variation).clamp(210, 250), 255);
+        }
 
       case El.stone:
-        final v = ((idx % 3) * 10 + variation).clamp(0, 40);
-        return Color.fromARGB(255, 120 + v, 120 + v, 120 + v);
+        // 4 gray tones for natural rock texture
+        final stx = idx % _gridW;
+        final sty = idx ~/ _gridW;
+        switch ((stx * 7 + sty * 13) % 4) {
+          case 0: return const Color.fromARGB(255, 140, 140, 140); // light gray
+          case 1: return const Color.fromARGB(255, 118, 118, 118); // medium gray
+          case 2: return const Color.fromARGB(255, 100, 100, 105); // dark gray
+          default: return const Color.fromARGB(255, 125, 128, 135); // blue-gray
+        }
 
       case El.mud:
         final v = ((idx % 5) * 5 + variation).clamp(0, 30);
@@ -3144,13 +3924,38 @@ class _ElementLabGameState extends State<ElementLabGame>
         return Color.fromARGB(200, (210 + variation + sparkle).clamp(180, 255), (225 + variation + sparkle).clamp(200, 255), 255);
 
       case El.lava:
+        // Life increases over time: 0=fresh(hot) -> 200+=cooling into stone
+        final lavaLife = _life[idx];
         final flicker = (_frameCount + idx) % 6;
-        final bright = flicker < 3 ? 30 : 0;
-        return Color.fromARGB(255, (255 + variation).clamp(220, 255), (69 + bright + variation).clamp(40, 120), 0);
+        final flickerBright = flicker < 3 ? 20 : 0;
+        // Bright spot: 1-pixel molten sparkle
+        final isBrightSpot = (idx * 17 + _frameCount) % 40 == 0;
+        if (isBrightSpot && lavaLife < 150) {
+          return const Color.fromARGB(255, 255, 255, 180); // hot white-yellow
+        }
+        if (lavaLife < 40) {
+          // Fresh/hot core: yellow-white
+          return Color.fromARGB(255, 255, (220 + flickerBright).clamp(200, 255), (100 + flickerBright).clamp(80, 140));
+        } else if (lavaLife < 120) {
+          // Medium: bright orange, cooling gradually
+          final t2 = ((lavaLife - 40) * 255 ~/ 80).clamp(0, 255);
+          return Color.fromARGB(255, 255, _lerpC(180, 69, t2) + flickerBright, flickerBright);
+        } else {
+          // Old/cooling: darker red-brown approaching stone
+          final t2 = ((lavaLife - 120) * 255 ~/ 80).clamp(0, 255);
+          return Color.fromARGB(255, _lerpC(255, 140, t2), _lerpC(69, 30, t2) + flickerBright, 0);
+        }
 
       case El.snow:
-        final sparkle = (_frameCount + idx * 5) % 15 < 2 ? 15 : 0;
-        return Color.fromARGB(255, (240 + sparkle).clamp(230, 255), (240 + sparkle).clamp(230, 255), 255);
+        // Near-white with subtle blue shadows at random positions
+        final snowX = idx % _gridW;
+        final snowY = idx ~/ _gridW;
+        final isShadow = (snowX * 7 + snowY * 11) % 5 == 0;
+        final sparkle = (_frameCount + idx * 5) % 15 < 2 ? 12 : 0;
+        if (isShadow) {
+          return Color.fromARGB(255, (220 + sparkle).clamp(215, 240), (225 + sparkle).clamp(220, 245), 240);
+        }
+        return Color.fromARGB(255, (240 + sparkle).clamp(235, 255), (243 + sparkle).clamp(238, 255), 255);
 
       case El.wood:
         // Burning wood — shifts to red/orange
@@ -3159,13 +3964,21 @@ class _ElementLabGameState extends State<ElementLabGame>
           final bright = burnPhase < 3 ? 40 : 0;
           return Color.fromARGB(255, (200 + bright).clamp(180, 255), (80 + bright - _life[idx]).clamp(20, 120), 10);
         }
-        // Grain pattern: alternate lighter/darker based on position
-        final wx = idx % _gridW;
-        final wy = idx ~/ _gridW;
-        final grain = (wx + wy * 3) % 5 < 2 ? 15 : 0;
+        final woodX = idx % _gridW;
+        final woodY = idx ~/ _gridW;
+        // Horizontal grain lines based on y%2
+        final grainDark = woodY % 2 == 0;
+        // "Knot" positions — darker spots
+        final isKnot = (woodX * 11 + woodY * 7) % 17 == 0;
         // Waterlogged wood is darker (velY tracks waterlog level 0..3)
         final waterlog = _velY[idx].clamp(0, 3) * 20;
-        return Color.fromARGB(255, (160 - grain - waterlog + variation).clamp(60, 180), (82 - grain - waterlog + variation).clamp(30, 110), (45 - grain - waterlog + variation).clamp(10, 70));
+        if (isKnot) {
+          return Color.fromARGB(255, (110 - waterlog).clamp(50, 130), (55 - waterlog).clamp(25, 75), (30 - waterlog).clamp(10, 50));
+        }
+        if (grainDark) {
+          return Color.fromARGB(255, (150 - waterlog + variation).clamp(60, 170), (76 - waterlog + variation).clamp(30, 100), (40 - waterlog + variation).clamp(10, 60));
+        }
+        return Color.fromARGB(255, (168 - waterlog + variation).clamp(70, 185), (88 - waterlog + variation).clamp(35, 115), (48 - waterlog + variation).clamp(15, 72));
 
       case El.metal:
         // Electrified glow when _life >= 200
@@ -3242,6 +4055,12 @@ class _ElementLabGameState extends State<ElementLabGame>
     final snapshot = _undoHistory.removeLast();
     _grid.setAll(0, snapshot.grid);
     _life.setAll(0, snapshot.life);
+    _pheroFood.fillRange(0, _pheroFood.length, 0);
+    _pheroHome.fillRange(0, _pheroHome.length, 0);
+    _colonyX = -1;
+    _colonyY = -1;
+    _microParticles.clear();
+    _markAllDirty();
     Haptics.tap();
   }
 
@@ -3322,6 +4141,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       _life[ni] = 0;
       _velX[ni] = _selectedSeedType;
       _velY[ni] = 0;
+      _markDirty(gx, gy);
       return;
     }
 
@@ -3346,14 +4166,16 @@ class _ElementLabGameState extends State<ElementLabGame>
           _life[ni] = 0;
           _velX[ni] = 0;
           _velY[ni] = 0;
+          _markDirty(nx, ny);
           continue;
         }
 
         if (_grid[ni] != El.empty && _selectedElement != El.lightning) continue;
 
         _grid[ni] = _selectedElement;
-        _life[ni] = 0;
+        _life[ni] = _selectedElement == El.water ? 100 : 0; // water uses mass
         _velY[ni] = 0;
+        _markDirty(nx, ny);
       }
     }
   }
@@ -3395,6 +4217,7 @@ class _ElementLabGameState extends State<ElementLabGame>
       _life[ni] = 0;
       _velX[ni] = _selectedSeedType;
       _velY[ni] = 0;
+      _markDirty(gx, gy);
       return;
     }
 
@@ -3411,12 +4234,14 @@ class _ElementLabGameState extends State<ElementLabGame>
           _life[ni] = 0;
           _velX[ni] = 0;
           _velY[ni] = 0;
+          _markDirty(nx, ny);
           continue;
         }
         if (_grid[ni] != El.empty && _selectedElement != El.lightning) continue;
         _grid[ni] = _selectedElement;
-        _life[ni] = 0;
+        _life[ni] = _selectedElement == El.water ? 100 : 0; // water uses mass
         _velY[ni] = 0;
+        _markDirty(nx, ny);
       }
     }
   }
@@ -3429,6 +4254,12 @@ class _ElementLabGameState extends State<ElementLabGame>
     _flags.fillRange(0, _flags.length, 0);
     _velX.fillRange(0, _velX.length, 0);
     _velY.fillRange(0, _velY.length, 0);
+    _pheroFood.fillRange(0, _pheroFood.length, 0);
+    _pheroHome.fillRange(0, _pheroHome.length, 0);
+    _colonyX = -1;
+    _colonyY = -1;
+    _microParticles.clear();
+    _markAllDirty();
     Haptics.tap();
   }
 
@@ -4213,6 +5044,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             buildIconBtn(
               onPressed: () {
                 setState(() => _gravityDir = -_gravityDir);
+                _markAllDirty();
                 Haptics.tap();
               },
               icon: Icons.swap_vert_rounded,
@@ -4224,6 +5056,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             buildIconBtn(
               onPressed: () {
                 setState(() => _windForce = (_windForce - 1).clamp(-3, 3));
+                _markAllDirty();
                 Haptics.tap();
               },
               icon: Icons.arrow_back_rounded,
@@ -4253,6 +5086,7 @@ class _ElementLabGameState extends State<ElementLabGame>
             buildIconBtn(
               onPressed: () {
                 setState(() => _windForce = (_windForce + 1).clamp(-3, 3));
+                _markAllDirty();
                 Haptics.tap();
               },
               icon: Icons.arrow_forward_rounded,

@@ -146,6 +146,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// Extra golden confetti controller for champion perfect words.
   late ConfettiController _goldenConfettiController;
 
+  void _onShakeStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      _shakeController.reset();
+      setState(() => _shaking = false);
+    }
+  }
+
+  void _onNudgeStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      setState(() => _nudgeKey = null);
+      _nudgeController.reset();
+    }
+  }
+
   // Focus node for keyboard input
   final FocusNode _focusNode = FocusNode();
 
@@ -210,24 +224,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _shakeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _shakeController, curve: Curves.elasticIn),
     );
-    _shakeController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _shakeController.reset();
-        setState(() => _shaking = false);
-      }
-    });
+    _shakeController.addStatusListener(_onShakeStatus);
 
     // Nudge controller (Tier 2) — pulse correct key for ~1 second
     _nudgeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _nudgeController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        setState(() => _nudgeKey = null);
-        _nudgeController.reset();
-      }
-    });
+    _nudgeController.addStatusListener(_onNudgeStatus);
 
     // Streak pop controller (Tier 3) — quick scale pop
     _streakPopController = AnimationController(
@@ -673,7 +677,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       );
     }
     _avatarController.dispose();
+    _shakeController.removeStatusListener(_onShakeStatus);
     _shakeController.dispose();
+    _nudgeController.removeStatusListener(_onNudgeStatus);
     _nudgeController.dispose();
     _streakPopController.dispose();
     _confettiController.stop();

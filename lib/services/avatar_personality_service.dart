@@ -253,6 +253,18 @@ class AvatarPersonalityService {
     return _box.get(profileId) ?? AvatarPersonality.fresh();
   }
 
+  /// Switch to a different profile, saving current state first.
+  void switchProfile(String profileId) {
+    if (_active != null && _activeProfileId != null) {
+      _save(_activeProfileId!, _active!);
+    }
+    _sessionCorrect = 0;
+    _sessionTotal = 0;
+    _previousAccuracyEma = 0.5;
+    _activeProfileId = profileId;
+    _active = _box.get(profileId);
+  }
+
   // ── Event handlers ─────────────────────────────────────────────────
 
   /// Call when a profile's play session begins.

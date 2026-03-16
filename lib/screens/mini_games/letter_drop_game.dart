@@ -45,12 +45,12 @@ class _LetterBody {
   final String letter;
   final Body body;
   final int id;
-  bool isDropping = false; // gravity enabled
-  bool isLocked = false; // correct & placed in slot
-  bool isBouncing = false; // wrong answer bounce animation
+  bool isDropping = false;
+  bool isLocked = false;
+  bool isBouncing = false;
   double bounceTimer = 0;
-  double glowTimer = 0; // glow animation for locked letters
-  Vector2 homePosition; // for floating spring-back
+  double glowTimer = 0;
+  Vector2 homePosition;
   double wobblePhase;
 
   _LetterBody({
@@ -105,6 +105,54 @@ class _TrailDot {
   });
 }
 
+// -- Simulation ChangeNotifier -----------------------------------------------
+
+class _LetterDropSim extends ChangeNotifier {
+  final List<_LetterBody> letterBodies;
+  final List<_Slot> slots;
+  final List<_Particle> particles;
+  final List<_TrailDot> trails;
+  String currentWord;
+  double slotShelfY;
+  double scale;
+  double areaWidth;
+  double areaHeight;
+  List<Color> themeColors;
+  bool hintsEnabled;
+  double wordCelebrateT = 0;
+  bool wordCelebrating = false;
+
+  _LetterDropSim({
+    required this.letterBodies,
+    required this.slots,
+    required this.particles,
+    required this.trails,
+    this.currentWord = '',
+    this.slotShelfY = 0,
+    this.scale = 50.0,
+    this.areaWidth = 0,
+    this.areaHeight = 0,
+    this.themeColors = const [Color(0xFF00D4FF), Color(0xFF06D6A0)],
+    this.hintsEnabled = true,
+  });
+
+  void tick() {
+    notifyListeners();
+  }
+
+  _LetterBody? hitTest(Offset localPos) {
+    for (final lb in letterBodies) {
+      if (lb.isLocked || lb.isDropping || lb.isBouncing) continue;
+      final sx = lb.body.position.x * scale;
+      final sy = lb.body.position.y * scale;
+      final dx = localPos.dx - sx;
+      final dy = localPos.dy - sy;
+      if (dx * dx + dy * dy <= 22 * 22) return lb;
+    }
+    return null;
+  }
+}
+
 // -- State ------------------------------------------------------------------
 
 class _LetterDropGameState extends State<LetterDropGame>
@@ -115,7 +163,7 @@ class _LetterDropGameState extends State<LetterDropGame>
   late final World _world;
   late final AnimationController _controller;
   static const double _scale = 50.0;
-  static const int _minStepMicros = 33333; // ~30fps cap
+  static const int _minStepMicros = 33333;
   int _lastStepMicros = 0;
 
   // Game config
@@ -137,21 +185,19 @@ class _LetterDropGameState extends State<LetterDropGame>
   List<String> _wordPool = [];
   int _wordPoolIndex = 0;
   String _currentWord = '';
-  int _nextSlotIndex = 0; // which slot we're filling next
+  int _nextSlotIndex = 0;
   List<_Slot> _slots = [];
 
   // Physics bodies
   final List<_LetterBody> _letterBodies = [];
   int _nextBodyId = 0;
-  // Wall bodies for cleanup
   final List<Body> _wallBodies = [];
-  // Slot divider bodies
   final List<Body> _slotDividerBodies = [];
 
   // Drag-to-aim state
   _LetterBody? _dragging;
-  double _dragTimer = 0; // seconds held while dragging
-  static const double _maxDragSecs = 2.0; // auto-release after 2s
+  double _dragTimer = 0;
+  static const double _maxDragSecs = 2.0;
 
   // Visual effects
   final List<_Particle> _particles = [];
@@ -164,13 +210,14 @@ class _LetterDropGameState extends State<LetterDropGame>
   bool _initScheduled = false;
   double _areaWidth = 0;
   double _areaHeight = 0;
-  double _slotShelfY = 0; // world Y of slot shelf top
-  double _floatZoneBottom = 0; // world Y below which is "drop zone"
+  double _slotShelfY = 0;
+  double _floatZoneBottom = 0;
 
   // Colors for this round
   List<Color> _themeColors = [AppColors.electricBlue, AppColors.cyan];
 
   late final Stopwatch _sessionTimer;
+  late final _LetterDropSim _sim;
 
   @override
   void initState() {
@@ -184,9 +231,18 @@ class _LetterDropGameState extends State<LetterDropGame>
     _world = World(Vector2(0, 9.8));
     _world.createBody(BodyDef());
 
+    _sim = _LetterDropSim(
+      letterBodies: _letterBodies,
+      slots: _slots,
+      particles: _particles,
+      trails: _trails,
+      themeColors: _themeColors,
+      hintsEnabled: widget.hintsEnabled,
+    );
+
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 300), // long enough
+      duration: const Duration(seconds: 300),
     )..addListener(_simulationStep);
 
     _buildWordPool();
@@ -198,6 +254,7 @@ class _LetterDropGameState extends State<LetterDropGame>
     _controller.dispose();
     _gameTimer?.cancel();
     _sessionTimer.stop();
+    _sim.dispose();
     super.dispose();
   }
 
@@ -206,6 +263,7 @@ class _LetterDropGameState extends State<LetterDropGame>
   void _pickThemeColors() {
     final idx = _rng.nextInt(AppColors.levelGradients.length);
     _themeColors = AppColors.levelGradients[idx];
+    _sim.themeColors = _themeColors;
   }
 
   // -- Word pool ------------------------------------------------------------
@@ -216,7 +274,6 @@ class _LetterDropGameState extends State<LetterDropGame>
     for (int lvl = 1; lvl <= highest; lvl++) {
       final words = DolchWords.wordsForLevel(lvl);
       for (final w in words) {
-        // Prefer words with 3-6 letters for good gameplay
         final text = w.text.toLowerCase();
         if (text.length >= 2 && text.length <= 6) {
           pool.add(text);
@@ -310,18 +367,13 @@ class _LetterDropGameState extends State<LetterDropGame>
       (i) => _Slot(index: i, expectedLetter: _currentWord[i]),
     );
 
-    // Clear old letter bodies
+    _sim.currentWord = _currentWord;
+    _sim.slots = _slots;
+
     _clearLetterBodies();
-    // Clear slot dividers
     _clearSlotDividers();
-
-    // Create slot shelf and dividers
     _createSlotShelf();
-
-    // Populate floating letters
     _populateLetters();
-
-    // Play word pronunciation
     widget.audioService.playWord(_currentWord);
   }
 
@@ -345,17 +397,14 @@ class _LetterDropGameState extends State<LetterDropGame>
     final worldW = _areaWidth / _scale;
     final worldH = _areaHeight / _scale;
 
-    // Left wall
     _createStaticEdge(
       Vector2(-0.1, 0),
       Vector2(-0.1, worldH),
     );
-    // Right wall
     _createStaticEdge(
       Vector2(worldW + 0.1, 0),
       Vector2(worldW + 0.1, worldH),
     );
-    // Floor (below slot shelf)
     _createStaticEdge(
       Vector2(0, worldH + 0.5),
       Vector2(worldW, worldH + 0.5),
@@ -378,13 +427,11 @@ class _LetterDropGameState extends State<LetterDropGame>
     final shelfTop = _slotShelfY;
     const shelfHeight = 1.2;
 
-    // Shelf bottom
     _createSlotDivider(
       Vector2(shelfLeft, shelfTop + shelfHeight),
       Vector2(shelfLeft + slotWidth * slotCount, shelfTop + shelfHeight),
     );
 
-    // Dividers between slots
     for (int i = 0; i <= slotCount; i++) {
       final x = shelfLeft + i * slotWidth;
       _createSlotDivider(
@@ -406,7 +453,6 @@ class _LetterDropGameState extends State<LetterDropGame>
 
   void _populateLetters() {
     final wordLetters = _currentWord.split('');
-    // Create distractor letters
     final distractorCount = max(2, 8 - wordLetters.length);
     final distractors = _generateDistractors(wordLetters, distractorCount);
 
@@ -414,13 +460,11 @@ class _LetterDropGameState extends State<LetterDropGame>
     allLetters.shuffle(_rng);
 
     final worldW = _areaWidth / _scale;
-    // Start below HUD + target word area (~120px from top)
     const floatTop = 120.0 / _scale;
     final floatHeight = _floatZoneBottom - floatTop;
 
     for (int i = 0; i < allLetters.length && _letterBodies.length < _maxDynamicBodies; i++) {
       final letter = allLetters[i];
-      // Distribute across the float zone in a grid
       final cols = min(allLetters.length, 4);
       final rows = (allLetters.length / cols).ceil();
       final row = i ~/ cols;
@@ -456,7 +500,7 @@ class _LetterDropGameState extends State<LetterDropGame>
       fixedRotation: true,
       linearDamping: 2.0,
       angularDamping: 3.0,
-      gravityScale: Vector2.zero(), // float initially
+      gravityScale: Vector2.zero(),
     );
 
     final body = _world.createBody(bodyDef);
@@ -486,10 +530,8 @@ class _LetterDropGameState extends State<LetterDropGame>
     if (now - _lastStepMicros < _minStepMicros) return;
     _lastStepMicros = now;
 
-    // Step physics
     _world.stepDt(1 / 60);
 
-    // Tick drag timer — auto-release after max hold time
     if (_dragging != null) {
       _dragTimer += 1 / 30;
       if (_dragTimer >= _maxDragSecs) {
@@ -505,11 +547,9 @@ class _LetterDropGameState extends State<LetterDropGame>
       }
     }
 
-    // Apply floating forces to non-dropping letters
     for (final lb in _letterBodies) {
       if (lb.isLocked || lb.isDropping || lb == _dragging) continue;
 
-      // Spring force back toward home
       final delta = lb.homePosition - lb.body.position;
       final dist = delta.length;
       if (dist > 0.1) {
@@ -517,7 +557,6 @@ class _LetterDropGameState extends State<LetterDropGame>
         lb.body.applyLinearImpulse(springForce..scale(lb.body.mass * 0.05));
       }
 
-      // Gentle wobble
       lb.wobblePhase += 0.03;
       final wobbleX = sin(lb.wobblePhase) * 0.15;
       final wobbleY = cos(lb.wobblePhase * 0.7) * 0.1;
@@ -526,20 +565,16 @@ class _LetterDropGameState extends State<LetterDropGame>
       );
     }
 
-    // Check dropping letters against slots
     _checkSlotCollisions();
 
-    // Update bounce timers
     for (final lb in _letterBodies) {
       if (lb.isBouncing) {
         lb.bounceTimer += 1 / 30;
         if (lb.bounceTimer > 1.5) {
-          // Reset to floating
           lb.isBouncing = false;
           lb.isDropping = false;
           lb.body.gravityScale = Vector2.zero();
           lb.body.linearDamping = 2.0;
-          // Teleport back to home if way off screen
           final worldH = _areaHeight / _scale;
           if (lb.body.position.y > worldH - 1.0 || lb.body.position.y < 0) {
             lb.body.setTransform(lb.homePosition, 0);
@@ -549,20 +584,15 @@ class _LetterDropGameState extends State<LetterDropGame>
       }
     }
 
-    // Update glow timers on locked slots
     for (final slot in _slots) {
       if (slot.filled && slot.glowTimer < 1.0) {
         slot.glowTimer = (slot.glowTimer + 0.03).clamp(0.0, 1.0);
       }
     }
 
-    // Update particles
     _updateParticles();
-
-    // Update trails
     _updateTrails();
 
-    // Add trails for dropping letters
     for (final lb in _letterBodies) {
       if (lb.isDropping && !lb.isLocked) {
         final sx = lb.body.position.x * _scale;
@@ -578,17 +608,20 @@ class _LetterDropGameState extends State<LetterDropGame>
       }
     }
 
-    // Word celebration timer
     if (_wordCelebrating) {
       _wordCelebrateT += 1 / 30;
+      _sim.wordCelebrateT = _wordCelebrateT;
+      _sim.wordCelebrating = _wordCelebrating;
       if (_wordCelebrateT > 1.8) {
         _wordCelebrating = false;
         _wordCelebrateT = 0;
+        _sim.wordCelebrating = false;
+        _sim.wordCelebrateT = 0;
         _loadNextWord();
       }
     }
 
-    if (mounted) setState(() {});
+    _sim.tick();
   }
 
   void _checkSlotCollisions() {
@@ -603,9 +636,7 @@ class _LetterDropGameState extends State<LetterDropGame>
       if (!lb.isDropping || lb.isLocked || lb.isBouncing) continue;
 
       final pos = lb.body.position;
-      // Check if letter is in slot region
       if (pos.y >= _slotShelfY - 0.2 && pos.y <= _slotShelfY + 1.5) {
-        // Which slot column?
         final relX = pos.x - shelfLeft;
         if (relX < 0 || relX > slotWidth * slotCount) continue;
         final slotIdx = (relX / slotWidth).floor().clamp(0, slotCount - 1);
@@ -613,13 +644,10 @@ class _LetterDropGameState extends State<LetterDropGame>
 
         if (slot.filled) continue;
 
-        // Check if this is the next expected slot and correct letter
         if (slotIdx == _nextSlotIndex &&
             lb.letter == slot.expectedLetter) {
-          // Correct!
           _lockLetterInSlot(lb, slot, shelfLeft, slotWidth);
         } else {
-          // Wrong — bounce out
           _bounceLetter(lb);
         }
       }
@@ -632,7 +660,6 @@ class _LetterDropGameState extends State<LetterDropGame>
     lb.isLocked = true;
     lb.isDropping = false;
 
-    // Position exactly in slot center
     final slotCenterX = shelfLeft + (slot.index + 0.5) * slotWidth;
     final slotCenterY = _slotShelfY + 0.5;
     lb.body.setTransform(Vector2(slotCenterX, slotCenterY), 0);
@@ -641,20 +668,17 @@ class _LetterDropGameState extends State<LetterDropGame>
     lb.body.gravityScale = Vector2.zero();
     lb.body.setType(BodyType.static);
 
-    // Score
-    _score += 10;
-
-    // Particle burst
     _spawnBurst(slotCenterX * _scale, slotCenterY * _scale, _themeColors[0], 8);
 
-    // Play success sound
     widget.audioService.playSuccess();
     Haptics.correct();
 
-    // Advance to next slot
     _nextSlotIndex++;
 
-    // Check word complete
+    setState(() {
+      _score += 10;
+    });
+
     if (_nextSlotIndex >= _currentWord.length) {
       _onWordComplete();
     }
@@ -662,15 +686,13 @@ class _LetterDropGameState extends State<LetterDropGame>
 
   void _onWordComplete() {
     _wordsCompleted++;
-    _score += 50; // word bonus
-    // Time bonus
     final timeBonus = (_timeRemaining / _gameDurationSecs * 20).round();
-    _score += timeBonus;
 
     _wordCelebrating = true;
     _wordCelebrateT = 0;
+    _sim.wordCelebrating = true;
+    _sim.wordCelebrateT = 0;
 
-    // Big celebration burst
     final cx = _areaWidth / 2;
     final cy = _slotShelfY * _scale;
     _spawnBurst(cx, cy, _themeColors[0], 20);
@@ -679,13 +701,16 @@ class _LetterDropGameState extends State<LetterDropGame>
     widget.audioService.playLevelCompleteEffect();
     widget.audioService.playSuccess();
     Haptics.success();
+
+    setState(() {
+      _score += 50 + timeBonus;
+    });
   }
 
   void _bounceLetter(_LetterBody lb) {
     lb.isBouncing = true;
     lb.bounceTimer = 0;
 
-    // Strong upward impulse
     lb.body.applyLinearImpulse(
       Vector2(
         (_rng.nextDouble() - 0.5) * 8,
@@ -693,18 +718,19 @@ class _LetterDropGameState extends State<LetterDropGame>
       )..scale(lb.body.mass),
     );
 
-    // Lose a life
-    _lives--;
     widget.audioService.playError();
     Haptics.wrong();
 
-    // Spawn error particles
     _spawnBurst(
       lb.body.position.x * _scale,
       lb.body.position.y * _scale,
       AppColors.error,
       6,
     );
+
+    setState(() {
+      _lives--;
+    });
 
     if (_lives <= 0) {
       _endGame();
@@ -717,12 +743,10 @@ class _LetterDropGameState extends State<LetterDropGame>
     if (lb.isDropping || lb.isLocked || lb.isBouncing) return;
     if (_gameOver || _roundComplete || _wordCelebrating) return;
 
-    // Enable gravity — drop it!
     lb.isDropping = true;
-    lb.body.gravityScale = null; // restore world gravity
+    lb.body.gravityScale = null;
     lb.body.linearDamping = 0.3;
 
-    // Small downward impulse to feel snappy
     lb.body.applyLinearImpulse(
       Vector2(0, 2)..scale(lb.body.mass),
     );
@@ -739,18 +763,15 @@ class _LetterDropGameState extends State<LetterDropGame>
 
   void _onPanUpdateLetter(DragUpdateDetails details) {
     if (_dragging == null) return;
-    // Move letter body by the drag delta
     final dx = details.delta.dx / _scale;
     final dy = details.delta.dy / _scale;
     var newPos = _dragging!.body.position + Vector2(dx, dy);
 
-    // Clamp to float zone — can't drag below float zone or near baskets
     final worldW = _areaWidth / _scale;
     newPos.x = newPos.x.clamp(0.3, worldW - 0.3);
     newPos.y = newPos.y.clamp(0.5, _floatZoneBottom);
 
     _dragging!.body.setTransform(newPos, _dragging!.body.angle);
-    // Keep velocity zero while dragging
     _dragging!.body.linearVelocity = Vector2.zero();
   }
 
@@ -762,23 +783,39 @@ class _LetterDropGameState extends State<LetterDropGame>
 
     if (lb.isLocked || lb.isBouncing) return;
 
-    // Enable gravity — letter drops from where it was released
     lb.isDropping = true;
     lb.body.gravityScale = null;
     lb.body.linearDamping = 0.3;
 
-    // Apply fling velocity from the drag (only downward component)
     final vx = details.velocity.pixelsPerSecond.dx / _scale;
     final vy = details.velocity.pixelsPerSecond.dy / _scale;
     final vel = Vector2(vx, vy);
-    // Cap velocity magnitude
     if (vel.length > 15) {
       vel.normalize();
       vel.scale(15);
     }
-    // Ensure some minimum downward velocity
     if (vel.y < 2) vel.y = 2;
     lb.body.linearVelocity = vel;
+  }
+
+  // -- Canvas hit-test handlers ---------------------------------------------
+
+  void _onCanvasTapUp(TapUpDetails details) {
+    final lb = _sim.hitTest(details.localPosition);
+    if (lb != null) _onTapLetter(lb);
+  }
+
+  void _onCanvasPanStart(DragStartDetails details) {
+    final lb = _sim.hitTest(details.localPosition);
+    if (lb != null) _onPanStartLetter(lb, details);
+  }
+
+  void _onCanvasPanUpdate(DragUpdateDetails details) {
+    _onPanUpdateLetter(details);
+  }
+
+  void _onCanvasPanEnd(DragEndDetails details) {
+    _onPanEndLetter(details);
   }
 
   // -- Particles ------------------------------------------------------------
@@ -802,7 +839,7 @@ class _LetterDropGameState extends State<LetterDropGame>
     for (final p in _particles) {
       p.x += p.vx * (1 / 30);
       p.y += p.vy * (1 / 30);
-      p.vy += 60 * (1 / 30); // gravity
+      p.vy += 60 * (1 / 30);
       p.opacity -= 0.03;
     }
     _particles.removeWhere((p) => p.opacity <= 0);
@@ -819,7 +856,6 @@ class _LetterDropGameState extends State<LetterDropGame>
   // -- Replay ---------------------------------------------------------------
 
   void _replay() {
-    // Destroy all physics bodies except walls
     _clearLetterBodies();
     _clearSlotDividers();
 
@@ -860,6 +896,12 @@ class _LetterDropGameState extends State<LetterDropGame>
     _areaHeight = height;
     _slotShelfY = (_areaHeight - 80) / _scale;
     _floatZoneBottom = _areaHeight * 0.50 / _scale;
+
+    _sim.areaWidth = _areaWidth;
+    _sim.areaHeight = _areaHeight;
+    _sim.slotShelfY = _slotShelfY;
+    _sim.scale = _scale;
+
     _createWalls();
     _startGame();
   }
@@ -870,7 +912,6 @@ class _LetterDropGameState extends State<LetterDropGame>
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
 
-        // Initialize physics on first layout (once only)
         if (!_initialized && !_initScheduled && w > 0 && h > 0) {
           _initScheduled = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -888,7 +929,6 @@ class _LetterDropGameState extends State<LetterDropGame>
 
         return Stack(
           children: [
-            // Background stars (IgnorePointer so taps pass through)
             RepaintBoundary(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -898,167 +938,32 @@ class _LetterDropGameState extends State<LetterDropGame>
               ),
             ),
 
-            // Slot shelf + particles + trails
-            RepaintBoundary(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  size: Size(_areaWidth, _areaHeight),
-                  painter: _ShelfPainter(
-                    slots: _slots,
-                    currentWord: _currentWord,
-                    slotShelfY: _slotShelfY,
-                    scale: _scale,
-                    areaWidth: _areaWidth,
-                    themeColor: _themeColors[0],
-                    particles: _particles,
-                    trails: _trails,
-                    hintsEnabled: widget.hintsEnabled,
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTapUp: _onCanvasTapUp,
+                  onPanStart: _onCanvasPanStart,
+                  onPanUpdate: _onCanvasPanUpdate,
+                  onPanEnd: _onCanvasPanEnd,
+                  child: CustomPaint(
+                    size: Size(_areaWidth, _areaHeight),
+                    painter: _LetterDropPainter(_sim),
                   ),
                 ),
               ),
             ),
 
-            // Floating / dropping letter widgets
-            ..._letterBodies
-                .where((lb) => !lb.isLocked)
-                .map(_buildLetterWidget),
-
-            // Locked letters (in slots)
-            ..._letterBodies
-                .where((lb) => lb.isLocked)
-                .map(_buildLockedLetterWidget),
-
-            // HUD (uses Column with MainAxisSize.min to not block taps)
             _buildHUD(),
-
-            // Target word display
             _buildTargetWord(),
 
-            // Instruction hint
             if (_wordsCompleted == 0 &&
                 _nextSlotIndex == 0 &&
                 !_wordCelebrating)
               _buildInstruction(),
-
-            // Word celebration overlay
-            if (_wordCelebrating) _buildCelebration(),
           ],
         );
       },
-    );
-  }
-
-  Widget _buildLetterWidget(_LetterBody lb) {
-    final sx = lb.body.position.x * _scale;
-    final sy = lb.body.position.y * _scale;
-    const radius = 22.0;
-
-    final isDragging = lb == _dragging;
-    final color = lb.isBouncing && widget.hintsEnabled
-        ? AppColors.error
-        : lb.isDropping
-            ? _themeColors[0]
-            : _themeColors[1];
-
-    return Positioned(
-      left: sx - radius,
-      top: sy - radius,
-      child: GestureDetector(
-        onTap: () => _onTapLetter(lb),
-        onPanStart: (d) => _onPanStartLetter(lb, d),
-        onPanUpdate: _onPanUpdateLetter,
-        onPanEnd: _onPanEndLetter,
-        child: Container(
-          width: radius * 2,
-          height: radius * 2,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                color.withValues(alpha: isDragging ? 0.55 : 0.35),
-                color.withValues(alpha: isDragging ? 0.25 : 0.12),
-              ],
-            ),
-            border: Border.all(
-              color: color.withValues(alpha: isDragging ? 1.0 : 0.7),
-              width: isDragging ? 3 : 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: isDragging ? 0.7 : (lb.isDropping ? 0.5 : 0.2)),
-                blurRadius: isDragging ? 24 : (lb.isDropping ? 16 : 8),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              lb.letter.toUpperCase(),
-              style: AppFonts.fredoka(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    color: color.withValues(alpha: 0.8),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLockedLetterWidget(_LetterBody lb) {
-    final sx = lb.body.position.x * _scale;
-    final sy = lb.body.position.y * _scale;
-    const radius = 22.0;
-    const color = AppColors.success;
-
-    return Positioned(
-      left: sx - radius,
-      top: sy - radius,
-      child: Container(
-        width: radius * 2,
-        height: radius * 2,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color.withValues(alpha: 0.5),
-              color.withValues(alpha: 0.2),
-            ],
-          ),
-          border: Border.all(
-            color: color.withValues(alpha: 0.9),
-            width: 2.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.6),
-              blurRadius: 20,
-            ),
-          ],
-        ),
-        child: Center(
-          child: Text(
-            lb.letter.toUpperCase(),
-            style: AppFonts.fredoka(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              shadows: [
-                Shadow(
-                  color: color.withValues(alpha: 0.9),
-                  blurRadius: 12,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1070,7 +975,6 @@ class _LetterDropGameState extends State<LetterDropGame>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Back button
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             child: Container(
@@ -1092,7 +996,6 @@ class _LetterDropGameState extends State<LetterDropGame>
 
           const SizedBox(width: 12),
 
-          // Score
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -1121,7 +1024,6 @@ class _LetterDropGameState extends State<LetterDropGame>
 
           const Spacer(),
 
-          // Timer
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -1160,7 +1062,6 @@ class _LetterDropGameState extends State<LetterDropGame>
 
           const SizedBox(width: 12),
 
-          // Lives
           Row(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(_maxLives, (i) {
@@ -1190,7 +1091,6 @@ class _LetterDropGameState extends State<LetterDropGame>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Word counter
           Text(
             '${_wordsCompleted + 1} / $_wordsPerRound',
             style: AppFonts.fredoka(
@@ -1199,7 +1099,6 @@ class _LetterDropGameState extends State<LetterDropGame>
             ),
           ),
           const SizedBox(height: 4),
-          // Target word
           GestureDetector(
             onTap: () => widget.audioService.playWord(_currentWord),
             child: Container(
@@ -1272,33 +1171,6 @@ class _LetterDropGameState extends State<LetterDropGame>
               style: AppFonts.fredoka(
                 fontSize: 14,
                 color: AppColors.secondaryText,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCelebration() {
-    final opacity = (1.0 - _wordCelebrateT / 1.8).clamp(0.0, 1.0);
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Center(
-          child: Opacity(
-            opacity: opacity,
-            child: Text(
-              'Great job!',
-              style: AppFonts.fredoka(
-                fontSize: 40,
-                fontWeight: FontWeight.w700,
-                color: AppColors.starGold,
-                shadows: [
-                  Shadow(
-                    color: AppColors.starGold.withValues(alpha: 0.6),
-                    blurRadius: 20,
-                  ),
-                ],
               ),
             ),
           ),
@@ -1473,67 +1345,59 @@ class _StarFieldPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _ShelfPainter extends CustomPainter {
-  final List<_Slot> slots;
-  final String currentWord;
-  final double slotShelfY;
-  final double scale;
-  final double areaWidth;
-  final Color themeColor;
-  final List<_Particle> particles;
-  final List<_TrailDot> trails;
-  final bool hintsEnabled;
+class _LetterDropPainter extends CustomPainter {
+  final _LetterDropSim sim;
 
-  _ShelfPainter({
-    required this.slots,
-    required this.currentWord,
-    required this.slotShelfY,
-    required this.scale,
-    required this.areaWidth,
-    required this.themeColor,
-    required this.particles,
-    required this.trails,
-    required this.hintsEnabled,
-  });
+  _LetterDropPainter(this.sim) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (currentWord.isEmpty || slots.isEmpty) return;
+    if (sim.currentWord.isEmpty || sim.areaWidth == 0) return;
+
+    _paintShelf(canvas, size);
+    _paintTrails(canvas);
+    _paintParticles(canvas);
+    _paintLetters(canvas);
+
+    if (sim.wordCelebrating) {
+      _paintCelebration(canvas, size);
+    }
+  }
+
+  void _paintShelf(Canvas canvas, Size size) {
+    final slots = sim.slots;
+    final currentWord = sim.currentWord;
+    if (slots.isEmpty) return;
 
     final slotCount = currentWord.length;
-    final worldW = areaWidth / scale;
+    final worldW = sim.areaWidth / sim.scale;
     final slotWidth = (worldW * 0.8) / slotCount;
     final shelfLeft = worldW * 0.1;
-    final shelfScreenLeft = shelfLeft * scale;
-    final shelfScreenTop = slotShelfY * scale;
-    final slotScreenWidth = slotWidth * scale;
-    final shelfScreenHeight = 1.2 * scale;
+    final shelfScreenLeft = shelfLeft * sim.scale;
+    final shelfScreenTop = sim.slotShelfY * sim.scale;
+    final slotScreenWidth = slotWidth * sim.scale;
+    final shelfScreenHeight = 1.2 * sim.scale;
+    final themeColor = sim.themeColors.isNotEmpty ? sim.themeColors[0] : AppColors.electricBlue;
 
-    // Draw shelf background
     final shelfRect = Rect.fromLTWH(
       shelfScreenLeft,
       shelfScreenTop,
       slotScreenWidth * slotCount,
       shelfScreenHeight,
     );
-    final shelfPaint = Paint()
-      ..color = AppColors.surface.withValues(alpha: 0.6);
     canvas.drawRRect(
       RRect.fromRectAndRadius(shelfRect, const Radius.circular(8)),
-      shelfPaint,
+      Paint()..color = AppColors.surface.withValues(alpha: 0.6),
     );
 
-    // Draw shelf border
-    final borderPaint = Paint()
-      ..color = themeColor.withValues(alpha: 0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
     canvas.drawRRect(
       RRect.fromRectAndRadius(shelfRect, const Radius.circular(8)),
-      borderPaint,
+      Paint()
+        ..color = themeColor.withValues(alpha: 0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
     );
 
-    // Draw dividers
     final dividerPaint = Paint()
       ..color = themeColor.withValues(alpha: 0.2)
       ..strokeWidth = 1;
@@ -1546,10 +1410,9 @@ class _ShelfPainter extends CustomPainter {
       );
     }
 
-    // Draw slot hint letters (faded) — only when hints are enabled
     for (int i = 0; i < slotCount; i++) {
       final slot = slots[i];
-      if (!slot.filled && hintsEnabled) {
+      if (!slot.filled && sim.hintsEnabled) {
         final textPainter = TextPainter(
           text: TextSpan(
             text: slot.expectedLetter.toUpperCase(),
@@ -1570,7 +1433,6 @@ class _ShelfPainter extends CustomPainter {
         );
       }
 
-      // Glow effect for filled slots
       if (slot.filled && slot.glowTimer < 1.0) {
         final glowPaint = Paint()
           ..color = AppColors.success.withValues(alpha: (1.0 - slot.glowTimer) * 0.3);
@@ -1583,22 +1445,149 @@ class _ShelfPainter extends CustomPainter {
         );
       }
     }
+  }
 
-    // Draw trails
-    for (final t in trails) {
-      final trailPaint = Paint()
-        ..color = t.color.withValues(alpha: t.opacity * 0.5);
-      canvas.drawCircle(Offset(t.x, t.y), t.size, trailPaint);
-    }
-
-    // Draw particles
-    for (final p in particles) {
-      final particlePaint = Paint()
-        ..color = p.color.withValues(alpha: p.opacity.clamp(0.0, 1.0));
-      canvas.drawCircle(Offset(p.x, p.y), p.size, particlePaint);
+  void _paintTrails(Canvas canvas) {
+    for (final t in sim.trails) {
+      canvas.drawCircle(
+        Offset(t.x, t.y),
+        t.size,
+        Paint()..color = t.color.withValues(alpha: t.opacity * 0.5),
+      );
     }
   }
 
+  void _paintParticles(Canvas canvas) {
+    for (final p in sim.particles) {
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        p.size,
+        Paint()..color = p.color.withValues(alpha: p.opacity.clamp(0.0, 1.0)),
+      );
+    }
+  }
+
+  void _paintLetters(Canvas canvas) {
+    final scale = sim.scale;
+    final themeColors = sim.themeColors;
+
+    for (final lb in sim.letterBodies) {
+      final sx = lb.body.position.x * scale;
+      final sy = lb.body.position.y * scale;
+      const radius = 22.0;
+      final center = Offset(sx, sy);
+
+      Color color;
+      double borderWidth;
+      double glowRadius;
+      double fillAlpha;
+      double borderAlpha;
+      double shadowAlpha;
+
+      if (lb.isLocked) {
+        color = AppColors.success;
+        borderWidth = 2.5;
+        glowRadius = 20;
+        fillAlpha = 0.5;
+        borderAlpha = 0.9;
+        shadowAlpha = 0.6;
+      } else {
+        final isDragging = false; // drag state not easily trackable in painter
+        color = lb.isBouncing && sim.hintsEnabled
+            ? AppColors.error
+            : lb.isDropping
+                ? themeColors[0]
+                : themeColors[1];
+        borderWidth = isDragging ? 3 : 2;
+        glowRadius = lb.isDropping ? 16 : 8;
+        fillAlpha = 0.35;
+        borderAlpha = 0.7;
+        shadowAlpha = lb.isDropping ? 0.5 : 0.2;
+      }
+
+      // Glow
+      canvas.drawCircle(
+        center,
+        radius + 4,
+        Paint()
+          ..color = color.withValues(alpha: shadowAlpha)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, glowRadius.toDouble()),
+      );
+
+      // Fill gradient
+      final gradient = RadialGradient(
+        colors: [
+          color.withValues(alpha: fillAlpha),
+          color.withValues(alpha: fillAlpha * 0.4),
+        ],
+      );
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()..shader = gradient.createShader(Rect.fromCircle(center: center, radius: radius)),
+      );
+
+      // Border
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = borderWidth
+          ..color = color.withValues(alpha: borderAlpha),
+      );
+
+      // Letter text
+      final tp = TextPainter(
+        text: TextSpan(
+          text: lb.letter.toUpperCase(),
+          style: TextStyle(
+            fontFamily: 'Fredoka',
+            fontSize: 22,
+            fontWeight: lb.isLocked ? FontWeight.w700 : FontWeight.w600,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                color: color.withValues(alpha: lb.isLocked ? 0.9 : 0.8),
+                blurRadius: lb.isLocked ? 12 : 8,
+              ),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+    }
+  }
+
+  void _paintCelebration(Canvas canvas, Size size) {
+    final opacity = (1.0 - sim.wordCelebrateT / 1.8).clamp(0.0, 1.0);
+    if (opacity <= 0) return;
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: 'Great job!',
+        style: TextStyle(
+          fontFamily: 'Fredoka',
+          fontSize: 40,
+          fontWeight: FontWeight.w700,
+          color: AppColors.starGold.withValues(alpha: opacity),
+          shadows: [
+            Shadow(
+              color: AppColors.starGold.withValues(alpha: opacity * 0.6),
+              blurRadius: 20,
+            ),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(
+      (size.width - tp.width) / 2,
+      (size.height - tp.height) / 2,
+    ));
+  }
+
   @override
-  bool shouldRepaint(covariant _ShelfPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _LetterDropPainter old) => false;
 }

@@ -20,6 +20,90 @@ enum _PowerUpType {
   wordBomb, // Clears all wrong words from screen
 }
 
+class _NinjaSim extends ChangeNotifier {
+  final List<_FlyingWord> flyingWords = [];
+  final List<_FlyingPowerUp> flyingPowerUps = [];
+  final List<_InkSplash> splashes = [];
+  final List<_SlashTrail> slashTrails = [];
+
+  double shakeX = 0;
+  double shakeY = 0;
+  int shakeFrames = 0;
+
+  Color? flashColor;
+  double flashAlpha = 0;
+
+  String targetWord = '';
+  int combo = 0;
+  bool freezeActive = false;
+
+  final _rng = Random();
+
+  void tick() {
+    final freezeFactor = freezeActive ? 0.5 : 1.0;
+
+    for (final w in flyingWords) {
+      w.x += w.vx * freezeFactor;
+      w.y += w.vy * freezeFactor;
+      w.vy += 0.00015 * freezeFactor;
+      w.angle += w.rotation * freezeFactor;
+      w.life -= 0.003;
+    }
+    flyingWords.removeWhere((w) => w.y > 1.3 || w.life <= 0);
+
+    for (final p in flyingPowerUps) {
+      p.x += p.vx * freezeFactor;
+      p.y += p.vy * freezeFactor;
+      p.vy += 0.00015 * freezeFactor;
+      p.angle += p.rotation * freezeFactor;
+      p.life -= 0.003;
+      p.pulsePhase += 0.08;
+    }
+    flyingPowerUps.removeWhere((p) => p.y > 1.3 || p.life <= 0);
+
+    for (final s in splashes) {
+      s.life -= 0.03;
+      s.radius += 2;
+    }
+    splashes.removeWhere((s) => s.life <= 0);
+
+    for (final t in slashTrails) {
+      t.life -= 0.06;
+    }
+    slashTrails.removeWhere((t) => t.life <= 0);
+
+    if (shakeFrames > 0) {
+      shakeX = (_rng.nextDouble() - 0.5) * 8;
+      shakeY = (_rng.nextDouble() - 0.5) * 8;
+      shakeFrames--;
+    } else {
+      shakeX = 0;
+      shakeY = 0;
+    }
+
+    if (flashAlpha > 0) {
+      flashAlpha -= 0.04;
+      if (flashAlpha < 0) flashAlpha = 0;
+    }
+
+    notifyListeners();
+  }
+
+  void reset() {
+    flyingWords.clear();
+    flyingPowerUps.clear();
+    splashes.clear();
+    slashTrails.clear();
+    shakeFrames = 0;
+    shakeX = 0;
+    shakeY = 0;
+    flashAlpha = 0;
+    combo = 0;
+    freezeActive = false;
+    targetWord = '';
+  }
+}
+
 class WordNinjaGame extends StatefulWidget {
   final ProgressService progressService;
   final AudioService audioService;
@@ -45,20 +129,13 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   static const _maxLives = 3;
 
   final _rng = Random();
+  final _sim = _NinjaSim();
 
   // Word data
   List<String> _wordPool = [];
-  String _targetWord = '';
-
-  // Flying words & powerups
-  final List<_FlyingWord> _flyingWords = [];
-  final List<_FlyingPowerUp> _flyingPowerUps = [];
-  final List<_InkSplash> _splashes = [];
-  final List<_SlashTrail> _slashTrails = [];
 
   // State
   int _score = 0;
-  int _combo = 0;
   int _maxCombo = 0;
   int _livesLeft = _maxLives;
   int _timeLeft = _gameDuration;
@@ -66,19 +143,9 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   bool _isNewBest = false;
 
   // Powerup active state
-  bool _freezeActive = false;
   bool _doublePointsActive = false;
   Timer? _freezeTimer;
   Timer? _doublePointsTimer;
-
-  // Screen shake
-  double _shakeX = 0;
-  double _shakeY = 0;
-  int _shakeFrames = 0;
-
-  // Flash overlay for powerup collect
-  Color? _flashColor;
-  double _flashAlpha = 0;
 
   // Swipe tracking for slash trails
   final List<Offset> _swipePoints = [];
@@ -132,11 +199,10 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   }
 
   void _pickNewTarget() {
-    _targetWord = _wordPool[_rng.nextInt(_wordPool.length)];
-    widget.audioService.playWord(_targetWord);
+    _sim.targetWord = _wordPool[_rng.nextInt(_wordPool.length)];
+    widget.audioService.playWord(_sim.targetWord);
   }
 
-  /// Speed multiplier based on current score — words get faster as score climbs.
   double get _speedMultiplier {
     if (_score < 50) return 1.0;
     if (_score < 100) return 1.15;
@@ -145,7 +211,6 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     return 1.7;
   }
 
-  /// Spawn interval decreases as score increases.
   int get _spawnIntervalMs {
     if (_score < 50) return 1200;
     if (_score < 100) return 1050;
@@ -158,15 +223,17 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() {
-        _timeLeft--;
-        if (_timeLeft <= 0) _endGame();
-      });
+      final newTime = _timeLeft - 1;
+      if (newTime <= 0) {
+        _timeLeft = 0;
+        _endGame();
+        setState(() {});
+      } else {
+        setState(() => _timeLeft = newTime);
+      }
     });
 
     _scheduleNextSpawn();
-
-    // Initial spawn
     _spawnWords();
   }
 
@@ -175,7 +242,6 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     _spawnTimer = Timer(Duration(milliseconds: _spawnIntervalMs), () {
       if (!mounted || _gameOver) return;
       _spawnWords();
-      // Maybe spawn a powerup (15% chance per wave)
       if (_rng.nextDouble() < 0.15) {
         _spawnPowerUp();
       }
@@ -184,52 +250,46 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   }
 
   void _spawnWords() {
-    // Spawn 2-4 words at a time, one is the target
     final count = 2 + _rng.nextInt(3);
     final includeTarget = _rng.nextDouble() < 0.7;
 
     final words = <String>[];
-    if (includeTarget) words.add(_targetWord);
+    if (includeTarget) words.add(_sim.targetWord);
 
     while (words.length < count) {
       final w = _wordPool[_rng.nextInt(_wordPool.length)];
-      if (w != _targetWord && !words.contains(w)) words.add(w);
+      if (w != _sim.targetWord && !words.contains(w)) words.add(w);
     }
     words.shuffle(_rng);
 
     for (int i = 0; i < words.length; i++) {
-      // Varied trajectories: some from bottom, some from sides
-      final trajectory = _rng.nextInt(10); // 0-6 bottom, 7-8 left, 9 right
+      final trajectory = _rng.nextInt(10);
       double startX, startY, vx, vy;
 
       final speed = _speedMultiplier;
-      final freezeFactor = _freezeActive ? 0.5 : 1.0;
+      final freezeFactor = _sim.freezeActive ? 0.5 : 1.0;
       final effectiveSpeed = speed * freezeFactor;
 
       if (trajectory <= 6) {
-        // From bottom — varied X positions, strong upward velocity
         startX = 0.1 + _rng.nextDouble() * 0.8;
         startY = 1.15;
         vx = (_rng.nextDouble() - 0.5) * 0.003 * effectiveSpeed;
-        // Higher arc: vy between -0.010 and -0.016 so words reach 30-40% screen
         vy = -(0.010 + _rng.nextDouble() * 0.006) * effectiveSpeed;
       } else if (trajectory <= 8) {
-        // From left side
         startX = -0.08;
         startY = 0.5 + _rng.nextDouble() * 0.3;
         vx = (0.004 + _rng.nextDouble() * 0.003) * effectiveSpeed;
         vy = -(0.006 + _rng.nextDouble() * 0.004) * effectiveSpeed;
       } else {
-        // From right side
         startX = 1.08;
         startY = 0.5 + _rng.nextDouble() * 0.3;
         vx = -(0.004 + _rng.nextDouble() * 0.003) * effectiveSpeed;
         vy = -(0.006 + _rng.nextDouble() * 0.004) * effectiveSpeed;
       }
 
-      _flyingWords.add(_FlyingWord(
+      _sim.flyingWords.add(_FlyingWord(
         word: words[i],
-        isTarget: words[i] == _targetWord,
+        isTarget: words[i] == _sim.targetWord,
         x: startX,
         y: startY,
         vx: vx,
@@ -243,15 +303,14 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   void _spawnPowerUp() {
     final type =
         _PowerUpType.values[_rng.nextInt(_PowerUpType.values.length)];
-    // Don't spawn extra life if at max
     if (type == _PowerUpType.extraLife && _livesLeft >= _maxLives) return;
 
     final startX = 0.15 + _rng.nextDouble() * 0.7;
     final speed = _speedMultiplier;
-    final freezeFactor = _freezeActive ? 0.5 : 1.0;
+    final freezeFactor = _sim.freezeActive ? 0.5 : 1.0;
     final effectiveSpeed = speed * freezeFactor;
 
-    _flyingPowerUps.add(_FlyingPowerUp(
+    _sim.flyingPowerUps.add(_FlyingPowerUp(
       type: type,
       x: startX,
       y: 1.15,
@@ -263,71 +322,17 @@ class _WordNinjaGameState extends State<WordNinjaGame>
 
   void _update() {
     if (_gameOver || !mounted) return;
-
-    setState(() {
-      final freezeFactor = _freezeActive ? 0.5 : 1.0;
-
-      // Update flying words
-      for (final w in _flyingWords) {
-        w.x += w.vx * freezeFactor;
-        w.y += w.vy * freezeFactor;
-        w.vy += 0.00015 * freezeFactor; // gravity (tuned for higher arcs)
-        w.angle += w.rotation * freezeFactor;
-        w.life -= 0.003;
-      }
-      _flyingWords.removeWhere((w) => w.y > 1.3 || w.life <= 0);
-
-      // Update powerups
-      for (final p in _flyingPowerUps) {
-        p.x += p.vx * freezeFactor;
-        p.y += p.vy * freezeFactor;
-        p.vy += 0.00015 * freezeFactor;
-        p.angle += p.rotation * freezeFactor;
-        p.life -= 0.003;
-        p.pulsePhase += 0.08;
-      }
-      _flyingPowerUps.removeWhere((p) => p.y > 1.3 || p.life <= 0);
-
-      // Update splashes
-      for (final s in _splashes) {
-        s.life -= 0.03;
-        s.radius += 2;
-      }
-      _splashes.removeWhere((s) => s.life <= 0);
-
-      // Update slash trails
-      for (final t in _slashTrails) {
-        t.life -= 0.06;
-      }
-      _slashTrails.removeWhere((t) => t.life <= 0);
-
-      // Update screen shake
-      if (_shakeFrames > 0) {
-        _shakeX = (_rng.nextDouble() - 0.5) * 8;
-        _shakeY = (_rng.nextDouble() - 0.5) * 8;
-        _shakeFrames--;
-      } else {
-        _shakeX = 0;
-        _shakeY = 0;
-      }
-
-      // Update flash
-      if (_flashAlpha > 0) {
-        _flashAlpha -= 0.04;
-        if (_flashAlpha < 0) _flashAlpha = 0;
-      }
-    });
+    _sim.tick();
   }
 
   void _onTapWord(int index) {
     if (_gameOver) return;
-    final word = _flyingWords[index];
+    final word = _sim.flyingWords[index];
     if (word.hit) return;
 
     word.hit = true;
 
-    // Add ink splash
-    _splashes.add(_InkSplash(
+    _sim.splashes.add(_InkSplash(
       x: word.x,
       y: word.y,
       color: word.isTarget ? AppColors.success : AppColors.error,
@@ -336,45 +341,41 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     ));
 
     if (word.isTarget) {
-      // Correct!
       Haptics.success();
       widget.audioService.playSuccess();
-      _combo++;
-      if (_combo > _maxCombo) _maxCombo = _combo;
-      final basePoints = 10 + (_combo - 1) * 5;
+      _sim.combo++;
+      if (_sim.combo > _maxCombo) _maxCombo = _sim.combo;
+      final basePoints = 10 + (_sim.combo - 1) * 5;
       final points = _doublePointsActive ? basePoints * 2 : basePoints;
-      _score += points;
 
-      // Remove this word and pick new target
-      _flyingWords.removeAt(index);
+      _sim.flyingWords.removeAt(index);
       _pickNewTarget();
+      setState(() => _score += points);
     } else {
-      // Wrong word — screen shake!
       Haptics.wrong();
       widget.audioService.playError();
-      _combo = 0;
-      _livesLeft--;
-      _shakeFrames = 8;
-      _flyingWords.removeAt(index);
+      _sim.combo = 0;
+      _sim.shakeFrames = 8;
+      _sim.flyingWords.removeAt(index);
 
-      if (_livesLeft <= 0) {
-        _endGame();
-      }
+      setState(() {
+        _livesLeft--;
+        if (_livesLeft <= 0) {
+          _endGame();
+        }
+      });
     }
-
-    if (mounted) setState(() {});
   }
 
   void _onTapPowerUp(int index) {
     if (_gameOver) return;
-    final powerUp = _flyingPowerUps[index];
+    final powerUp = _sim.flyingPowerUps[index];
     if (powerUp.collected) return;
 
     powerUp.collected = true;
     Haptics.success();
 
-    // Splash at powerup location
-    _splashes.add(_InkSplash(
+    _sim.splashes.add(_InkSplash(
       x: powerUp.x,
       y: powerUp.y,
       color: _powerUpColor(powerUp.type),
@@ -382,11 +383,10 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       life: 1.0,
     ));
 
-    // Flash effect
-    _flashColor = _powerUpColor(powerUp.type);
-    _flashAlpha = 0.3;
+    _sim.flashColor = _powerUpColor(powerUp.type);
+    _sim.flashAlpha = 0.3;
 
-    _flyingPowerUps.removeAt(index);
+    _sim.flyingPowerUps.removeAt(index);
 
     switch (powerUp.type) {
       case _PowerUpType.freezeTime:
@@ -394,20 +394,24 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       case _PowerUpType.doublePoints:
         _activateDoublePoints();
       case _PowerUpType.extraLife:
-        if (_livesLeft < _maxLives) _livesLeft++;
+        setState(() {
+          if (_livesLeft < _maxLives) _livesLeft++;
+        });
       case _PowerUpType.wordBomb:
         _activateWordBomb();
     }
-
-    if (mounted) setState(() {});
   }
 
   void _activateFreeze() {
-    _freezeActive = true;
+    _sim.freezeActive = true;
     _freezeTimer?.cancel();
     _freezeTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _freezeActive = false);
+      if (mounted) {
+        _sim.freezeActive = false;
+        setState(() {});
+      }
     });
+    setState(() {});
   }
 
   void _activateDoublePoints() {
@@ -416,15 +420,15 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     _doublePointsTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) setState(() => _doublePointsActive = false);
     });
+    setState(() {});
   }
 
   void _activateWordBomb() {
-    // Remove all non-target words with splashes
     final toRemove = <int>[];
-    for (int i = _flyingWords.length - 1; i >= 0; i--) {
-      final w = _flyingWords[i];
+    for (int i = _sim.flyingWords.length - 1; i >= 0; i--) {
+      final w = _sim.flyingWords[i];
       if (!w.isTarget && !w.hit) {
-        _splashes.add(_InkSplash(
+        _sim.splashes.add(_InkSplash(
           x: w.x,
           y: w.y,
           color: AppColors.flameOrange,
@@ -435,9 +439,9 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       }
     }
     for (final i in toRemove) {
-      _flyingWords.removeAt(i);
+      _sim.flyingWords.removeAt(i);
     }
-    _shakeFrames = 6; // small shake for bomb effect
+    _sim.shakeFrames = 6;
   }
 
   Color _powerUpColor(_PowerUpType type) {
@@ -463,20 +467,18 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     if (!_isSwiping) return;
     _swipePoints.add(localPosition);
 
-    // Add slash trail segment
     if (_swipePoints.length >= 2) {
       final p1 = _swipePoints[_swipePoints.length - 2];
       final p2 = _swipePoints[_swipePoints.length - 1];
-      // Determine trail color based on combo
       Color trailColor;
-      if (_combo >= 10) {
+      if (_sim.combo >= 10) {
         trailColor = AppColors.electricBlue;
-      } else if (_combo >= 5) {
+      } else if (_sim.combo >= 5) {
         trailColor = AppColors.flameOrange;
       } else {
         trailColor = AppColors.magenta;
       }
-      _slashTrails.add(_SlashTrail(
+      _sim.slashTrails.add(_SlashTrail(
         x1: p1.dx / size.width,
         y1: p1.dy / size.height,
         x2: p2.dx / size.width,
@@ -486,11 +488,10 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       ));
     }
 
-    // Check if swipe hits any word
     final dx = localPosition.dx / size.width;
     final dy = localPosition.dy / size.height;
-    for (int i = _flyingWords.length - 1; i >= 0; i--) {
-      final w = _flyingWords[i];
+    for (int i = _sim.flyingWords.length - 1; i >= 0; i--) {
+      final w = _sim.flyingWords[i];
       if (w.hit) continue;
       if ((dx - w.x).abs() < 0.08 && (dy - w.y).abs() < 0.06) {
         _onTapWord(i);
@@ -498,9 +499,8 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       }
     }
 
-    // Check powerups
-    for (int i = _flyingPowerUps.length - 1; i >= 0; i--) {
-      final p = _flyingPowerUps[i];
+    for (int i = _sim.flyingPowerUps.length - 1; i >= 0; i--) {
+      final p = _sim.flyingPowerUps[i];
       if (p.collected) continue;
       if ((dx - p.x).abs() < 0.06 && (dy - p.y).abs() < 0.06) {
         _onTapPowerUp(i);
@@ -537,23 +537,14 @@ class _WordNinjaGameState extends State<WordNinjaGame>
 
   void _restart() {
     _completionController.reset();
-    _flyingWords.clear();
-    _flyingPowerUps.clear();
-    _splashes.clear();
-    _slashTrails.clear();
+    _sim.reset();
     _score = 0;
-    _combo = 0;
     _maxCombo = 0;
     _livesLeft = _maxLives;
     _timeLeft = _gameDuration;
     _gameOver = false;
     _isNewBest = false;
-    _freezeActive = false;
     _doublePointsActive = false;
-    _shakeFrames = 0;
-    _shakeX = 0;
-    _shakeY = 0;
-    _flashAlpha = 0;
 
     _gameLoop.repeat();
     _initGame();
@@ -569,6 +560,7 @@ class _WordNinjaGameState extends State<WordNinjaGame>
     _gameLoop.removeListener(_update);
     _gameLoop.dispose();
     _completionController.dispose();
+    _sim.dispose();
     super.dispose();
   }
 
@@ -589,12 +581,12 @@ class _WordNinjaGameState extends State<WordNinjaGame>
           child: Stack(
             children: [
               // Game area with screen shake transform
-              Transform.translate(
-                offset: Offset(_shakeX, _shakeY),
-                child: AnimatedBuilder(
-                  animation: _gameLoop,
-                  builder: (context, _) {
-                    return LayoutBuilder(
+              ListenableBuilder(
+                listenable: _sim,
+                builder: (context, _) {
+                  return Transform.translate(
+                    offset: Offset(_sim.shakeX, _sim.shakeY),
+                    child: LayoutBuilder(
                       builder: (context, constraints) {
                         final areaSize = Size(
                             constraints.maxWidth, constraints.maxHeight);
@@ -605,11 +597,10 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                                 constraints.maxWidth;
                             final dy = details.localPosition.dy /
                                 constraints.maxHeight;
-                            // Check powerups first (they're smaller targets)
-                            for (int i = _flyingPowerUps.length - 1;
+                            for (int i = _sim.flyingPowerUps.length - 1;
                                 i >= 0;
                                 i--) {
-                              final p = _flyingPowerUps[i];
+                              final p = _sim.flyingPowerUps[i];
                               if (p.collected) continue;
                               if ((dx - p.x).abs() < 0.06 &&
                                   (dy - p.y).abs() < 0.06) {
@@ -617,11 +608,10 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                                 return;
                               }
                             }
-                            // Find closest word
-                            for (int i = _flyingWords.length - 1;
+                            for (int i = _sim.flyingWords.length - 1;
                                 i >= 0;
                                 i--) {
-                              final w = _flyingWords[i];
+                              final w = _sim.flyingWords[i];
                               if (w.hit) continue;
                               if ((dx - w.x).abs() < 0.08 &&
                                   (dy - w.y).abs() < 0.06) {
@@ -635,36 +625,39 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                           onPanUpdate: (details) => _handlePanUpdate(
                               details.localPosition, areaSize),
                           onPanEnd: (_) => _handlePanEnd(),
-                          child: CustomPaint(
-                            painter: _NinjaPainter(
-                              words: _flyingWords,
-                              powerUps: _flyingPowerUps,
-                              splashes: _splashes,
-                              slashTrails: _slashTrails,
-                              targetWord: _targetWord,
-                              combo: _combo,
-                              freezeActive: _freezeActive,
+                          child: RepaintBoundary(
+                            child: CustomPaint(
+                              painter: _NinjaPainter(
+                                sim: _sim,
+                              ),
+                              size: areaSize,
                             ),
-                            size: areaSize,
                           ),
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
 
               // Flash overlay
-              if (_flashAlpha > 0 && _flashColor != null)
-                IgnorePointer(
-                  child: Container(
-                    color: _flashColor!
-                        .withValues(alpha: _flashAlpha.clamp(0.0, 1.0)),
-                  ),
-                ),
+              ListenableBuilder(
+                listenable: _sim,
+                builder: (context, _) {
+                  if (_sim.flashAlpha > 0 && _sim.flashColor != null) {
+                    return IgnorePointer(
+                      child: Container(
+                        color: _sim.flashColor!
+                            .withValues(alpha: _sim.flashAlpha.clamp(0.0, 1.0)),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
 
               // Freeze overlay tint
-              if (_freezeActive)
+              if (_sim.freezeActive)
                 IgnorePointer(
                   child: Container(
                     color: AppColors.electricBlue.withValues(alpha: 0.06),
@@ -769,18 +762,17 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   }
 
   Widget _buildTargetDisplay() {
-    // Combo color escalation
     Color comboColor;
-    if (_combo >= 10) {
+    if (_sim.combo >= 10) {
       comboColor = AppColors.electricBlue;
-    } else if (_combo >= 5) {
+    } else if (_sim.combo >= 5) {
       comboColor = AppColors.flameOrange;
     } else {
       comboColor = AppColors.starGold;
     }
 
     return GestureDetector(
-      onTap: () => widget.audioService.playWord(_targetWord),
+      onTap: () => widget.audioService.playWord(_sim.targetWord),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 40),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -799,14 +791,14 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                 color: AppColors.magenta, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Slash: "$_targetWord"',
+              'Slash: "${_sim.targetWord}"',
               style: AppFonts.fredoka(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
                 color: AppColors.primaryText,
               ),
             ),
-            if (_combo > 1) ...[
+            if (_sim.combo > 1) ...[
               const SizedBox(width: 12),
               Container(
                 padding:
@@ -821,14 +813,14 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_combo >= 10)
+                    if (_sim.combo >= 10)
                       Icon(Icons.bolt_rounded,
                           color: comboColor, size: 14)
-                    else if (_combo >= 5)
+                    else if (_sim.combo >= 5)
                       Icon(Icons.local_fire_department_rounded,
                           color: comboColor, size: 14),
                     Text(
-                      'x$_combo',
+                      'x${_sim.combo}',
                       style: AppFonts.fredoka(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -848,7 +840,7 @@ class _WordNinjaGameState extends State<WordNinjaGame>
   Widget _buildActiveEffects() {
     final effects = <Widget>[];
 
-    if (_freezeActive) {
+    if (_sim.freezeActive) {
       effects.add(_buildEffectChip(
         Icons.ac_unit_rounded,
         'FREEZE',
@@ -1092,34 +1084,19 @@ class _SlashTrail {
 // ---- Painter ----
 
 class _NinjaPainter extends CustomPainter {
-  final List<_FlyingWord> words;
-  final List<_FlyingPowerUp> powerUps;
-  final List<_InkSplash> splashes;
-  final List<_SlashTrail> slashTrails;
-  final String targetWord;
-  final int combo;
-  final bool freezeActive;
+  final _NinjaSim sim;
 
-  _NinjaPainter({
-    required this.words,
-    required this.powerUps,
-    required this.splashes,
-    required this.slashTrails,
-    required this.targetWord,
-    required this.combo,
-    required this.freezeActive,
-  });
+  _NinjaPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
     // Draw slash trails
-    for (final t in slashTrails) {
+    for (final t in sim.slashTrails) {
       final p1 = Offset(t.x1 * size.width, t.y1 * size.height);
       final p2 = Offset(t.x2 * size.width, t.y2 * size.height);
       final alpha = (t.life * 0.8).clamp(0.0, 1.0);
       final strokeWidth = 4.0 + t.life * 4.0;
 
-      // Glow layer
       canvas.drawLine(
         p1,
         p2,
@@ -1130,7 +1107,6 @@ class _NinjaPainter extends CustomPainter {
           ..maskFilter =
               MaskFilter.blur(BlurStyle.normal, strokeWidth * 0.8),
       );
-      // Core line
       canvas.drawLine(
         p1,
         p2,
@@ -1139,7 +1115,6 @@ class _NinjaPainter extends CustomPainter {
           ..strokeWidth = strokeWidth
           ..strokeCap = StrokeCap.round,
       );
-      // Bright center
       canvas.drawLine(
         p1,
         p2,
@@ -1151,7 +1126,7 @@ class _NinjaPainter extends CustomPainter {
     }
 
     // Draw ink splashes
-    for (final s in splashes) {
+    for (final s in sim.splashes) {
       final center = Offset(s.x * size.width, s.y * size.height);
       canvas.drawCircle(
         center,
@@ -1165,13 +1140,13 @@ class _NinjaPainter extends CustomPainter {
     }
 
     // Draw powerups
-    for (final p in powerUps) {
+    for (final p in sim.flyingPowerUps) {
       if (p.collected) continue;
       _drawPowerUp(canvas, size, p);
     }
 
     // Draw flying words
-    for (final w in words) {
+    for (final w in sim.flyingWords) {
       if (w.hit) continue;
       _drawWord(canvas, size, w);
     }
@@ -1202,10 +1177,9 @@ class _NinjaPainter extends CustomPainter {
         icon = Icons.favorite_rounded;
       case _PowerUpType.wordBomb:
         color = AppColors.flameOrange;
-        icon = Icons.brightness_7_rounded; // bomb-like burst
+        icon = Icons.brightness_7_rounded;
     }
 
-    // Outer glow
     canvas.drawCircle(
       Offset.zero,
       radius + 8,
@@ -1214,14 +1188,12 @@ class _NinjaPainter extends CustomPainter {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
     );
 
-    // Circle background
     canvas.drawCircle(
       Offset.zero,
       radius,
       Paint()..color = color.withValues(alpha: 0.85),
     );
 
-    // Border
     canvas.drawCircle(
       Offset.zero,
       radius,
@@ -1231,7 +1203,6 @@ class _NinjaPainter extends CustomPainter {
         ..strokeWidth = 2,
     );
 
-    // Draw icon using TextPainter with material icon font
     final iconPainter = TextPainter(
       text: TextSpan(
         text: String.fromCharCode(icon.codePoint),
@@ -1261,7 +1232,6 @@ class _NinjaPainter extends CustomPainter {
     canvas.translate(cx, cy);
     canvas.rotate(w.angle);
 
-    // Word pill background
     final bgColor = w.isTarget
         ? AppColors.magenta.withValues(alpha: 0.8)
         : AppColors.surface.withValues(alpha: 0.9);
@@ -1297,7 +1267,6 @@ class _NinjaPainter extends CustomPainter {
         ..strokeWidth = 1.5,
     );
 
-    // Glow for target words
     if (w.isTarget) {
       canvas.drawRRect(
         rect,
@@ -1307,8 +1276,7 @@ class _NinjaPainter extends CustomPainter {
       );
     }
 
-    // Freeze tint on words
-    if (freezeActive) {
+    if (sim.freezeActive) {
       canvas.drawRRect(
         rect,
         Paint()
@@ -1326,5 +1294,5 @@ class _NinjaPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _NinjaPainter old) => true;
+  bool shouldRepaint(covariant _NinjaPainter old) => false;
 }

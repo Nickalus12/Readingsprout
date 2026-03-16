@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HighScoreEntry {
@@ -71,16 +72,21 @@ class HighScoreService {
     final raw = _prefs.getString('$_prefix$gameId');
     if (raw == null) return [];
 
-    final decoded = jsonDecode(raw) as List<dynamic>;
-    final entries = decoded
-        .map((e) => HighScoreEntry.fromJson(e as Map<String, dynamic>))
-        .toList();
-    entries.sort((a, b) => b.score.compareTo(a.score));
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final entries = decoded
+          .map((e) => HighScoreEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+      entries.sort((a, b) => b.score.compareTo(a.score));
 
-    if (entries.length > limit) {
-      return entries.sublist(0, limit);
+      if (entries.length > limit) {
+        return entries.sublist(0, limit);
+      }
+      return entries;
+    } catch (e) {
+      debugPrint('HighScoreService: failed to decode scores for $gameId: $e');
+      return [];
     }
-    return entries;
   }
 
   /// Get the highest score for a game.
@@ -94,7 +100,7 @@ class HighScoreService {
   bool isHighScore(String gameId, int score) {
     if (score <= 0) return false;
     final scores = getHighScores(gameId);
-    if (scores.length < _maxEntries) return true;
+    if (scores.isEmpty || scores.length < _maxEntries) return true;
     return score > scores.last.score;
   }
 }

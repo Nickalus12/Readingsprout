@@ -114,18 +114,50 @@ class _CompletionShape {
         opacity = 0;
 }
 
+// ── Simulation ────────────────────────────────────────────────────────────
+
+class _PaintSplashSim extends ChangeNotifier {
+  final Random rng = Random();
+
+  static const double blobZoneTop = 0.22;
+  static const double blobZoneBottom = 0.88;
+
+  static const List<Color> paintColors = [
+    Color(0xFFFF4D6A),
+    Color(0xFF4D9FFF),
+    Color(0xFF4DFF88),
+    Color(0xFFFFD74D),
+    Color(0xFFFF8C4D),
+    Color(0xFFB84DFF),
+    Color(0xFF4DFFE0),
+    Color(0xFFFF4DA6),
+  ];
+
+  List<_PaintBlob> blobs = [];
+  int nextBlobId = 0;
+
+  final List<_SplashDrop> splashDrops = [];
+  final List<_CanvasSplat> canvasSplats = [];
+  _CompletionShape? completionShape;
+  double completionTimer = 0;
+
+  double easelTime = 0;
+
+  void tick(double dt) {
+    notifyListeners();
+  }
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 class _PaintSplashGameState extends State<PaintSplashGame>
     with SingleTickerProviderStateMixin {
-  final _rng = Random();
+  late final _PaintSplashSim _sim;
 
   // Game config
   late final int _gameDurationSecs;
-  static const double _blobZoneTop = 0.22;
-  static const double _blobZoneBottom = 0.88;
 
-  // Game state
+  // Game state (overlay)
   bool _gameStarted = false;
   bool _gameOver = false;
   bool _introPlayed = false;
@@ -143,16 +175,6 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   String _currentWord = '';
   int _nextLetterIndex = 0;
 
-  // Blobs
-  List<_PaintBlob> _blobs = [];
-  int _nextBlobId = 0;
-
-  // Visual effects
-  final List<_SplashDrop> _splashDrops = [];
-  final List<_CanvasSplat> _canvasSplats = [];
-  _CompletionShape? _completionShape;
-  double _completionTimer = 0;
-
   // Paint drip decorations
   late List<_PaintDrip> _paintDrips;
 
@@ -161,38 +183,24 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   Duration _lastElapsed = Duration.zero;
   Size _screenSize = Size.zero;
 
-  // Easel wobble
-  double _easelTime = 0;
-
-  // Palette of bright colors
-  static const List<Color> _paintColors = [
-    Color(0xFFFF4D6A), // red-pink
-    Color(0xFF4D9FFF), // blue
-    Color(0xFF4DFF88), // green
-    Color(0xFFFFD74D), // yellow
-    Color(0xFFFF8C4D), // orange
-    Color(0xFFB84DFF), // purple
-    Color(0xFF4DFFE0), // teal
-    Color(0xFFFF4DA6), // hot pink
-  ];
-
   late final Stopwatch _sessionTimer;
 
   @override
   void initState() {
     super.initState();
+    _sim = _PaintSplashSim();
     _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
     _timeRemaining = _gameDurationSecs;
     _sessionTimer = Stopwatch()..start();
     _wordPool = _buildWordPool();
 
-    // Paint drips
+    final rng = _sim.rng;
     _paintDrips = List.generate(8, (i) => _PaintDrip(
-      x: 0.05 + _rng.nextDouble() * 0.9,
+      x: 0.05 + rng.nextDouble() * 0.9,
       startY: 0,
-      length: 0.05 + _rng.nextDouble() * 0.15,
-      width: 3 + _rng.nextDouble() * 5,
-      color: _paintColors[i % _paintColors.length].withValues(alpha: 0.15),
+      length: 0.05 + rng.nextDouble() * 0.15,
+      width: 3 + rng.nextDouble() * 5,
+      color: _PaintSplashSim.paintColors[i % _PaintSplashSim.paintColors.length].withValues(alpha: 0.15),
     ));
 
     _ticker = createTicker(_onTick);
@@ -202,6 +210,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   @override
   void dispose() {
     _ticker.dispose();
+    _sim.dispose();
     _gameTimer?.cancel();
     _sessionTimer.stop();
     super.dispose();
@@ -217,7 +226,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
     if (pool.isEmpty) {
       pool.addAll(DolchWords.wordsForLevel(1).map((w) => w.text));
     }
-    pool.shuffle(_rng);
+    pool.shuffle(_sim.rng);
     return pool;
   }
 
@@ -233,13 +242,13 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       _wordsCompleted = 0;
       _perfectWords = 0;
       _timeRemaining = _gameDurationSecs;
-      _blobs = [];
-      _splashDrops.clear();
-      _canvasSplats.clear();
-      _completionShape = null;
+      _sim.blobs = [];
+      _sim.splashDrops.clear();
+      _sim.canvasSplats.clear();
+      _sim.completionShape = null;
       _nextLetterIndex = 0;
       _madeErrorThisWord = false;
-      _wordPool.shuffle(_rng);
+      _wordPool.shuffle(_sim.rng);
     });
     _nextWord();
     _gameTimer?.cancel();
@@ -286,7 +295,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
     _currentWord = _wordPool.removeAt(0);
     _nextLetterIndex = 0;
     _madeErrorThisWord = false;
-    _completionShape = null;
+    _sim.completionShape = null;
     _spawnBlobs();
 
     Future.delayed(const Duration(milliseconds: 300), () {
@@ -297,66 +306,67 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   }
 
   void _spawnBlobs() {
-    _blobs.clear();
+    final rng = _sim.rng;
+    _sim.blobs.clear();
     final letters = _currentWord.split('');
     final usedPositions = <Offset>[];
-    int colorIdx = _rng.nextInt(_paintColors.length);
+    int colorIdx = rng.nextInt(_PaintSplashSim.paintColors.length);
 
     for (int i = 0; i < letters.length; i++) {
       final pos = _findOpenPosition(usedPositions);
       usedPositions.add(pos);
-      _blobs.add(_PaintBlob(
-        id: _nextBlobId++,
+      _sim.blobs.add(_PaintBlob(
+        id: _sim.nextBlobId++,
         letter: letters[i].toUpperCase(),
         isCorrect: true,
         correctIndex: i,
         x: pos.dx,
         y: pos.dy,
-        vx: (_rng.nextDouble() - 0.5) * 0.08,
-        vy: (_rng.nextDouble() - 0.5) * 0.06,
+        vx: (rng.nextDouble() - 0.5) * 0.08,
+        vy: (rng.nextDouble() - 0.5) * 0.06,
         radius: 32,
-        wobblePhase: _rng.nextDouble() * pi * 2,
-        color: _paintColors[(colorIdx + i) % _paintColors.length],
+        wobblePhase: rng.nextDouble() * pi * 2,
+        color: _PaintSplashSim.paintColors[(colorIdx + i) % _PaintSplashSim.paintColors.length],
       ));
     }
 
-    // Distractors
-    final distractorCount = 3 + _rng.nextInt(3);
+    final distractorCount = 3 + rng.nextInt(3);
     const allLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     for (int i = 0; i < distractorCount; i++) {
       final pos = _findOpenPosition(usedPositions);
       usedPositions.add(pos);
       String letter;
       do {
-        letter = allLetters[_rng.nextInt(allLetters.length)];
+        letter = allLetters[rng.nextInt(allLetters.length)];
       } while (_currentWord.toUpperCase().contains(letter) &&
-          _rng.nextDouble() > 0.3);
+          rng.nextDouble() > 0.3);
 
-      _blobs.add(_PaintBlob(
-        id: _nextBlobId++,
+      _sim.blobs.add(_PaintBlob(
+        id: _sim.nextBlobId++,
         letter: letter,
         isCorrect: false,
         correctIndex: -1,
         x: pos.dx,
         y: pos.dy,
-        vx: (_rng.nextDouble() - 0.5) * 0.08,
-        vy: (_rng.nextDouble() - 0.5) * 0.06,
+        vx: (rng.nextDouble() - 0.5) * 0.08,
+        vy: (rng.nextDouble() - 0.5) * 0.06,
         radius: 32,
-        wobblePhase: _rng.nextDouble() * pi * 2,
+        wobblePhase: rng.nextDouble() * pi * 2,
         color: widget.hintsEnabled
             ? Colors.grey.withValues(alpha: 0.5)
-            : _paintColors[_rng.nextInt(_paintColors.length)],
+            : _PaintSplashSim.paintColors[rng.nextInt(_PaintSplashSim.paintColors.length)],
       ));
     }
-    _blobs.shuffle(_rng);
+    _sim.blobs.shuffle(rng);
   }
 
   Offset _findOpenPosition(List<Offset> existing) {
+    final rng = _sim.rng;
     const margin = 0.1;
     for (int attempt = 0; attempt < 50; attempt++) {
-      final x = margin + _rng.nextDouble() * (1.0 - 2 * margin);
-      final y = _blobZoneTop + 0.05 +
-          _rng.nextDouble() * (_blobZoneBottom - _blobZoneTop - 0.1);
+      final x = margin + rng.nextDouble() * (1.0 - 2 * margin);
+      final y = _PaintSplashSim.blobZoneTop + 0.05 +
+          rng.nextDouble() * (_PaintSplashSim.blobZoneBottom - _PaintSplashSim.blobZoneTop - 0.1);
       bool tooClose = false;
       for (final e in existing) {
         if ((e.dx - x).abs() < 0.14 && (e.dy - y).abs() < 0.1) {
@@ -367,15 +377,15 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       if (!tooClose) return Offset(x, y);
     }
     return Offset(
-      margin + _rng.nextDouble() * (1.0 - 2 * margin),
-      _blobZoneTop + _rng.nextDouble() * (_blobZoneBottom - _blobZoneTop),
+      margin + rng.nextDouble() * (1.0 - 2 * margin),
+      _PaintSplashSim.blobZoneTop + rng.nextDouble() * (_PaintSplashSim.blobZoneBottom - _PaintSplashSim.blobZoneTop),
     );
   }
 
   // ── Blob tap ─────────────────────────────────────────────────────────────
 
   void _onBlobTap(_PaintBlob blob) {
-    if (blob.tapped || _gameOver || _completionShape != null) return;
+    if (blob.tapped || _gameOver || _sim.completionShape != null) return;
 
     if (blob.isCorrect && blob.correctIndex == _nextLetterIndex) {
       _onCorrectTap(blob);
@@ -385,33 +395,29 @@ class _PaintSplashGameState extends State<PaintSplashGame>
   }
 
   void _onCorrectTap(_PaintBlob blob) {
-    setState(() {
-      blob.tapped = true;
-      blob.splashTimer = 0.4;
-      _combo++;
-      if (_combo > _bestCombo) _bestCombo = _combo;
+    blob.tapped = true;
+    blob.splashTimer = 0.4;
+    _combo++;
+    if (_combo > _bestCombo) _bestCombo = _combo;
 
-      final comboBonus = (_combo > 1) ? (_combo - 1) * 5 : 0;
-      _score += 10 + comboBonus;
-      _nextLetterIndex++;
-    });
+    final comboBonus = (_combo > 1) ? (_combo - 1) * 5 : 0;
+    _score += 10 + comboBonus;
+    _nextLetterIndex++;
 
     widget.audioService.playLetter(blob.letter.toLowerCase());
 
-    // Splash effect
     if (_screenSize != Size.zero) {
       final px = blob.x * _screenSize.width;
       final py = blob.y * _screenSize.height;
       _spawnSplash(px, py, blob.color, 12);
-      _canvasSplats.add(_CanvasSplat(
+      _sim.canvasSplats.add(_CanvasSplat(
         x: px,
         y: py,
-        radius: 20 + _rng.nextDouble() * 20,
+        radius: 20 + _sim.rng.nextDouble() * 20,
         color: blob.color.withValues(alpha: 0.4),
       ));
     }
 
-    // Check word complete
     if (_nextLetterIndex >= _currentWord.length) {
       widget.audioService.playSuccess();
       Haptics.success();
@@ -419,18 +425,18 @@ class _PaintSplashGameState extends State<PaintSplashGame>
 
       if (!_madeErrorThisWord) {
         _perfectWords++;
-        _score += 20; // no-mistake bonus
+        _score += 20;
       }
 
-      // Show completion shape
       if (_screenSize != Size.zero) {
-        _completionShape = _CompletionShape(
+        final rng = _sim.rng;
+        _sim.completionShape = _CompletionShape(
           x: _screenSize.width / 2,
           y: _screenSize.height * 0.5,
-          shapeType: _rng.nextInt(4),
-          color: _paintColors[_rng.nextInt(_paintColors.length)],
+          shapeType: rng.nextInt(4),
+          color: _PaintSplashSim.paintColors[rng.nextInt(_PaintSplashSim.paintColors.length)],
         );
-        _completionTimer = 0;
+        _sim.completionTimer = 0;
       }
 
       Future.delayed(const Duration(milliseconds: 1200), () {
@@ -440,31 +446,33 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       widget.audioService.playSuccess();
       Haptics.correct();
     }
+
+    if (mounted) setState(() {});
   }
 
   void _onWrongTap(_PaintBlob blob) {
-    setState(() {
-      blob.squishAmount = 8;
-      blob.squishTimer = 0.3;
-      _combo = 0;
-      _madeErrorThisWord = true;
-    });
+    blob.squishAmount = 8;
+    blob.squishTimer = 0.3;
+    _combo = 0;
+    _madeErrorThisWord = true;
     widget.audioService.playError();
     Haptics.wrong();
+    if (mounted) setState(() {});
   }
 
   void _spawnSplash(double cx, double cy, Color color, int count) {
+    final rng = _sim.rng;
     for (int i = 0; i < count; i++) {
-      final angle = _rng.nextDouble() * pi * 2;
-      final speed = 80 + _rng.nextDouble() * 150;
-      _splashDrops.add(_SplashDrop(
+      final angle = rng.nextDouble() * pi * 2;
+      final speed = 80 + rng.nextDouble() * 150;
+      _sim.splashDrops.add(_SplashDrop(
         x: cx,
         y: cy,
         vx: cos(angle) * speed,
         vy: sin(angle) * speed - 40,
-        size: 3 + _rng.nextDouble() * 6,
+        size: 3 + rng.nextDouble() * 6,
         life: 1.0,
-        color: Color.lerp(color, Colors.white, _rng.nextDouble() * 0.3)!,
+        color: Color.lerp(color, Colors.white, rng.nextDouble() * 0.3)!,
       ));
     }
   }
@@ -475,14 +483,15 @@ class _PaintSplashGameState extends State<PaintSplashGame>
     final dtRaw = (elapsed - _lastElapsed).inMicroseconds / 1e6;
     _lastElapsed = elapsed;
     final dt = dtRaw.clamp(0.0, 0.05);
-    _easelTime += dt * 1.2;
+    final sim = _sim;
+    final rng = sim.rng;
+    sim.easelTime += dt * 1.2;
     if (_screenSize == Size.zero || !_gameStarted || _gameOver) {
-      if (mounted) setState(() {});
+      sim.tick(dt);
       return;
     }
 
-    // Update blobs
-    for (final b in _blobs) {
+    for (final b in sim.blobs) {
       if (b.tapped) {
         if (b.splashTimer > 0) b.splashTimer -= dt;
         continue;
@@ -492,33 +501,29 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      // Squish decay
       if (b.squishTimer > 0) {
         b.squishTimer -= dt;
         if (b.squishTimer <= 0) b.squishAmount = 0;
       }
 
-      // Bounce off edges
       final rNorm = b.radius / _screenSize.width;
       final rNormY = b.radius / _screenSize.height;
       if (b.x < rNorm) { b.x = rNorm; b.vx = b.vx.abs(); }
       if (b.x > 1 - rNorm) { b.x = 1 - rNorm; b.vx = -b.vx.abs(); }
-      if (b.y < _blobZoneTop + rNormY) {
-        b.y = _blobZoneTop + rNormY;
+      if (b.y < _PaintSplashSim.blobZoneTop + rNormY) {
+        b.y = _PaintSplashSim.blobZoneTop + rNormY;
         b.vy = b.vy.abs();
       }
-      if (b.y > _blobZoneBottom - rNormY) {
-        b.y = _blobZoneBottom - rNormY;
+      if (b.y > _PaintSplashSim.blobZoneBottom - rNormY) {
+        b.y = _PaintSplashSim.blobZoneBottom - rNormY;
         b.vy = -b.vy.abs();
       }
 
-      // Random nudges
-      if (_rng.nextDouble() < 0.03) {
-        b.vx += (_rng.nextDouble() - 0.5) * 0.03;
-        b.vy += (_rng.nextDouble() - 0.5) * 0.02;
+      if (rng.nextDouble() < 0.03) {
+        b.vx += (rng.nextDouble() - 0.5) * 0.03;
+        b.vy += (rng.nextDouble() - 0.5) * 0.02;
       }
 
-      // Dampen
       b.vx *= 0.997;
       b.vy *= 0.997;
       final speed = sqrt(b.vx * b.vx + b.vy * b.vy);
@@ -527,16 +532,15 @@ class _PaintSplashGameState extends State<PaintSplashGame>
         b.vy = b.vy / speed * 0.2;
       }
       if (speed < 0.02) {
-        b.vx += (_rng.nextDouble() - 0.5) * 0.04;
-        b.vy += (_rng.nextDouble() - 0.5) * 0.03;
+        b.vx += (rng.nextDouble() - 0.5) * 0.04;
+        b.vy += (rng.nextDouble() - 0.5) * 0.03;
       }
     }
 
-    // Blob-to-blob collision
-    for (int i = 0; i < _blobs.length; i++) {
-      for (int j = i + 1; j < _blobs.length; j++) {
-        final a = _blobs[i];
-        final b = _blobs[j];
+    for (int i = 0; i < sim.blobs.length; i++) {
+      for (int j = i + 1; j < sim.blobs.length; j++) {
+        final a = sim.blobs[i];
+        final b = sim.blobs[j];
         if (a.tapped || b.tapped) continue;
         final dx = (a.x - b.x) * _screenSize.width;
         final dy = (a.y - b.y) * _screenSize.height;
@@ -554,32 +558,29 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       }
     }
 
-    // Update splash drops
-    for (final d in _splashDrops) {
+    for (final d in sim.splashDrops) {
       d.x += d.vx * dt;
       d.y += d.vy * dt;
-      d.vy += 100 * dt; // gravity
+      d.vy += 100 * dt;
       d.life -= dt * 1.5;
     }
-    _splashDrops.removeWhere((d) => d.life <= 0);
+    sim.splashDrops.removeWhere((d) => d.life <= 0);
 
-    // Canvas splat fade
-    for (final s in _canvasSplats) {
+    for (final s in sim.canvasSplats) {
       s.opacity = (s.opacity - dt * 0.1).clamp(0.0, 1.0);
     }
-    _canvasSplats.removeWhere((s) => s.opacity <= 0);
+    sim.canvasSplats.removeWhere((s) => s.opacity <= 0);
 
-    // Completion shape animation
-    if (_completionShape != null) {
-      _completionTimer += dt;
-      _completionShape!.scale =
-          (_completionTimer * 3).clamp(0.0, 1.0);
-      _completionShape!.opacity =
-          _completionTimer < 0.8 ? 1.0 : (1.2 - _completionTimer).clamp(0.0, 1.0);
-      if (_completionTimer > 1.2) _completionShape = null;
+    if (sim.completionShape != null) {
+      sim.completionTimer += dt;
+      sim.completionShape!.scale =
+          (sim.completionTimer * 3).clamp(0.0, 1.0);
+      sim.completionShape!.opacity =
+          sim.completionTimer < 0.8 ? 1.0 : (1.2 - sim.completionTimer).clamp(0.0, 1.0);
+      if (sim.completionTimer > 1.2) sim.completionShape = null;
     }
 
-    if (mounted) setState(() {});
+    sim.tick(dt);
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -590,11 +591,12 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       backgroundColor: const Color(0xFFFFF8F0),
       body: LayoutBuilder(builder: (context, constraints) {
         _screenSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return _gameOver
-            ? _buildGameOver()
-            : _gameStarted
-                ? _buildGameplay()
-                : _buildStartScreen();
+        if (_gameOver) return _buildGameOver();
+        if (_gameStarted) return _buildGameplay();
+        return ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) => _buildStartScreen(),
+        );
       }),
     );
   }
@@ -633,7 +635,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
               const Spacer(flex: 2),
               // Palette icon
               Transform.translate(
-                offset: Offset(0, sin(_easelTime) * 4),
+                offset: Offset(0, sin(_sim.easelTime) * 4),
                 child: const Icon(Icons.palette_rounded,
                     size: 64, color: Color(0xFFFF4D6A)),
               ),
@@ -726,20 +728,27 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       children: [
         _buildCanvasBackground(),
 
-        // Canvas splats (paint marks)
         RepaintBoundary(
           child: CustomPaint(
             size: _screenSize,
-            painter: _CanvasSplatsPainter(splats: _canvasSplats),
+            painter: _CanvasSplatsPainter(sim: _sim),
           ),
         ),
 
-        // Paint blobs
-        ..._blobs
-            .where((b) => !b.tapped || b.splashTimer > 0)
-            .map((b) => _buildBlobWidget(b)),
+        // Paint blobs - driven by sim notifier
+        ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) {
+            return Stack(
+              children: [
+                ..._sim.blobs
+                    .where((b) => !b.tapped || b.splashTimer > 0)
+                    .map((b) => _buildBlobWidget(b)),
+              ],
+            );
+          },
+        ),
 
-        // HUD
         SafeArea(
           child: Column(
             children: [
@@ -749,24 +758,29 @@ class _PaintSplashGameState extends State<PaintSplashGame>
           ),
         ),
 
-        // Splash drops overlay
         RepaintBoundary(
           child: IgnorePointer(
             child: CustomPaint(
               size: _screenSize,
-              painter: _SplashDropsPainter(drops: _splashDrops),
+              painter: _SplashDropsPainter(sim: _sim),
             ),
           ),
         ),
 
-        // Completion shape
-        if (_completionShape != null)
-          IgnorePointer(
-            child: CustomPaint(
-              size: _screenSize,
-              painter: _CompletionShapePainter(shape: _completionShape!),
-            ),
-          ),
+        ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) {
+            if (_sim.completionShape != null) {
+              return IgnorePointer(
+                child: CustomPaint(
+                  size: _screenSize,
+                  painter: _CompletionShapePainter(shape: _sim.completionShape!),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
       ],
     );
   }
@@ -899,11 +913,11 @@ class _PaintSplashGameState extends State<PaintSplashGame>
               final letter = _currentWord[i].toUpperCase();
               final isDone = i < _nextLetterIndex;
               final isNext = i == _nextLetterIndex;
-              final blobColor = isDone
-                  ? _blobs
+              final blobColor = isDone && _sim.blobs.isNotEmpty
+                  ? _sim.blobs
                       .firstWhere(
                         (b) => b.isCorrect && b.correctIndex == i,
-                        orElse: () => _blobs.first,
+                        orElse: () => _sim.blobs.first,
                       )
                       .color
                   : null;
@@ -944,7 +958,8 @@ class _PaintSplashGameState extends State<PaintSplashGame>
         ? (blob.splashTimer / 0.4).clamp(0.0, 1.0)
         : 1.0;
 
-    final isNextTarget = blob.isCorrect &&
+    final isNextTarget = widget.hintsEnabled &&
+        blob.isCorrect &&
         blob.correctIndex == _nextLetterIndex &&
         !blob.tapped;
 
@@ -1020,10 +1035,9 @@ class _PaintSplashGameState extends State<PaintSplashGame>
     return Stack(
       children: [
         _buildCanvasBackground(),
-        // Celebration splats
         CustomPaint(
           size: _screenSize,
-          painter: _CanvasSplatsPainter(splats: _canvasSplats),
+          painter: _CanvasSplatsPainter(sim: _sim),
         ),
         SafeArea(
           child: Center(
@@ -1252,13 +1266,13 @@ class _PaintBlobPainter extends CustomPainter {
 // ── Canvas splats painter ──────────────────────────────────────────────────
 
 class _CanvasSplatsPainter extends CustomPainter {
-  final List<_CanvasSplat> splats;
+  final _PaintSplashSim sim;
 
-  const _CanvasSplatsPainter({required this.splats});
+  _CanvasSplatsPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final s in splats) {
+    for (final s in sim.canvasSplats) {
       // Main splat
       canvas.drawCircle(
         Offset(s.x, s.y),
@@ -1277,19 +1291,19 @@ class _CanvasSplatsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CanvasSplatsPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _CanvasSplatsPainter old) => false;
 }
 
 // ── Splash drops painter ───────────────────────────────────────────────────
 
 class _SplashDropsPainter extends CustomPainter {
-  final List<_SplashDrop> drops;
+  final _PaintSplashSim sim;
 
-  const _SplashDropsPainter({required this.drops});
+  _SplashDropsPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final d in drops) {
+    for (final d in sim.splashDrops) {
       final alpha = d.life.clamp(0.0, 1.0);
       canvas.drawCircle(
         Offset(d.x, d.y),
@@ -1300,7 +1314,7 @@ class _SplashDropsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SplashDropsPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SplashDropsPainter old) => false;
 }
 
 // ── Completion shape painter ───────────────────────────────────────────────

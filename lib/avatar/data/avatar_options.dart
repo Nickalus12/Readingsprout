@@ -84,7 +84,7 @@ Color skinColorFromSlider(double value) {
       // Interpolate in HSL for perceptually smoother transitions.
       final hslA = HSLColor.fromColor(a.color);
       final hslB = HSLColor.fromColor(b.color);
-      return HSLColor.lerp(hslA, hslB, t)!.toColor();
+      return (HSLColor.lerp(hslA, hslB, t) ?? hslA).toColor();
     }
   }
   return _skinAnchors.last.color;
