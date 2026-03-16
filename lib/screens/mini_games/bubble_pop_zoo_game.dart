@@ -272,9 +272,10 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
       b.x += sin(b.wobblePhase + b.y * 6) * 0.003;
       b.wobblePhase += b.wobbleSpeed * dt;
       b.shimmerPhase += dt * 2;
-      // Scale in animation
+      // Bouncy scale-in animation
       if (b.scale < 1.0) {
-        b.scale = (b.scale + dt * 4).clamp(0.0, 1.0);
+        b.scale = (b.scale + dt * 3).clamp(0.0, 1.0);
+        // Apply elastic overshoot: goes to ~1.15 then settles to 1.0
       }
     }
     // Remove bubbles that float off screen (no penalty — this is a kids game!)
@@ -742,7 +743,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
               ),
               const SizedBox(height: 12),
               Text(
-                'Great job, ${widget.playerName}!',
+                _getEndMessage(),
                 style: AppFonts.fredoka(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -895,6 +896,14 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
         ),
       ),
     );
+  }
+
+  String _getEndMessage() {
+    final name = widget.playerName;
+    if (_score >= 30) return 'AMAZING, $name!';
+    if (_score >= 20) return 'Super star, $name!';
+    if (_score >= 10) return 'Great job, $name!';
+    return 'Good try, $name!';
   }
 
   void _playAgain() {
@@ -1062,6 +1071,20 @@ class _BubblePopZooPainter extends CustomPainter {
   }
 
   void _drawBackground(Canvas canvas, Size size) {
+    // Twinkling stars
+    final starRng = Random(42); // Fixed seed for stable star positions
+    for (int i = 0; i < 30; i++) {
+      final sx = starRng.nextDouble() * size.width;
+      final sy = starRng.nextDouble() * size.height;
+      final twinkle = (sin(gameTime * (1.5 + i * 0.3) + i) + 1) / 2;
+      final starSize = 1.0 + twinkle * 1.5;
+      canvas.drawCircle(
+        Offset(sx, sy),
+        starSize,
+        Paint()..color = Colors.white.withValues(alpha: twinkle * 0.4),
+      );
+    }
+
     // Ambient background bubbles
     for (final b in bgBubbles) {
       final paint = Paint()
@@ -1079,9 +1102,13 @@ class _BubblePopZooPainter extends CustomPainter {
     for (final b in bubbles) {
       final cx = b.x * size.width;
       final cy = b.y * size.height;
+      // Elastic scale-in: overshoots to 1.15 then settles
+      final elasticScale = b.scale < 1.0
+          ? Curves.elasticOut.transform(b.scale)
+          : 1.0;
       // Pulsing size: bubbles gently breathe
       final pulse = 1.0 + sin(gameTime * 2.5 + b.shimmerPhase) * 0.03;
-      final r = b.radius * b.scale * pulse;
+      final r = b.radius * elasticScale * pulse;
 
       // Bubble outer glow (pulses gently)
       final glowAlpha = 0.12 + sin(gameTime * 3 + b.wobblePhase) * 0.06;
