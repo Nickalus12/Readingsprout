@@ -1511,7 +1511,7 @@ class _BasketPainter extends CustomPainter {
 
     // Basket body
     final basketPath = Path();
-    final halfW = basketWidth / 2;
+    const halfW = basketWidth / 2;
     // Trapezoid shape: wider at top, narrower at bottom
     basketPath.moveTo(cx - halfW, top);
     basketPath.lineTo(cx + halfW, top);
