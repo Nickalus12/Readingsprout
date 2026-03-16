@@ -126,6 +126,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// Random instance for tracing probability.
   final Random _tracingRandom = Random();
 
+  // ── Inactivity hint state ─────────────────────────────────────
+  Timer? _inactivityTimer;
+  bool _showInactivityHint = false;
+  static const _inactivityDelay = Duration(seconds: 5);
+
   // ── Zone info cache ────────────────────────────────────────────
   late final int _zoneIndex;
   late final String _zoneKey;
@@ -344,10 +349,31 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         );
       }
     }
+    _resetInactivityTimer();
+  }
+
+  /// Start or restart the inactivity timer. After 5 seconds of no taps,
+  /// re-play the word audio and show a gentle visual hint.
+  void _resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    if (_showInactivityHint && mounted) {
+      setState(() => _showInactivityHint = false);
+    }
+    if (_showingCelebration || _levelComplete) return;
+    _inactivityTimer = Timer(_inactivityDelay, () {
+      if (!mounted || _showingCelebration || _levelComplete) return;
+      setState(() => _showInactivityHint = true);
+      _announceCurrentWord();
+      // Auto-dismiss the hint after 3 seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _showInactivityHint = false);
+      });
+    });
   }
 
   void _onKeyPressed(String key) {
     if (_showingCelebration || _levelComplete) return;
+    _resetInactivityTimer();
 
     final expectedLetter = _targetText[_currentLetterIndex];
 
@@ -665,6 +691,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _inactivityTimer?.cancel();
     // Stop adaptive music when leaving game
     widget.musicService?.stopMusic();
     _sessionTimer.stop();
@@ -851,6 +878,47 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                           .fadeIn(duration: 200.ms)
                           .then(delay: 1200.ms)
                           .fadeOut(duration: 300.ms),
+                    ),
+                  ),
+
+                // ── Inactivity hint (gentle reminder to tap) ──
+                if (_showInactivityHint && !_showingCelebration && !_levelComplete)
+                  Positioned(
+                    bottom: MediaQuery.of(context).size.height * 0.35,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.electricBlue.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.electricBlue.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.touch_app_rounded,
+                                size: 24, color: AppColors.electricBlue),
+                            SizedBox(width: 8),
+                            Icon(Icons.keyboard_rounded,
+                                size: 20, color: AppColors.electricBlue),
+                          ],
+                        ),
+                      )
+                          .animate()
+                          .fadeIn(duration: 400.ms)
+                          .scaleXY(begin: 0.8, end: 1.0, duration: 400.ms)
+                          .then()
+                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          .scaleXY(
+                            begin: 1.0,
+                            end: 1.05,
+                            duration: 800.ms,
+                          ),
                     ),
                   ),
 
