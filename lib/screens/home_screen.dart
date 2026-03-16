@@ -120,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (settings == null || !settings.hasContinue) return '';
     final level = settings.lastPlayedLevel!;
     final tier = settings.lastPlayedTier ?? 1;
-    final tierNames = const {1: 'Explorer', 2: 'Adventurer', 3: 'Champion'};
+    const tierNames = {1: 'Explorer', 2: 'Adventurer', 3: 'Champion'};
     return 'Level $level \u2022 ${tierNames[tier] ?? 'Explorer'}';
   }
 
@@ -613,8 +613,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   ),
                                 ),
                                 Text(
-                                  widget.settingsService?.hasContinue == true
-                                      ? 'Browse all levels'
+                                  totalStars > 0
+                                      ? '$totalStars / ${DolchWords.totalLevels * 3} stars collected'
                                       : 'Begin your word journey',
                                   style: AppFonts.nunito(
                                     fontSize: 10 * sf,
