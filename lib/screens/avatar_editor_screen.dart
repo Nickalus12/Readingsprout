@@ -79,6 +79,29 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
     widget.profileService.setAvatar(newConfig);
   }
 
+  void _showLockedHint(String hint) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.auto_awesome, color: AppColors.starGold, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Keep playing to unlock! $hint',
+              style: AppFonts.fredoka(fontSize: 13, color: Colors.white),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.surface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _save() async {
     await widget.profileService.setAvatar(_config);
     if (mounted) Navigator.of(context).pop(_config);
@@ -471,7 +494,11 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
               evolutionStage: _evolutionStage,
               streakDays: widget.streakDays,
             );
-        if (!locked) _updateConfig(_config.copyWith(hairColor: index));
+        if (!locked) {
+          _updateConfig(_config.copyWith(hairColor: index));
+        } else {
+          _showLockedHint(opt.unlock?.hint ?? '');
+        }
       },
     );
   }
@@ -902,6 +929,8 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
         final opt = accessoryOptions[index];
         if (!_isAccessoryLocked(opt)) {
           _updateConfig(_config.copyWith(accessory: index));
+        } else {
+          _showLockedHint(opt.unlock?.hint ?? '');
         }
       },
     );
