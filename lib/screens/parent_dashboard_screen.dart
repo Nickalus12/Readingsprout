@@ -153,7 +153,7 @@ class _ParentGateState extends State<ParentGate> {
             if (_wrong) ...[
               const SizedBox(height: 14),
               Text(
-                'Not quite -- try again!',
+                'Not quite - try again!',
                 style: AppFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -1101,11 +1101,18 @@ class _DashboardCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: AppColors.border.withValues(alpha: 0.3),
+          color: AppColors.border.withValues(alpha: 0.25),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: child,
     );
@@ -1121,14 +1128,15 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: AppColors.electricBlue.withValues(alpha: 0.7)),
+        Icon(icon, size: 18, color: AppColors.electricBlue.withValues(alpha: 0.6)),
         const SizedBox(width: 8),
         Text(
           title,
-          style: AppFonts.fredoka(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
+          style: AppFonts.nunito(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
             color: AppColors.primaryText,
+            letterSpacing: 0.3,
           ),
         ),
       ],
