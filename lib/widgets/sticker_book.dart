@@ -105,14 +105,15 @@ class _StickerBookState extends State<StickerBook> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () => widget.audioService?.playWord('stickers'),
-                child: Text(
+        // Header — all tappable
+        GestureDetector(
+          onTap: () => widget.audioService?.playWord('stickers'),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Row(
+              children: [
+                Text(
                   'Sticker Book',
                   style: AppFonts.fredoka(
                     fontSize: 18,
@@ -120,24 +121,24 @@ class _StickerBookState extends State<StickerBook> {
                     color: AppColors.starGold,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.starGold.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$totalEarned / $totalAvailable',
-                  style: AppFonts.fredoka(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.starGold.withValues(alpha: 0.8),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.starGold.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$totalEarned / $totalAvailable',
+                    style: AppFonts.fredoka(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.starGold.withValues(alpha: 0.8),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 4),
@@ -224,9 +225,14 @@ class _CollapsibleCategory extends StatelessWidget {
 
     return Column(
       children: [
-        // Tappable header
+        // Tappable header — speaks category name + toggles expand/collapse
         GestureDetector(
-          onTap: onToggle,
+          onTap: () {
+            // Speak the category title
+            final spokenTitle = section.title.toLowerCase();
+            audioService?.playWord(spokenTitle);
+            onToggle();
+          },
           behavior: HitTestBehavior.opaque,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -478,6 +484,7 @@ class _StickerTileState extends State<_StickerTile>
 
     return GestureDetector(
       onTap: _onTap,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
         animation: _bounceController,
         builder: (context, child) {
