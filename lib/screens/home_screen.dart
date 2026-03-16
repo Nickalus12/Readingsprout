@@ -860,7 +860,10 @@ class _HomeScreenState extends State<HomeScreen>
         profileId: widget.profileId,
         reviewWords: reviewWords,
       )),
-    );
+    ).then((_) {
+      // Refresh overdue count after returning from review
+      if (mounted) setState(() {});
+    });
   }
 
   void _showParentGate(BuildContext context) {
