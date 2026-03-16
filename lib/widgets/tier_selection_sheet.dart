@@ -193,7 +193,18 @@ class _TierOptionCard extends StatelessWidget {
     final wordsCompleted = tierProgress?.wordsCompleted ?? 0;
     final accentColor = tier.color;
 
-    return Padding(
+    final semanticStatus = isComplete
+        ? 'completed'
+        : unlocked
+            ? 'available'
+            : 'locked';
+
+    return Semantics(
+      label: '${tier.displayName} tier, $semanticStatus',
+      hint: unlocked ? 'Tap to play this tier' : 'Complete previous tier to unlock',
+      button: unlocked,
+      enabled: unlocked,
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: GestureDetector(
         onTap: unlocked ? onTap : null,
@@ -386,6 +397,7 @@ class _TierOptionCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }
