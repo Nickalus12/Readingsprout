@@ -52,6 +52,7 @@ class _SpellingBeeGameState extends State<SpellingBeeGame>
   int _mistakes = 0;
   bool _gameOver = false;
   bool _isNewBest = false;
+  bool _showingStartOverlay = true;
 
   // Timer
   late Stopwatch _wordTimer;
@@ -186,8 +187,12 @@ class _SpellingBeeGameState extends State<SpellingBeeGame>
     return [3, 4, 3, 4]; // up to 14
   }
 
+  void _dismissStartOverlay() {
+    setState(() => _showingStartOverlay = false);
+  }
+
   void _onHexTap(int index) {
-    if (_gameOver) return;
+    if (_gameOver || _showingStartOverlay) return;
     final cell = _hexCells[index];
     if (cell.state != _CellState.idle) return;
 
@@ -258,6 +263,7 @@ class _SpellingBeeGameState extends State<SpellingBeeGame>
 
   void _restart() {
     _completionController.reset();
+    _showingStartOverlay = false;
     _initGame();
     if (mounted) setState(() {});
   }
@@ -309,7 +315,125 @@ class _SpellingBeeGameState extends State<SpellingBeeGame>
                   if (_gameOver) Expanded(child: _buildGameOver()),
                 ],
               ),
+
+              if (_showingStartOverlay) _buildStartOverlay(),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStartOverlay() {
+    return GestureDetector(
+      onTap: _dismissStartOverlay,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.7),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.all(32),
+            padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 28),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: AppColors.starGold.withValues(alpha: 0.4),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '\u{1F41D}',
+                  style: AppFonts.fredoka(fontSize: 40),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Spelling Bee',
+                  style: AppFonts.fredoka(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryText,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Visual hint: listen icon + hex letters
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.volume_up_rounded,
+                        color: AppColors.starGold, size: 28),
+                    const SizedBox(width: 8),
+                    Text(
+                      '"cat"',
+                      style: AppFonts.fredoka(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.starGold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward_rounded,
+                        color: AppColors.secondaryText, size: 18),
+                    const SizedBox(width: 8),
+                    _buildHintHex('c'),
+                    const SizedBox(width: 4),
+                    _buildHintHex('a'),
+                    const SizedBox(width: 4),
+                    _buildHintHex('t'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Listen, then tap the letters\nin order to spell it!',
+                  style: AppFonts.nunito(
+                    fontSize: 15,
+                    color: AppColors.secondaryText,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.starGold,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Tap to Start!',
+                    style: AppFonts.fredoka(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHintHex(String letter) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: AppColors.starGold.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.starGold.withValues(alpha: 0.5)),
+      ),
+      child: Center(
+        child: Text(
+          letter,
+          style: AppFonts.fredoka(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.starGold,
           ),
         ),
       ),
@@ -449,7 +573,7 @@ class _SpellingBeeGameState extends State<SpellingBeeGame>
   Widget _buildHexGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final hexSize = min(constraints.maxWidth / 6, 64.0);
+        final hexSize = min(constraints.maxWidth / 5.5, 72.0).clamp(48.0, 72.0);
         final hexH = hexSize * 0.866; // sqrt(3)/2
 
         // Calculate grid dimensions
