@@ -337,6 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 avatar: _avatar,
                 avatarController: _avatarController,
                 level: widget.progressService.highestUnlockedLevel,
+                onEditTap: _openAvatarEditor,
               ),
             ),
 
@@ -1333,6 +1334,7 @@ class _AvatarHomeFrame extends StatelessWidget {
   final AvatarConfig avatar;
   final AvatarController avatarController;
   final int level;
+  final VoidCallback? onEditTap;
 
   const _AvatarHomeFrame({
     required this.width,
@@ -1343,6 +1345,7 @@ class _AvatarHomeFrame extends StatelessWidget {
     required this.avatar,
     required this.avatarController,
     required this.level,
+    this.onEditTap,
   });
 
   @override
@@ -1432,27 +1435,30 @@ class _AvatarHomeFrame extends StatelessWidget {
             Positioned(
               right: -6 * sf,
               bottom: -6 * sf,
-              child: Container(
-                width: 30 * sf,
-                height: 30 * sf,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.violet,
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 2.5 * sf,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.violet.withValues(alpha: 0.4),
-                      blurRadius: 8 * sf,
+              child: GestureDetector(
+                onTap: onEditTap,
+                child: Container(
+                  width: 30 * sf,
+                  height: 30 * sf,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.violet,
+                    border: Border.all(
+                      color: AppColors.background,
+                      width: 2.5 * sf,
                     ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.edit_rounded,
-                  size: 14 * sf,
-                  color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.violet.withValues(alpha: 0.4),
+                        blurRadius: 8 * sf,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.edit_rounded,
+                    size: 14 * sf,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
