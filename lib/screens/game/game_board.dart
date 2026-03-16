@@ -112,6 +112,9 @@ class GameLetterTiles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Detect if word is fully revealed (word complete — trigger wave)
+    final allRevealed = revealedLetters.every((r) => r);
+
     return AnimatedBuilder(
       animation: shakeAnimation,
       builder: (context, child) {
@@ -134,6 +137,11 @@ class GameLetterTiles extends StatelessWidget {
           final isPreRevealed = (isExplorer || isAdventurer) && i == 0;
           // During hint reveal (3rd wrong tap), briefly show the correct letter
           final hintReveal = hintRevealing && i == currentLetterIndex;
+          // Just revealed = this tile's index matches the letter just typed
+          final justRevealed = revealedLetters[i] &&
+              i == currentLetterIndex - 1 &&
+              !showingCelebration &&
+              !isPreRevealed;
           Widget tile = LetterTile(
             letter: targetText[i],
             isRevealed: revealedLetters[i] || hintReveal,
@@ -150,6 +158,31 @@ class GameLetterTiles extends StatelessWidget {
             tile = tile
                 .animate(key: const ValueKey('hint_bounce'))
                 .scaleXY(begin: 1.3, end: 1.0, duration: 400.ms, curve: Curves.elasticOut);
+          }
+          // Pop animation for a just-typed correct letter
+          if (justRevealed) {
+            tile = tile
+                .animate(key: ValueKey('pop_${currentWordIndex}_$i'))
+                .scaleXY(begin: 1.2, end: 1.0, duration: 300.ms, curve: Curves.elasticOut);
+          }
+          // Wave animation when word is complete (stagger each tile)
+          if (allRevealed && showingCelebration) {
+            tile = tile
+                .animate(key: ValueKey('wave_${currentWordIndex}_$i'))
+                .slideY(
+                  begin: 0,
+                  end: -0.15,
+                  delay: Duration(milliseconds: i * 60),
+                  duration: 200.ms,
+                  curve: Curves.easeOut,
+                )
+                .then()
+                .slideY(
+                  begin: -0.15,
+                  end: 0,
+                  duration: 200.ms,
+                  curve: Curves.bounceOut,
+                );
           }
           return tile;
         }),
