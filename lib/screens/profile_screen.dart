@@ -102,10 +102,22 @@ class _ProfileScreenState extends State<ProfileScreen>
     widget.audioService.playWelcome(widget.playerName);
   }
 
+  int _tapCount = 0;
+
   void _onAvatarTap() {
-    _avatarController.setExpression(
+    _tapCount++;
+    // Cycle through fun expressions so repeated taps feel different
+    final expressions = [
       AvatarExpression.excited,
-      duration: const Duration(milliseconds: 1200),
+      AvatarExpression.happy,
+      AvatarExpression.surprised,
+      AvatarExpression.excited,
+      AvatarExpression.happy,
+    ];
+    final expr = expressions[_tapCount % expressions.length];
+    _avatarController.setExpression(
+      expr,
+      duration: const Duration(milliseconds: 1500),
     );
     widget.audioService.playSuccess();
   }
