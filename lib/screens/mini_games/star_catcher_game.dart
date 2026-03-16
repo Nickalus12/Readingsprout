@@ -309,7 +309,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
         vx: (rng.nextDouble() - 0.5) * 0.06,
         vy: (rng.nextDouble() - 0.5) * 0.04,
         twinklePhase: rng.nextDouble() * pi * 2,
-        radius: 28,
+        radius: 32,
       ));
     }
 
@@ -334,7 +334,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
         vx: (rng.nextDouble() - 0.5) * 0.06,
         vy: (rng.nextDouble() - 0.5) * 0.04,
         twinklePhase: rng.nextDouble() * pi * 2,
-        radius: 28,
+        radius: 32,
       ));
     }
     _sim.stars.shuffle(rng);

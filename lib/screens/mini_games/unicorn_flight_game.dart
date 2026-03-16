@@ -279,7 +279,7 @@ class _UnicornFlightSimulation extends ChangeNotifier {
       void Function(_WordBubble) onCorrectHit,
       void Function(_WordBubble) onWrongHit) {
     final unicornCenterY = unicornY;
-    const collisionRadius = 0.07;
+    const collisionRadius = 0.09; // generous for small fingers
 
     for (final bubble in bubbles) {
       if (bubble.collected) continue;

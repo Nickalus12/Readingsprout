@@ -110,10 +110,10 @@ class _CatLetterTossSim extends ChangeNotifier {
   final Random rng = Random();
 
   static const double gravity = 420.0;
-  static const double tossInterval = 1.2;
-  static const double basketWidth = 90.0;
-  static const double basketHeight = 50.0;
-  static const double letterSize = 38.0;
+  static const double tossInterval = 1.5; // more time between tosses
+  static const double basketWidth = 100.0; // wider for small fingers
+  static const double basketHeight = 55.0;
+  static const double letterSize = 42.0;
   static const double catMoveSpeed = 120.0;
 
   double catX = 0.5;

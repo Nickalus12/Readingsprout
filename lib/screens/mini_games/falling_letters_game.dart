@@ -455,7 +455,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   static const double _powerUpChance = 0.06;
 
   static const double _shockwaveSpeed = 600.0;
-  static const double _shockwaveRadiusFraction = 0.25;
+  static const double _shockwaveRadiusFraction = 0.30; // generous for small fingers
   static const double _itemHitRadius = 20.0;
   static const double _pushMagnitude = 0.35;
 
