@@ -85,7 +85,10 @@ class GameHeader extends StatelessWidget {
                 ),
               ],
             ),
-          ),
+          )
+              .animate()
+              .fadeIn(duration: 400.ms)
+              .slideX(begin: -0.1, end: 0, duration: 400.ms, curve: Curves.easeOutCubic),
           // Small avatar with reactions
           if (profileService != null)
             Padding(
@@ -96,7 +99,10 @@ class GameHeader extends StatelessWidget {
                 showBackground: false,
                 controller: avatarController,
               ),
-            ),
+            )
+                .animate()
+                .fadeIn(delay: 200.ms, duration: 400.ms)
+                .scaleXY(begin: 0.8, end: 1.0, delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
           // Word counter
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -115,7 +121,10 @@ class GameHeader extends StatelessWidget {
                 color: AppColors.primaryText,
               ),
             ),
-          ),
+          )
+              .animate()
+              .fadeIn(delay: 300.ms, duration: 400.ms)
+              .slideX(begin: 0.15, end: 0, delay: 300.ms, duration: 400.ms, curve: Curves.easeOutCubic),
         ],
       ),
     );
