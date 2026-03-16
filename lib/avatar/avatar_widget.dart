@@ -2482,6 +2482,10 @@ class MouthPainter extends CustomPainter {
       _drawThinkingMouth(canvas, w, h);
       return;
     }
+    if (expression == AvatarExpression.happy) {
+      _drawHappyMouth(canvas, w, h);
+      return;
+    }
     if (expression == AvatarExpression.surprised) {
       _drawSurprisedMouth(canvas, w, h);
       return;
@@ -2804,6 +2808,33 @@ class MouthPainter extends CustomPainter {
     canvas.drawPath(mouthPath, _lipGradientPaint(Rect.fromLTWH(0, 0, w, h))
       ..style = PaintingStyle.stroke
       ..strokeWidth = w * 0.05);
+  }
+
+  /// Happy mouth — warm gentle smile wider than default, slightly open.
+  void _drawHappyMouth(Canvas canvas, double w, double h) {
+    // Wider smile than neutral but not as extreme as excited
+    final mouthPath = Path()
+      ..moveTo(w * 0.05, h * 0.22)
+      ..quadraticBezierTo(w * 0.5, h * 1.15, w * 0.95, h * 0.22)
+      ..quadraticBezierTo(w * 0.5, h * 0.50, w * 0.05, h * 0.22)
+      ..close();
+
+    // Dark mouth interior
+    canvas.drawPath(mouthPath, Paint()..color = const Color(0xFF2D1A2E));
+
+    // Teeth peeking through the smile
+    canvas.save();
+    canvas.clipPath(mouthPath);
+    _drawIndividualTeeth(canvas, w * 0.18, h * 0.22, w * 0.64, h * 0.20, 5);
+    canvas.restore();
+
+    // Lip gradient outline
+    canvas.drawPath(mouthPath, _lipGradientPaint(Rect.fromLTWH(0, 0, w, h))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.045);
+
+    // Cupid's bow
+    _drawCupidsBow(canvas, w * 0.5, h * 0.20, w * 0.65);
   }
 
   /// Thinking mouth — small pursed 'o'.
