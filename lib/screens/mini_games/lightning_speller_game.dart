@@ -118,13 +118,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
     _initRain();
     _startBackgroundEffects();
 
-    // Small delay then start game
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) {
-        setState(() => _gameStarted = true);
-        _nextWord();
-      }
-    });
+    // Wait for user to tap before starting
   }
 
   void _onBoltStatus(AnimationStatus status) {
@@ -417,7 +411,7 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
   }
 
   void _handleWrongTap(int tileIndex) {
-    widget.audioService.playError();
+    // Gentle feedback - visual cue + haptic only
     Haptics.wrong();
     _madeErrorThisWord = true;
 
@@ -870,16 +864,62 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
     );
   }
 
+  void _dismissStartOverlay() {
+    if (_gameStarted) return;
+    setState(() => _gameStarted = true);
+    _nextWord();
+  }
+
   Widget _buildWordDisplay() {
     if (!_gameStarted) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Text(
-          'Get Ready!',
-          style: AppFonts.fredoka(
-            fontSize: 28,
-            fontWeight: FontWeight.w600,
-            color: AppColors.electricBlue,
+      return GestureDetector(
+        onTap: _dismissStartOverlay,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '\u{26A1}',
+                style: AppFonts.fredoka(fontSize: 36),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Lightning Speller',
+                style: AppFonts.fredoka(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.electricBlue,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'See the word, then tap\nthe letters in order!',
+                textAlign: TextAlign.center,
+                style: AppFonts.nunito(
+                  fontSize: 15,
+                  color: AppColors.secondaryText,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.electricBlue,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Tap to Start!',
+                  style: AppFonts.fredoka(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
