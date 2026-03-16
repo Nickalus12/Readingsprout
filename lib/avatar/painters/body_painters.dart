@@ -262,10 +262,10 @@ class TorsoPainter extends CustomPainter {
       cx + waistW * 0.52, torsoBottom - h * 0.08,
       cx + waistW * 0.48, torsoBottom,
     );
-    // Bottom — gentle belly curve
+    // Bottom — gentle belly curve (slightly rounder for cute kid body)
     torsoPath.cubicTo(
-      cx + waistW * 0.20, torsoBottom + h * 0.012,
-      cx - waistW * 0.20, torsoBottom + h * 0.012,
+      cx + waistW * 0.20, torsoBottom + h * 0.018,
+      cx - waistW * 0.20, torsoBottom + h * 0.018,
       cx - waistW * 0.48, torsoBottom,
     );
     // Left side — mirror waist taper
@@ -643,9 +643,9 @@ class ArmPainter extends CustomPainter {
       Color highlight, Color shadow, double boneRotation) {
     // Align arm center with shoulder cap center (0.46 matches torso + cap)
     final armCx = cx + side * shoulderW * 0.46;
-    // Chubby child proportions: wider, rounder arm tubes
-    final shoulderArmW = w * 0.095;
-    final wristArmW = w * 0.065;
+    // Chubby child proportions: wider, rounder arm tubes (baby fat)
+    final shoulderArmW = w * 0.10;
+    final wristArmW = w * 0.072;
 
     // Arm top blends with shoulder cap bottom (shoulderY + h*0.035)
     final upperArmTop = shoulderY + h * 0.033;
@@ -894,9 +894,9 @@ class HandPainter extends CustomPainter {
       canvas.rotate(waveAngle);
     }
 
-    // Mitt dimensions — rounded oval with slight taper at wrist
-    final mittW = ms * 0.92;
-    final mittH = ms * 0.72;
+    // Mitt dimensions — rounder and chubbier for cute kid hands
+    final mittW = ms * 0.98;
+    final mittH = ms * 0.78;
     final mittCy = -mittH * 0.3; // center offset upward from wrist
 
     // ── Wrist connection (tapered cylinder) ──
@@ -936,13 +936,13 @@ class HandPainter extends CustomPainter {
       height: mittH,
     );
 
-    // Mitt body shape — soft rounded rectangle via RRect
+    // Mitt body shape — very round for cute cartoon child hands
     final mittRR = RRect.fromRectAndCorners(
       mittRect,
-      topLeft: Radius.circular(mittW * 0.45),
-      topRight: Radius.circular(mittW * 0.45),
-      bottomLeft: Radius.circular(mittW * 0.35),
-      bottomRight: Radius.circular(mittW * 0.35),
+      topLeft: Radius.circular(mittW * 0.48),
+      topRight: Radius.circular(mittW * 0.48),
+      bottomLeft: Radius.circular(mittW * 0.42),
+      bottomRight: Radius.circular(mittW * 0.42),
     );
 
     // 3D radial gradient
