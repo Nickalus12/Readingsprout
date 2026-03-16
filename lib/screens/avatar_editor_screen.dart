@@ -9,11 +9,10 @@ import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 import '../avatar/avatar_widget.dart';
 
-/// Full-screen avatar editor with live preview and category-based customization.
+/// Full-screen avatar editor designed as a fun dress-up game for ages 3-6.
 ///
-/// 16 customization categories, each displayed as a horizontal scrollable
-/// row of large tappable option tiles. Categories are swiped/tapped via
-/// a top tab bar. Designed for children aged 3-6 with big tap targets.
+/// 5 kid-friendly tabs (Hair, Skin, Shirt, Eyes, Extras) with large tap targets,
+/// live avatar preview in the top 40%, and glowing selection indicators.
 class AvatarEditorScreen extends StatefulWidget {
   final ProfileService profileService;
   final int wordsMastered;
@@ -30,61 +29,54 @@ class AvatarEditorScreen extends StatefulWidget {
   State<AvatarEditorScreen> createState() => _AvatarEditorScreenState();
 }
 
-class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
+class _AvatarEditorScreenState extends State<AvatarEditorScreen>
+    with SingleTickerProviderStateMixin {
   late AvatarConfig _config;
-  late PageController _pageController;
-  int _selectedCategory = 0;
+  late TabController _tabController;
+  int _selectedTab = 0;
+
+  // Sub-category index within each tab (for tabs with multiple sub-sections)
+  int _hairSubIndex = 0; // 0=style, 1=color
+  int _eyeSubIndex = 0; // 0=style, 1=color, 2=lashes, 3=brows
+  int _extrasSubIndex = 0; // 0=accessories, 1=glasses, 2=face paint, 3=cheeks, 4=mouth, 5=nose, 6=bg
 
   int get _evolutionStage {
     final level = ReadingLevel.forWordCount(widget.wordsMastered);
     return level.index + 1;
   }
 
-  // ── Category Definitions ────────────────────────────────────────────
+  // ── Tab Definitions ────────────────────────────────────────────────
 
-  static const List<_Category> _categories = [
-    _Category('Face', Icons.face),
-    _Category('Skin', Icons.palette),
-    _Category('Hair', Icons.content_cut),
-    _Category('Hair Color', Icons.color_lens),
-    _Category('Eyes', Icons.visibility),
-    _Category('Eye Color', Icons.remove_red_eye),
-    _Category('Lashes', Icons.auto_awesome),
-    _Category('Brows', Icons.linear_scale),
-    _Category('Mouth', Icons.sentiment_satisfied_alt),
-    _Category('Lips', Icons.brush),
-    _Category('Cheeks', Icons.favorite),
-    _Category('Nose', Icons.radio_button_unchecked),
-    _Category('Glasses', Icons.preview),
-    _Category('Paint', Icons.format_paint),
-    _Category('Extras', Icons.star),
-    _Category('BG', Icons.circle),
+  static const List<_TabDef> _tabs = [
+    _TabDef('Hair', Icons.content_cut),
+    _TabDef('Skin', Icons.palette),
+    _TabDef('Shirt', Icons.checkroom),
+    _TabDef('Eyes', Icons.visibility),
+    _TabDef('Extras', Icons.auto_awesome),
   ];
 
   @override
   void initState() {
     super.initState();
     _config = widget.profileService.avatar;
-    _pageController = PageController(initialPage: _selectedCategory);
+    _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() => _selectedTab = _tabController.index);
+      }
+    });
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   void _updateConfig(AvatarConfig newConfig) {
     setState(() => _config = newConfig);
-  }
-
-  void _selectCategory(int index) {
-    setState(() => _selectedCategory = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-    );
+    // Auto-save on every change
+    widget.profileService.setAvatar(newConfig);
   }
 
   Future<void> _save() async {
@@ -94,68 +86,64 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final safeTop = MediaQuery.of(context).padding.top;
+    // Avatar preview takes ~38% of usable screen height
+    final previewHeight = (screenHeight - safeTop) * 0.38;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
+            // ── Header (close + randomize) ──
             _buildHeader(),
-            const SizedBox(height: 6),
-            _buildPreview(),
-            const SizedBox(height: 12),
-            _buildCategoryTabs(),
-            const SizedBox(height: 4),
-            // Category title
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _categories[_selectedCategory].label,
-                  style: AppFonts.fredoka(
-                    fontSize: 16,
-                    color: AppColors.primaryText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+            // ── Avatar Preview (top ~38%) ──
+            SizedBox(
+              height: previewHeight.clamp(180.0, 320.0),
+              child: _buildPreview(),
             ),
+            const SizedBox(height: 8),
+            // ── Tab Bar ──
+            _buildTabBar(),
             const SizedBox(height: 4),
-            Expanded(child: _buildOptionsPageView()),
+            // ── Options Area (rest of screen) ──
+            Expanded(child: _buildTabContent()),
+            // ── Done Button ──
             _buildDoneButton(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  // ── Header (icon-only: close X, dice randomize) ────────────────────
+  // ── Header ──────────────────────────────────────────────────────────
 
   bool _diceSpinning = false;
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          // Close button — X icon
-          GestureDetector(
+          _CircleButton(
+            icon: Icons.close_rounded,
             onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Icon(Icons.close_rounded, color: AppColors.primaryText, size: 22),
+          ),
+          const Spacer(),
+          Text(
+            'Dress Up!',
+            style: AppFonts.fredoka(
+              fontSize: 20,
+              color: AppColors.primaryText,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const Spacer(),
-          // Randomize — spinning dice
-          GestureDetector(
+          _CircleButton(
+            icon: Icons.casino_rounded,
+            spinning: _diceSpinning,
             onTap: () {
               setState(() => _diceSpinning = true);
               _randomize();
@@ -163,21 +151,6 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
                 if (mounted) setState(() => _diceSpinning = false);
               });
             },
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
-              ),
-              child: AnimatedRotation(
-                turns: _diceSpinning ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 500),
-                curve: Curves.easeOutCubic,
-                child: const Icon(Icons.casino_rounded, color: AppColors.secondaryText, size: 22),
-              ),
-            ),
           ),
         ],
       ),
@@ -204,6 +177,8 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
       noseStyle: rng.nextInt(noseStyleOptions.length),
       glassesStyle: rng.nextInt(glassesStyleOptions.length),
       facePaint: rng.nextInt(facePaintOptions.length),
+      shirtColor: rng.nextInt(shirtColorOptions.length),
+      shirtStyle: rng.nextInt(shirtStyleOptions.length),
       hasSparkle: _config.hasSparkle,
       hasRainbowSparkle: _config.hasRainbowSparkle,
       hasGoldenGlow: _config.hasGoldenGlow,
@@ -214,288 +189,178 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
 
   Widget _buildPreview() {
     return Center(
-      child: GestureDetector(
-        onTap: () {
-          // Fun tap reaction — bouncy scale
-          setState(() {});
-        },
+      child: AspectRatio(
+        aspectRatio: 0.78,
         child: Container(
-          width: 200,
-          height: 240,
+          margin: const EdgeInsets.symmetric(horizontal: 40),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border, width: 2),
+            borderRadius: BorderRadius.circular(28),
             gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [
-                AppColors.violet.withValues(alpha: 0.10),
-                AppColors.surface,
+                AppColors.violet.withValues(alpha: 0.4),
+                AppColors.magenta.withValues(alpha: 0.3),
+                AppColors.electricBlue.withValues(alpha: 0.3),
               ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.violet.withValues(alpha: 0.25),
-                blurRadius: 24,
-                spreadRadius: 2,
-              ),
-            ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: AvatarWidget(
-              config: _config,
-              size: 196.0,
-              animateEffects: true,
-            )
-                .animate(key: ValueKey(_config.hashCode))
-                .scale(
-                  begin: const Offset(0.92, 0.92),
-                  end: const Offset(1.0, 1.0),
-                  duration: 280.ms,
-                  curve: Curves.elasticOut,
+          child: Container(
+            margin: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(25),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.violet.withValues(alpha: 0.08),
+                  AppColors.surface,
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.violet.withValues(alpha: 0.20),
+                  blurRadius: 20,
+                  spreadRadius: 2,
                 ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(25),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.maxWidth.clamp(120.0, 280.0);
+                  return Center(
+                    child: AvatarWidget(
+                      config: _config,
+                      size: size,
+                      animateEffects: true,
+                    )
+                        .animate(key: ValueKey(_config.hashCode))
+                        .scale(
+                          begin: const Offset(0.92, 0.92),
+                          end: const Offset(1.0, 1.0),
+                          duration: 280.ms,
+                          curve: Curves.elasticOut,
+                        ),
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  // ── Category Tab Bar ────────────────────────────────────────────────
+  // ── Tab Bar ─────────────────────────────────────────────────────────
 
-  Widget _buildCategoryTabs() {
-    return SizedBox(
-      height: 56,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (context, index) {
-          final selected = index == _selectedCategory;
-          final cat = _categories[index];
-          return GestureDetector(
-            onTap: () => _selectCategory(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: selected
-                    ? AppColors.violet.withValues(alpha: 0.30)
-                    : AppColors.surface,
-                border: Border.all(
-                  color: selected ? AppColors.violet : AppColors.border,
-                  width: selected ? 2.5 : 1,
+  Widget _buildTabBar() {
+    return Container(
+      height: 60,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: List.generate(_tabs.length, (index) {
+          final selected = index == _selectedTab;
+          final tab = _tabs[index];
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                _tabController.animateTo(index);
+                setState(() => _selectedTab = index);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: selected
+                      ? AppColors.violet.withValues(alpha: 0.25)
+                      : AppColors.surface,
+                  border: Border.all(
+                    color: selected ? AppColors.violet : AppColors.border,
+                    width: selected ? 2.5 : 1,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.violet.withValues(alpha: 0.30),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
                 ),
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: AppColors.violet.withValues(alpha: 0.35),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    cat.icon,
-                    size: 20,
-                    color: selected ? AppColors.violet : AppColors.secondaryText,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    cat.label,
-                    style: AppFonts.fredoka(
-                      fontSize: 9,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      tab.icon,
+                      size: 22,
                       color: selected ? AppColors.violet : AppColors.secondaryText,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      tab.label,
+                      style: AppFonts.fredoka(
+                        fontSize: 11,
+                        color: selected ? AppColors.violet : AppColors.secondaryText,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
-        },
+        }),
       ),
     );
   }
 
-  // ── Options PageView ────────────────────────────────────────────────
+  // ── Tab Content ─────────────────────────────────────────────────────
 
-  Widget _buildOptionsPageView() {
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: _categories.length,
-      onPageChanged: (index) {
-        setState(() => _selectedCategory = index);
-      },
-      itemBuilder: (context, index) {
-        return _buildCategoryContent(index);
-      },
+  Widget _buildTabContent() {
+    return TabBarView(
+      controller: _tabController,
+      children: [
+        _buildHairTab(),
+        _buildSkinTab(),
+        _buildShirtTab(),
+        _buildEyesTab(),
+        _buildExtrasTab(),
+      ],
     );
   }
 
-  Widget _buildCategoryContent(int categoryIndex) {
-    switch (categoryIndex) {
-      case 0:
-        return _buildFaceShapeOptions();
-      case 1:
-        return _buildSkinToneOptions();
-      case 2:
-        return _buildHairStyleOptions();
-      case 3:
-        return _buildHairColorOptions();
-      case 4:
-        return _buildEyeStyleOptions();
-      case 5:
-        return _buildEyeColorOptions();
-      case 6:
-        return _buildEyelashOptions();
-      case 7:
-        return _buildEyebrowOptions();
-      case 8:
-        return _buildMouthStyleOptions();
-      case 9:
-        return _buildLipColorOptions();
-      case 10:
-        return _buildCheekOptions();
-      case 11:
-        return _buildNoseOptions();
-      case 12:
-        return _buildGlassesOptions();
-      case 13:
-        return _buildFacePaintOptions();
-      case 14:
-        return _buildAccessoryOptions();
-      case 15:
-        return _buildBgColorOptions();
-      default:
-        return const SizedBox.shrink();
-    }
-  }
+  // ── Hair Tab (Style + Color) ────────────────────────────────────────
 
-  // ── Face Shape ──────────────────────────────────────────────────────
-
-  Widget _buildFaceShapeOptions() {
-    return _optionGrid(
-      itemCount: faceShapeOptions.length,
-      selectedIndex: _config.faceShape,
-      builder: (index) {
-        final opt = faceShapeOptions[index];
-        final r = opt.borderRadius * 28;
-        final previewSkin = _config.skinToneValue >= 0.0
-            ? skinColorFromSlider(_config.skinToneValue)
-            : skinColorForIndex(_config.skinTone);
-        return Center(
-          child: Container(
-            width: 34,
-            height: (34 * opt.heightRatio).toDouble(),
-            decoration: BoxDecoration(
-              color: previewSkin,
-              borderRadius: BorderRadius.circular(r),
-            ),
-          ),
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(faceShape: index)),
+  Widget _buildHairTab() {
+    return _SubTabLayout(
+      subTabs: const ['Style', 'Color'],
+      selectedIndex: _hairSubIndex,
+      onSubTabChanged: (i) => setState(() => _hairSubIndex = i),
+      children: [
+        _buildHairStyleGrid(),
+        _buildHairColorGrid(),
+      ],
     );
   }
 
-  // ── Skin Tone (Continuous Slider) ───────────────────────────────────
-
-  Widget _buildSkinToneOptions() {
-    // Initialize slider from existing config.
-    final sliderValue = _config.skinToneValue >= 0.0
-        ? _config.skinToneValue
-        : _config.skinTone / (skinToneOptions.length - 1).toDouble();
-    final currentColor = skinColorFromSlider(sliderValue);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Color preview circle
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: currentColor,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.4),
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: currentColor.withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Custom gradient slider
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 20,
-              trackShape: _SkinToneTrackShape(),
-              thumbShape: _SkinToneThumbShape(color: currentColor),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 24),
-              overlayColor: currentColor.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              value: sliderValue,
-              onChanged: (value) {
-                _updateConfig(_config.copyWith(skinToneValue: value));
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Light',
-                style: AppFonts.fredoka(
-                  fontSize: 12,
-                  color: AppColors.secondaryText,
-                ),
-              ),
-              Text(
-                'Dark',
-                style: AppFonts.fredoka(
-                  fontSize: 12,
-                  color: AppColors.secondaryText,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Hair Style ──────────────────────────────────────────────────────
-
-  Widget _buildHairStyleOptions() {
+  Widget _buildHairStyleGrid() {
     return _optionGrid(
       itemCount: hairStyleOptions.length,
       selectedIndex: _config.hairStyle,
+      labelForIndex: (i) => hairStyleOptions[i].label,
       builder: (index) {
         return Center(
           child: SizedBox(
-            width: 42,
-            height: 42,
+            width: 48,
+            height: 48,
             child: AvatarWidget(
               animateEffects: false,
               config: _config.copyWith(hairStyle: index),
-              size: 42,
+              size: 48,
               showBackground: false,
             ),
           ),
@@ -505,12 +370,11 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  // ── Hair Color ──────────────────────────────────────────────────────
-
-  Widget _buildHairColorOptions() {
+  Widget _buildHairColorGrid() {
     return _optionGrid(
       itemCount: hairColorOptions.length,
       selectedIndex: _config.hairColor,
+      labelForIndex: (i) => hairColorOptions[i].label,
       builder: (index) {
         final opt = hairColorOptions[index];
         final locked = opt.isLocked &&
@@ -523,10 +387,9 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
 
         Widget swatch;
         if (index == 13) {
-          // Rainbow — show gradient
           swatch = Container(
-            width: 38,
-            height: 38,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
@@ -547,8 +410,8 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
           );
         } else {
           swatch = Container(
-            width: 38,
-            height: 38,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: locked ? opt.color.withValues(alpha: 0.3) : opt.color,
               shape: BoxShape.circle,
@@ -580,21 +443,341 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  // ── Eye Style ───────────────────────────────────────────────────────
+  // ── Skin Tab (Tone + Face Shape) ────────────────────────────────────
 
-  Widget _buildEyeStyleOptions() {
+  Widget _buildSkinTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Skin tone slider
+          _SectionHeader(label: 'Skin Tone'),
+          const SizedBox(height: 8),
+          _buildSkinToneSlider(),
+          const SizedBox(height: 16),
+          // Face shape
+          _SectionHeader(label: 'Face Shape'),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: _buildFaceShapeRow(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkinToneSlider() {
+    final sliderValue = _config.skinToneValue >= 0.0
+        ? _config.skinToneValue
+        : _config.skinTone / (skinToneOptions.length - 1).toDouble();
+    final currentColor = skinColorFromSlider(sliderValue);
+
+    return Column(
+      children: [
+        // Color preview
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: currentColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.4),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: currentColor.withValues(alpha: 0.4),
+                blurRadius: 12,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 20,
+            trackShape: _SkinToneTrackShape(),
+            thumbShape: _SkinToneThumbShape(color: currentColor),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 24),
+            overlayColor: currentColor.withValues(alpha: 0.2),
+          ),
+          child: Slider(
+            value: sliderValue,
+            onChanged: (value) {
+              _updateConfig(_config.copyWith(skinToneValue: value));
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Light',
+                  style: AppFonts.fredoka(
+                      fontSize: 11, color: AppColors.secondaryText)),
+              Text('Dark',
+                  style: AppFonts.fredoka(
+                      fontSize: 11, color: AppColors.secondaryText)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFaceShapeRow() {
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      itemCount: faceShapeOptions.length,
+      separatorBuilder: (_, __) => const SizedBox(width: 10),
+      itemBuilder: (context, index) {
+        final opt = faceShapeOptions[index];
+        final selected = index == _config.faceShape;
+        final previewSkin = _config.skinToneValue >= 0.0
+            ? skinColorFromSlider(_config.skinToneValue)
+            : skinColorForIndex(_config.skinTone);
+        final r = opt.borderRadius * 30;
+        return GestureDetector(
+          onTap: () => _updateConfig(_config.copyWith(faceShape: index)),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 64,
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.violet.withValues(alpha: 0.20)
+                  : AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? AppColors.violet : AppColors.border,
+                width: selected ? 2.5 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.violet.withValues(alpha: 0.30),
+                        blurRadius: 8,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 32,
+                  height: (32 * opt.heightRatio).toDouble(),
+                  decoration: BoxDecoration(
+                    color: previewSkin,
+                    borderRadius: BorderRadius.circular(r),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  opt.label,
+                  style: AppFonts.fredoka(
+                    fontSize: 9,
+                    color: selected
+                        ? AppColors.violet
+                        : AppColors.secondaryText,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Shirt Tab (Color + Style) ───────────────────────────────────────
+
+  Widget _buildShirtTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(label: 'Color'),
+          const SizedBox(height: 8),
+          _buildShirtColorGrid(),
+          const SizedBox(height: 16),
+          _SectionHeader(label: 'Style'),
+          const SizedBox(height: 8),
+          _buildShirtStyleRow(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShirtColorGrid() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: List.generate(shirtColorOptions.length, (index) {
+        final opt = shirtColorOptions[index];
+        final selected = index == _config.shirtColor;
+        return GestureDetector(
+          onTap: () => _updateConfig(_config.copyWith(shirtColor: index)),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.violet.withValues(alpha: 0.20)
+                  : AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? AppColors.violet : AppColors.border,
+                width: selected ? 2.5 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.violet.withValues(alpha: 0.30),
+                        blurRadius: 8,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: opt.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  opt.label,
+                  style: AppFonts.fredoka(
+                    fontSize: 8,
+                    color: selected
+                        ? AppColors.violet
+                        : AppColors.secondaryText,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildShirtStyleRow() {
+    return Row(
+      children: List.generate(shirtStyleOptions.length, (index) {
+        final opt = shirtStyleOptions[index];
+        final selected = index == _config.shirtStyle;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => _updateConfig(_config.copyWith(shirtStyle: index)),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: EdgeInsets.only(
+                  right: index < shirtStyleOptions.length - 1 ? 8 : 0),
+              height: 72,
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppColors.violet.withValues(alpha: 0.20)
+                    : AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? AppColors.violet : AppColors.border,
+                  width: selected ? 2.5 : 1,
+                ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.violet.withValues(alpha: 0.30),
+                          blurRadius: 8,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: AvatarWidget(
+                      animateEffects: false,
+                      config: _config.copyWith(shirtStyle: index),
+                      size: 40,
+                      showBackground: false,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    opt.label,
+                    style: AppFonts.fredoka(
+                      fontSize: 9,
+                      color: selected
+                          ? AppColors.violet
+                          : AppColors.secondaryText,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  // ── Eyes Tab (Style, Color, Lashes, Brows) ──────────────────────────
+
+  Widget _buildEyesTab() {
+    return _SubTabLayout(
+      subTabs: const ['Shape', 'Color', 'Lashes', 'Brows'],
+      selectedIndex: _eyeSubIndex,
+      onSubTabChanged: (i) => setState(() => _eyeSubIndex = i),
+      children: [
+        _buildEyeStyleGrid(),
+        _buildEyeColorGrid(),
+        _buildEyelashGrid(),
+        _buildEyebrowGrid(),
+      ],
+    );
+  }
+
+  Widget _buildEyeStyleGrid() {
     return _optionGrid(
       itemCount: eyeStyleOptions.length,
       selectedIndex: _config.eyeStyle,
+      labelForIndex: (i) => eyeStyleOptions[i].label,
       builder: (index) {
         return Center(
           child: SizedBox(
-            width: 42,
-            height: 42,
+            width: 48,
+            height: 48,
             child: AvatarWidget(
               animateEffects: false,
               config: _config.copyWith(eyeStyle: index),
-              size: 42,
+              size: 48,
               showBackground: false,
             ),
           ),
@@ -604,20 +787,19 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  // ── Eye Color ───────────────────────────────────────────────────────
-
-  Widget _buildEyeColorOptions() {
+  Widget _buildEyeColorGrid() {
     return _optionGrid(
       itemCount: eyeColorOptions.length,
       selectedIndex: _config.eyeColor,
+      labelForIndex: (i) => eyeColorOptions[i].label,
       builder: (index) {
         final opt = eyeColorOptions[index];
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white,
@@ -628,8 +810,8 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               ),
               child: Center(
                 child: Container(
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: opt.color,
@@ -654,264 +836,78 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  // ── Eyelash Style ───────────────────────────────────────────────────
-
-  Widget _buildEyelashOptions() {
+  Widget _buildEyelashGrid() {
     return _optionGrid(
       itemCount: eyelashStyleOptions.length,
       selectedIndex: _config.eyelashStyle,
+      labelForIndex: (i) => eyelashStyleOptions[i].label,
       builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (index == 0)
-              Icon(Icons.block,
-                  size: 28,
-                  color: AppColors.secondaryText.withValues(alpha: 0.5))
-            else
-              SizedBox(
-                width: 42,
-                height: 42,
-                child: AvatarWidget(
-                  animateEffects: false,
-                  config: _config.copyWith(eyelashStyle: index),
-                  size: 42,
-                  showBackground: false,
-                ),
-              ),
-          ],
+        if (index == 0) {
+          return Center(
+            child: Icon(Icons.block,
+                size: 28,
+                color: AppColors.secondaryText.withValues(alpha: 0.5)),
+          );
+        }
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(eyelashStyle: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
         );
       },
       onTap: (index) => _updateConfig(_config.copyWith(eyelashStyle: index)),
     );
   }
 
-  // ── Eyebrow Style ──────────────────────────────────────────────────
-
-  Widget _buildEyebrowOptions() {
+  Widget _buildEyebrowGrid() {
     return _optionGrid(
       itemCount: eyebrowStyleOptions.length,
       selectedIndex: _config.eyebrowStyle,
+      labelForIndex: (i) => eyebrowStyleOptions[i].label,
       builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 42,
-              height: 42,
-              child: AvatarWidget(
-                animateEffects: false,
-                config: _config.copyWith(eyebrowStyle: index),
-                size: 42,
-                showBackground: false,
-              ),
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(eyebrowStyle: index),
+              size: 48,
+              showBackground: false,
             ),
-          ],
+          ),
         );
       },
       onTap: (index) => _updateConfig(_config.copyWith(eyebrowStyle: index)),
     );
   }
 
-  // ── Mouth Style ────────────────────────────────────────────────────
+  // ── Extras Tab (Accessories, Glasses, FacePaint, Cheeks, Mouth, Nose, Lips, BG) ──
 
-  Widget _buildMouthStyleOptions() {
-    return _optionGrid(
-      itemCount: mouthStyleOptions.length,
-      selectedIndex: _config.mouthStyle,
-      builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 42,
-              height: 42,
-              child: AvatarWidget(
-                animateEffects: false,
-                config: _config.copyWith(mouthStyle: index),
-                size: 42,
-                showBackground: false,
-              ),
-            ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(mouthStyle: index)),
+  Widget _buildExtrasTab() {
+    return _SubTabLayout(
+      subTabs: const ['Hats', 'Glasses', 'Paint', 'Cheeks', 'Mouth', 'Lips', 'Nose', 'BG'],
+      selectedIndex: _extrasSubIndex,
+      onSubTabChanged: (i) => setState(() => _extrasSubIndex = i),
+      children: [
+        _buildAccessoryGrid(),
+        _buildGlassesGrid(),
+        _buildFacePaintGrid(),
+        _buildCheekGrid(),
+        _buildMouthGrid(),
+        _buildLipColorGrid(),
+        _buildNoseGrid(),
+        _buildBgColorGrid(),
+      ],
     );
   }
-
-  // ── Lip Color ──────────────────────────────────────────────────────
-
-  Widget _buildLipColorOptions() {
-    return _optionGrid(
-      itemCount: lipColorOptions.length,
-      selectedIndex: _config.lipColor,
-      builder: (index) {
-        final opt = lipColorOptions[index];
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (index == 0)
-              // "Natural" — no lip color
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.surface,
-                  border: Border.all(
-                    color: AppColors.border,
-                    width: 1.5,
-                  ),
-                ),
-                child: Icon(Icons.block,
-                    size: 20,
-                    color: AppColors.secondaryText.withValues(alpha: 0.5)),
-              )
-            else
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: opt.color,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    width: 1,
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(lipColor: index)),
-    );
-  }
-
-  // ── Cheek Style ────────────────────────────────────────────────────
-
-  Widget _buildCheekOptions() {
-    return _optionGrid(
-      itemCount: cheekStyleOptions.length,
-      selectedIndex: _config.cheekStyle,
-      builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (index == 0)
-              Icon(Icons.block,
-                  size: 28,
-                  color: AppColors.secondaryText.withValues(alpha: 0.5))
-            else
-              SizedBox(
-                width: 42,
-                height: 42,
-                child: AvatarWidget(
-                  animateEffects: false,
-                  config: _config.copyWith(cheekStyle: index),
-                  size: 42,
-                  showBackground: false,
-                ),
-              ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(cheekStyle: index)),
-    );
-  }
-
-  // ── Nose Style ─────────────────────────────────────────────────────
-
-  Widget _buildNoseOptions() {
-    return _optionGrid(
-      itemCount: noseStyleOptions.length,
-      selectedIndex: _config.noseStyle,
-      builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 42,
-              height: 42,
-              child: AvatarWidget(
-                animateEffects: false,
-                config: _config.copyWith(noseStyle: index),
-                size: 42,
-                showBackground: false,
-              ),
-            ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(noseStyle: index)),
-    );
-  }
-
-  // ── Glasses ─────────────────────────────────────────────────────────
-
-  Widget _buildGlassesOptions() {
-    return _optionGrid(
-      itemCount: glassesStyleOptions.length,
-      selectedIndex: _config.glassesStyle,
-      builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (index == 0)
-              Icon(Icons.block,
-                  size: 28,
-                  color: AppColors.secondaryText.withValues(alpha: 0.5))
-            else
-              SizedBox(
-                width: 42,
-                height: 42,
-                child: AvatarWidget(
-                  animateEffects: false,
-                  config: _config.copyWith(glassesStyle: index),
-                  size: 42,
-                  showBackground: false,
-                ),
-              ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(glassesStyle: index)),
-    );
-  }
-
-  // ── Face Paint ──────────────────────────────────────────────────────
-
-  Widget _buildFacePaintOptions() {
-    return _optionGrid(
-      itemCount: facePaintOptions.length,
-      selectedIndex: _config.facePaint,
-      builder: (index) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (index == 0)
-              Icon(Icons.block,
-                  size: 28,
-                  color: AppColors.secondaryText.withValues(alpha: 0.5))
-            else
-              SizedBox(
-                width: 42,
-                height: 42,
-                child: AvatarWidget(
-                  animateEffects: false,
-                  config: _config.copyWith(facePaint: index),
-                  size: 42,
-                  showBackground: false,
-                ),
-              ),
-          ],
-        );
-      },
-      onTap: (index) => _updateConfig(_config.copyWith(facePaint: index)),
-    );
-  }
-
-  // ── Accessories ────────────────────────────────────────────────────
 
   bool _isAccessoryLocked(AccessoryOption opt) {
     if (!opt.isLocked) return false;
@@ -926,35 +922,32 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  Widget _buildAccessoryOptions() {
+  Widget _buildAccessoryGrid() {
     return _optionGrid(
       itemCount: accessoryOptions.length,
       selectedIndex: _config.accessory,
+      labelForIndex: (i) => accessoryOptions[i].label,
       builder: (index) {
         final opt = accessoryOptions[index];
         final locked = _isAccessoryLocked(opt);
         return _OptionTileContent(
           locked: locked,
           hint: opt.unlock?.hint,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (index == 0)
-                Icon(Icons.block,
+          child: Center(
+            child: index == 0
+                ? Icon(Icons.block,
                     size: 28,
                     color: AppColors.secondaryText.withValues(alpha: 0.5))
-              else
-                SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: AvatarWidget(
-                  animateEffects: false,
-                    config: _config.copyWith(accessory: index),
-                    size: 42,
-                    showBackground: false,
+                : SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: AvatarWidget(
+                      animateEffects: false,
+                      config: _config.copyWith(accessory: index),
+                      size: 48,
+                      showBackground: false,
+                    ),
                   ),
-                ),
-            ],
           ),
         );
       },
@@ -967,51 +960,226 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     );
   }
 
-  // ── Background Color ───────────────────────────────────────────────
+  Widget _buildGlassesGrid() {
+    return _optionGrid(
+      itemCount: glassesStyleOptions.length,
+      selectedIndex: _config.glassesStyle,
+      labelForIndex: (i) => glassesStyleOptions[i].label,
+      builder: (index) {
+        if (index == 0) {
+          return Center(
+            child: Icon(Icons.block,
+                size: 28,
+                color: AppColors.secondaryText.withValues(alpha: 0.5)),
+          );
+        }
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(glassesStyle: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(glassesStyle: index)),
+    );
+  }
 
-  Widget _buildBgColorOptions() {
+  Widget _buildFacePaintGrid() {
+    return _optionGrid(
+      itemCount: facePaintOptions.length,
+      selectedIndex: _config.facePaint,
+      labelForIndex: (i) => facePaintOptions[i].label,
+      builder: (index) {
+        if (index == 0) {
+          return Center(
+            child: Icon(Icons.block,
+                size: 28,
+                color: AppColors.secondaryText.withValues(alpha: 0.5)),
+          );
+        }
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(facePaint: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(facePaint: index)),
+    );
+  }
+
+  Widget _buildCheekGrid() {
+    return _optionGrid(
+      itemCount: cheekStyleOptions.length,
+      selectedIndex: _config.cheekStyle,
+      labelForIndex: (i) => cheekStyleOptions[i].label,
+      builder: (index) {
+        if (index == 0) {
+          return Center(
+            child: Icon(Icons.block,
+                size: 28,
+                color: AppColors.secondaryText.withValues(alpha: 0.5)),
+          );
+        }
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(cheekStyle: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(cheekStyle: index)),
+    );
+  }
+
+  Widget _buildMouthGrid() {
+    return _optionGrid(
+      itemCount: mouthStyleOptions.length,
+      selectedIndex: _config.mouthStyle,
+      labelForIndex: (i) => mouthStyleOptions[i].label,
+      builder: (index) {
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(mouthStyle: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(mouthStyle: index)),
+    );
+  }
+
+  Widget _buildLipColorGrid() {
+    return _optionGrid(
+      itemCount: lipColorOptions.length,
+      selectedIndex: _config.lipColor,
+      labelForIndex: (i) => lipColorOptions[i].label,
+      builder: (index) {
+        final opt = lipColorOptions[index];
+        if (index == 0) {
+          return Center(
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border, width: 1.5),
+              ),
+              child: Icon(Icons.block,
+                  size: 20,
+                  color: AppColors.secondaryText.withValues(alpha: 0.5)),
+            ),
+          );
+        }
+        return Center(
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: opt.color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(lipColor: index)),
+    );
+  }
+
+  Widget _buildNoseGrid() {
+    return _optionGrid(
+      itemCount: noseStyleOptions.length,
+      selectedIndex: _config.noseStyle,
+      labelForIndex: (i) => noseStyleOptions[i].label,
+      builder: (index) {
+        return Center(
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: AvatarWidget(
+              animateEffects: false,
+              config: _config.copyWith(noseStyle: index),
+              size: 48,
+              showBackground: false,
+            ),
+          ),
+        );
+      },
+      onTap: (index) => _updateConfig(_config.copyWith(noseStyle: index)),
+    );
+  }
+
+  Widget _buildBgColorGrid() {
     return _optionGrid(
       itemCount: bgColorOptions.length,
       selectedIndex: _config.bgColor,
+      labelForIndex: (i) => bgColorOptions[i].label,
       builder: (index) {
         final opt = bgColorOptions[index];
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: opt.color,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  width: 1.5,
-                ),
+        return Center(
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: opt.color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.3),
+                width: 1.5,
               ),
             ),
-          ],
+          ),
         );
       },
       onTap: (index) => _updateConfig(_config.copyWith(bgColor: index)),
     );
   }
 
-  // ── Shared Grid Builder ────────────────────────────────────────────
+  // ── Shared Grid Builder ─────────────────────────────────────────────
 
   Widget _optionGrid({
     required int itemCount,
     required int selectedIndex,
     required Widget Function(int index) builder,
     required void Function(int index) onTap,
+    String Function(int index)? labelForIndex,
   }) {
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.0,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.85,
       ),
       itemCount: itemCount,
       itemBuilder: (context, index) {
@@ -1024,7 +1192,7 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               color: selected
                   ? AppColors.violet.withValues(alpha: 0.20)
                   : AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected ? AppColors.violet : AppColors.border,
                 width: selected ? 2.5 : 1,
@@ -1032,30 +1200,54 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               boxShadow: selected
                   ? [
                       BoxShadow(
-                        color: AppColors.violet.withValues(alpha: 0.30),
+                        color: AppColors.violet.withValues(alpha: 0.35),
                         blurRadius: 10,
                         spreadRadius: 1,
                       ),
                     ]
                   : null,
             ),
-            child: selected
-                ? builder(index)
-                    .animate()
-                    .scale(
-                      begin: const Offset(0.88, 0.88),
-                      end: const Offset(1.0, 1.0),
-                      duration: 320.ms,
-                      curve: Curves.elasticOut,
-                    )
-                : builder(index),
+            child: Column(
+              children: [
+                Expanded(
+                  child: selected
+                      ? builder(index)
+                          .animate()
+                          .scale(
+                            begin: const Offset(0.88, 0.88),
+                            end: const Offset(1.0, 1.0),
+                            duration: 320.ms,
+                            curve: Curves.elasticOut,
+                          )
+                      : builder(index),
+                ),
+                if (labelForIndex != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      labelForIndex(index),
+                      style: AppFonts.fredoka(
+                        fontSize: 9,
+                        color: selected
+                            ? AppColors.violet
+                            : AppColors.secondaryText,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  // ── Done Button ────────────────────────────────────────────────────
+  // ── Done Button ─────────────────────────────────────────────────────
 
   Widget _buildDoneButton() {
     return Center(
@@ -1081,7 +1273,7 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               const Icon(Icons.check_rounded, color: Colors.white, size: 24),
               const SizedBox(width: 6),
               Text(
-                'Done',
+                'Done!',
                 style: AppFonts.fredoka(
                   fontSize: 18,
                   color: Colors.white,
@@ -1095,21 +1287,157 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
     )
         .animate()
         .fadeIn(delay: 200.ms, duration: 300.ms)
-        .scale(begin: const Offset(0.8, 0.8), end: const Offset(1.0, 1.0), duration: 300.ms, curve: Curves.elasticOut);
+        .scale(
+            begin: const Offset(0.8, 0.8),
+            end: const Offset(1.0, 1.0),
+            duration: 300.ms,
+            curve: Curves.elasticOut);
   }
-
 }
 
-// ── Category data ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+//  HELPER WIDGETS
+// ═══════════════════════════════════════════════════════════════════════
 
-class _Category {
+/// Tab definition with label and icon.
+class _TabDef {
   final String label;
   final IconData icon;
-
-  const _Category(this.label, this.icon);
+  const _TabDef(this.label, this.icon);
 }
 
-// ── Locked option overlay ───────────────────────────────────────────
+/// A small circular icon button used in the header.
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool spinning;
+
+  const _CircleButton({
+    required this.icon,
+    required this.onTap,
+    this.spinning = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: spinning
+            ? AnimatedRotation(
+                turns: 1.0,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOutCubic,
+                child: Icon(icon, color: AppColors.secondaryText, size: 22),
+              )
+            : Icon(icon, color: AppColors.primaryText, size: 22),
+      ),
+    );
+  }
+}
+
+/// Section header label for the Skin and Shirt tabs.
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: AppFonts.fredoka(
+        fontSize: 14,
+        color: AppColors.primaryText,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+/// Layout with a row of sub-tab chips above swappable content.
+class _SubTabLayout extends StatelessWidget {
+  final List<String> subTabs;
+  final int selectedIndex;
+  final ValueChanged<int> onSubTabChanged;
+  final List<Widget> children;
+
+  const _SubTabLayout({
+    required this.subTabs,
+    required this.selectedIndex,
+    required this.onSubTabChanged,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Sub-tab chips
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: subTabs.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (context, index) {
+              final selected = index == selectedIndex;
+              return GestureDetector(
+                onTap: () => onSubTabChanged(index),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: selected
+                        ? AppColors.violet.withValues(alpha: 0.25)
+                        : AppColors.surface,
+                    border: Border.all(
+                      color: selected ? AppColors.violet : AppColors.border,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Text(
+                    subTabs[index],
+                    style: AppFonts.fredoka(
+                      fontSize: 12,
+                      color: selected
+                          ? AppColors.violet
+                          : AppColors.secondaryText,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Content
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: KeyedSubtree(
+              key: ValueKey(selectedIndex),
+              child: children[selectedIndex],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Locked option overlay ────────────────────────────────────────────
 
 class _OptionTileContent extends StatelessWidget {
   final bool locked;
@@ -1126,7 +1454,6 @@ class _OptionTileContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!locked) return child;
 
-    // Extract number from hint (e.g. "25 words!" → 25) for star display
     final starCount = hint != null
         ? RegExp(r'\d+').firstMatch(hint!)?.group(0)
         : null;
@@ -1174,7 +1501,7 @@ class _OptionTileContent extends StatelessWidget {
   }
 }
 
-// ── Custom Skin Tone Slider Track ──────────────────────────────────
+// ── Custom Skin Tone Slider Track ───────────────────────────────────
 
 class _SkinToneTrackShape extends SliderTrackShape {
   @override
@@ -1215,7 +1542,6 @@ class _SkinToneTrackShape extends SliderTrackShape {
     );
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(10));
 
-    // Paint skin tone gradient as the track background.
     final gradient = LinearGradient(
       colors: skinToneGradientColors,
       stops: skinToneGradientStops,
@@ -1223,7 +1549,6 @@ class _SkinToneTrackShape extends SliderTrackShape {
     final paint = Paint()..shader = gradient.createShader(rect);
     context.canvas.drawRRect(rrect, paint);
 
-    // Subtle border.
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.white.withValues(alpha: 0.2)
@@ -1232,7 +1557,7 @@ class _SkinToneTrackShape extends SliderTrackShape {
   }
 }
 
-// ── Custom Skin Tone Slider Thumb ──────────────────────────────────
+// ── Custom Skin Tone Slider Thumb ───────────────────────────────────
 
 class _SkinToneThumbShape extends SliderComponentShape {
   final Color color;
@@ -1260,19 +1585,16 @@ class _SkinToneThumbShape extends SliderComponentShape {
   }) {
     final canvas = context.canvas;
 
-    // White outer ring
     final outerPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 14, outerPaint);
 
-    // Skin color fill
     final fillPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 11, fillPaint);
 
-    // Subtle shadow ring
     final shadowPaint = Paint()
       ..color = Colors.black.withValues(alpha: 0.15)
       ..style = PaintingStyle.stroke
