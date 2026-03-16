@@ -204,6 +204,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           audioService: widget.audioService,
                         ).animate().fadeIn(delay: 500.ms, duration: 400.ms)
                             .slideY(begin: 0.05, end: 0, duration: 300.ms),
+                        const SizedBox(height: 24),
+                        if (widget.onSignOut != null)
+                          _buildSignOutButton(),
                         const SizedBox(height: 28),
                       ],
                     ),
@@ -259,44 +262,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-          if (widget.onSignOut != null)
-            GestureDetector(
-              onTap: () {
-                Navigator.of(context).pop();
-                widget.onSignOut!();
-              },
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 10 * sf, vertical: 6 * sf),
-                decoration: BoxDecoration(
-                  color: AppColors.violet.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14 * sf),
-                  border: Border.all(
-                    color: AppColors.violet.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.swap_horiz_rounded,
-                      size: 18 * sf,
-                      color: AppColors.violet.withValues(alpha: 0.8),
-                    ),
-                    SizedBox(width: 4 * sf),
-                    Text(
-                      'Switch',
-                      style: AppFonts.fredoka(
-                        fontSize: 13 * sf,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.violet.withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            SizedBox(width: 48 * sf),
+          SizedBox(width: 48 * sf),
         ],
       ),
     );
@@ -828,6 +794,54 @@ class _ProfileScreenState extends State<ProfileScreen>
         .animate()
         .fadeIn(delay: 200.ms, duration: 400.ms)
         .slideY(begin: 0.05, end: 0, duration: 300.ms);
+  }
+
+  // ── Switch Profile Button (bottom of page) ───────────────────────────
+
+  Widget _buildSignOutButton() {
+    final screenW = MediaQuery.of(context).size.width;
+    final sf = (screenW / 400).clamp(0.7, 1.2);
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 40 * sf),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onSignOut!();
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: 10 * sf),
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(14 * sf),
+            border: Border.all(
+              color: AppColors.border.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.swap_horiz_rounded,
+                size: 18 * sf,
+                color: AppColors.secondaryText.withValues(alpha: 0.5),
+              ),
+              SizedBox(width: 6 * sf),
+              Text(
+                'Switch Profile',
+                style: AppFonts.fredoka(
+                  fontSize: 13 * sf,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.secondaryText.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(delay: 600.ms, duration: 400.ms);
   }
 }
 
