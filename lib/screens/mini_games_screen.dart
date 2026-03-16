@@ -25,7 +25,8 @@ import 'mini_games/word_ninja_game.dart';
 import 'mini_games/spelling_bee_game.dart';
 import 'mini_games/word_train_game.dart';
 import 'mini_games/ladybug_game.dart';
-import 'mini_games/element_lab_game.dart';
+import 'mini_games/element_lab/element_lab_game.dart';
+import 'mini_games/element_lab/element_lab_painters.dart';
 import '../services/adaptive_difficulty_service.dart';
 
 class MiniGamesScreen extends StatefulWidget {
