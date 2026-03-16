@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Tracks daily practice streaks and milestone achievements.
@@ -38,11 +39,19 @@ class StreakService {
   void _load() {
     final raw = _prefs.getString(_key);
     if (raw != null) {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      _currentStreak = data['currentStreak'] as int? ?? 0;
-      _longestStreak = data['longestStreak'] as int? ?? 0;
-      _lastPracticeDate = data['lastPracticeDate'] as String? ?? '';
-      _streakFreezeAvailable = data['streakFreezeAvailable'] as bool? ?? false;
+      try {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        _currentStreak = data['currentStreak'] as int? ?? 0;
+        _longestStreak = data['longestStreak'] as int? ?? 0;
+        _lastPracticeDate = data['lastPracticeDate'] as String? ?? '';
+        _streakFreezeAvailable = data['streakFreezeAvailable'] as bool? ?? false;
+      } catch (e) {
+        debugPrint('StreakService: failed to decode streak data, keeping defaults: $e');
+        _currentStreak = 0;
+        _longestStreak = 0;
+        _lastPracticeDate = '';
+        _streakFreezeAvailable = false;
+      }
     }
   }
 

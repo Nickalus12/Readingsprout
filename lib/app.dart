@@ -28,6 +28,7 @@ class ReadingSproutApp extends StatefulWidget {
 
 class _ReadingSproutAppState extends State<ReadingSproutApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  late final AppLifecycleListener _lifecycleListener;
   late final ProgressService _progressService;
   late final AudioService _audioService;
   late final PlayerSettingsService _settingsService;
@@ -45,6 +46,17 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
   @override
   void initState() {
     super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onPause: () {
+        _adaptiveMusicService.pause();
+        _progressService.flushSave();
+      },
+      onInactive: () {
+        _adaptiveMusicService.pause();
+        _progressService.flushSave();
+      },
+      onResume: () => _adaptiveMusicService.resume(),
+    );
     _init();
   }
 
@@ -194,6 +206,8 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
+    _progressService.dispose();
     _audioService.dispose();
     _adaptiveMusicService.dispose();
     super.dispose();
