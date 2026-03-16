@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import '../../services/audio_service.dart';
 import '../../services/progress_service.dart';
@@ -60,6 +61,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
   final List<_RingBurst> _ringBursts = [];
 
   late AnimationController _ticker;
+  late ConfettiController _confettiController;
   double _lastTime = 0;
   double _spawnTimer = 0;
   double _gameTime = 0;
@@ -90,6 +92,7 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
   @override
   void initState() {
     super.initState();
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     _initBackgroundBubbles();
     _availableAnimals = [_animals[0], _animals[1]]; // Start with dog & cat
     _ticker = AnimationController(
@@ -148,6 +151,9 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
       // Check game over
       if (_gameTime >= _gameDuration) {
         _gameOver = true;
+        _confettiController.play();
+        Haptics.success();
+        widget.audioService.playSuccess();
         return;
       }
 
@@ -394,6 +400,8 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
 
   @override
   void dispose() {
+    _confettiController.stop();
+    _confettiController.dispose();
     _ticker.dispose();
     super.dispose();
   }
@@ -667,6 +675,22 @@ class _BubblePopZooGameState extends State<BubblePopZooGame>
                 ),
               ),
             ),
+
+          // Confetti
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              shouldLoop: false,
+              colors: AppColors.confettiColors,
+              numberOfParticles: 30,
+              maxBlastForce: 20,
+              minBlastForce: 5,
+              emissionFrequency: 0.05,
+              gravity: 0.2,
+            ),
+          ),
 
           // Game over screen
           if (_gameOver) _buildGameOver(),
