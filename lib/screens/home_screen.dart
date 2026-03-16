@@ -80,6 +80,8 @@ class _HomeScreenState extends State<HomeScreen>
   late _StarSim _starSim;
   final _heartsKey = GlobalKey<FloatingHeartsBackgroundState>();
   final AvatarController _avatarController = AvatarController();
+  double _avatarEnergy = 0.5;
+  int _avatarTapCount = 0;
 
   @override
   void initState() {
@@ -99,17 +101,52 @@ class _HomeScreenState extends State<HomeScreen>
         !widget.hintsService!.hasBeenSeen(FirstTimeHintsService.adventureMode)) {
       _showAdventureHint = true;
     }
-    // Play welcome phrase on first load
+
+    // Compute personality-driven mood for avatar
+    AvatarMood? mood;
+    if (widget.personalityService != null && widget.profileId.isNotEmpty) {
+      mood = widget.personalityService!.computeMood(widget.profileId);
+      _avatarEnergy = mood.energyLevel;
+    }
+
+    // Play welcome phrase on first load with mood-driven greeting
     if (widget.playerName.isNotEmpty && !_hasPlayedWelcome) {
       _hasPlayedWelcome = true;
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
           widget.audioService.playWelcome(widget.playerName);
-          _avatarController.setExpression(AvatarExpression.happy,
-              duration: const Duration(seconds: 3));
+          // Expression matches mood
+          final expr = mood?.defaultExpression ?? AvatarExpression.happy;
+          _avatarController.setExpression(
+            expr == AvatarExpression.neutral ? AvatarExpression.happy : expr,
+            duration: const Duration(seconds: 3),
+          );
+          // Play mood-appropriate greeting animation
+          final clipName = mood?.greetingClip ?? 'wave';
+          _avatarController.playAnimation(clipName);
         }
       });
     }
+  }
+
+  /// Avatar tap reaction — cycles through fun expressions and animations
+  void _onAvatarTap() {
+    _avatarTapCount++;
+    const expressions = [
+      AvatarExpression.excited,
+      AvatarExpression.happy,
+      AvatarExpression.surprised,
+      AvatarExpression.excited,
+      AvatarExpression.happy,
+    ];
+    const animations = ['wave', 'giggle', 'surprise', 'clap', 'nod'];
+    final idx = _avatarTapCount % expressions.length;
+    _avatarController.setExpression(
+      expressions[idx],
+      duration: const Duration(milliseconds: 1500),
+    );
+    _avatarController.playAnimation(animations[idx]);
+    widget.audioService.playSuccess();
   }
 
   @override
@@ -356,6 +393,31 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
 
                     const SizedBox(height: 12),
+
+                    // ── Avatar companion (tappable) ──────────
+                    if (widget.profileService != null)
+                      GestureDetector(
+                        onTap: _onAvatarTap,
+                        child: AvatarWidget(
+                          config: widget.profileService!.avatar,
+                          size: 90 * sf,
+                          showBackground: false,
+                          controller: _avatarController,
+                          energyLevel: _avatarEnergy,
+                        ),
+                      )
+                          .animate()
+                          .fadeIn(delay: 200.ms, duration: 500.ms)
+                          .scaleXY(
+                            begin: 0.8,
+                            end: 1.0,
+                            delay: 200.ms,
+                            duration: 500.ms,
+                            curve: Curves.easeOutBack,
+                          ),
+
+                    if (widget.profileService != null)
+                      const SizedBox(height: 4),
 
                     // ── Hero: Player name (letter-by-letter entrance) ──
                     if (hasName)
