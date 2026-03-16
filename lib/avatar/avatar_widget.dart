@@ -2675,18 +2675,28 @@ class MouthPainter extends CustomPainter {
           // Lower lip highlight
           _drawLowerLipHighlight(canvas, w * 0.5, h * 0.40, w);
         } else {
-          final paint = Paint()
-            ..color = const Color(0xFF1A1A2E)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = w * 0.08
-            ..strokeCap = StrokeCap.round;
-          canvas.drawArc(
-            Rect.fromLTWH(w * 0.1, -h * 0.2, w * 0.8, h * 1.0),
-            0.2,
-            pi * 0.6,
-            false,
-            paint,
+          // No lip color: warm curved smile line with upturned ends
+          final smilePath = Path()
+            ..moveTo(w * 0.12, h * 0.28)
+            ..quadraticBezierTo(w * 0.50, h * 0.85, w * 0.88, h * 0.28);
+          canvas.drawPath(
+            smilePath,
+            Paint()
+              ..color = const Color(0xFF2A2040)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = w * 0.065
+              ..strokeCap = StrokeCap.round,
           );
+          // Subtle mouth corner dots for warmth
+          for (final x in [w * 0.13, w * 0.87]) {
+            canvas.drawCircle(
+              Offset(x, h * 0.30),
+              w * 0.012,
+              Paint()
+                ..color = const Color(0xFF2A2040).withValues(alpha: 0.35)
+                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0),
+            );
+          }
         }
 
       case 1: // Big Grin
