@@ -157,6 +157,25 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // High pressure pushes sand/dirt sideways (water eroding gaps)
+    if (colAbove >= 4 && rng.nextInt(8) == 0) {
+      for (final dir in [1, -1]) {
+        final nx = x + dir;
+        if (!inBounds(nx, y)) continue;
+        final ni = y * gridW + nx;
+        final neighbor = grid[ni];
+        if (neighbor == El.sand || neighbor == El.dirt) {
+          // Check if there's space to push the granular material
+          final pushX = nx + dir;
+          if (inBounds(pushX, y) && grid[y * gridW + pushX] == El.empty) {
+            swap(ni, y * gridW + pushX);
+            swap(idx, ni);
+            return;
+          }
+        }
+      }
+    }
+
     // Pressure-based vertical mass transfer
     if (!isSpecialState && mass > 110 && inBounds(x, uy)) {
       final aboveI = uy * gridW + x;
