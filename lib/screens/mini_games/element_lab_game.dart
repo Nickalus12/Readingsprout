@@ -171,6 +171,7 @@ class _ElementLabGameState extends State<ElementLabGame>
   // -- Colony tracking -------------------------------------------------------
   int _colonyX = -1; // colony centroid X
   int _colonyY = -1; // colony centroid Y
+  // ignore: unused_field
   int _colonyUpdateFrame = 0; // last frame colony was recalculated
 
   // -- Rendering buffer (RGBA pixels) ----------------------------------------
@@ -3489,9 +3490,9 @@ class _ElementLabGameState extends State<ElementLabGame>
               if (dist <= 1) intensity = lGlow1;
               else if (dist <= 2) intensity = lGlow2;
               else intensity = lGlow3;
-              glowR8![ni] = (glowR8[ni] + intensity).clamp(0, 255);
-              glowG8![ni] = (glowG8[ni] + intensity).clamp(0, 255);
-              glowB8![ni] = (glowB8[ni] + (intensity * 2 ~/ 3)).clamp(0, 255);
+              glowR8[ni] = (glowR8[ni] + intensity).clamp(0, 255);
+              glowG8[ni] = (glowG8[ni] + intensity).clamp(0, 255);
+              glowB8[ni] = (glowB8[ni] + (intensity * 2 ~/ 3)).clamp(0, 255);
             }
           }
         } else {
@@ -3508,11 +3509,11 @@ class _ElementLabGameState extends State<ElementLabGame>
               final ni = ny * w + nx;
               if (g[ni] != El.empty) continue;
               if (dist <= 1) {
-                glowR8![ni] = (glowR8[ni] + glow1R).clamp(0, 255);
-                if (isFire) glowG8![ni] = (glowG8[ni] + glow1G).clamp(0, 255);
+                glowR8[ni] = (glowR8[ni] + glow1R).clamp(0, 255);
+                if (isFire) glowG8[ni] = (glowG8[ni] + glow1G).clamp(0, 255);
               } else {
-                glowR8![ni] = (glowR8[ni] + glow2R).clamp(0, 255);
-                if (isFire) glowG8![ni] = (glowG8[ni] + glow2G).clamp(0, 255);
+                glowR8[ni] = (glowR8[ni] + glow2R).clamp(0, 255);
+                if (isFire) glowG8[ni] = (glowG8[ni] + glow2G).clamp(0, 255);
               }
             }
           }
