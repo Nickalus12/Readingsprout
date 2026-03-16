@@ -698,7 +698,7 @@ class _WordRocketGameState extends State<WordRocketGame>
                     Text(
                       _wordsCompleted >= _totalWords
                           ? 'Mission Complete!'
-                          : 'Mission Over',
+                          : 'Great Flying!',
                       style: AppFonts.fredoka(
                         fontSize: 24,
                         fontWeight: FontWeight.w600,

@@ -1311,7 +1311,7 @@ class _LetterDropGameState extends State<LetterDropGame>
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _lives <= 0 ? 'Game Over' : 'Time\'s Up!',
+            _wordsCompleted > 0 ? 'Great Job!' : 'Nice Try!',
             style: AppFonts.fredoka(
               fontSize: 36,
               fontWeight: FontWeight.w700,

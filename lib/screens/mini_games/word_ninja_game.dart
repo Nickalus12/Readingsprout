@@ -1045,7 +1045,7 @@ class _WordNinjaGameState extends State<WordNinjaGame>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _livesLeft <= 0 ? 'Game Over!' : 'Time Up!',
+                    _score > 0 ? 'Great Job!' : 'Nice Try!',
                     style: AppFonts.fredoka(
                       fontSize: 24,
                       fontWeight: FontWeight.w600,
