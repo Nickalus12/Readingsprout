@@ -85,6 +85,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _savingProgress = false;
   String _levelCompletePhrase = '';
 
+  /// Today's date key for daily accuracy tracking (YYYY-MM-DD).
+  String get _todayKey {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
   // Track which letters have been correctly typed
   final List<bool> _revealedLetters = [];
 
@@ -102,6 +108,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   /// Whether the current champion word was "not passed" (2+ mistakes).
   bool _championWordFailed = false;
 
+  /// Whether the champion retry prompt is showing (word failed, offer retry).
+  bool _championRetryPrompt = false;
+
+  /// Total mistakes across all words in this champion tier session.
+  int _championTierMistakes = 0;
+
   // ── In-level streak (all tiers) ────────────────────────────────
   /// Consecutive correct words within this level session.
   int _inLevelStreak = 0;
@@ -112,6 +124,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   /// Whether the correct letter is being revealed (3rd wrong tap hint).
   bool _hintRevealing = false;
+
+  /// Whether the player has used a purchased hint on the current word.
+  bool _purchasedHintUsed = false;
 
   // ── Zone encouragement state ─────────────────────────────────
   /// Whether a zone streak message is being displayed.
@@ -278,6 +293,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _mistakesThisWord = 0;
     _totalWrongTapsThisWord = 0;
     _hintRevealing = false;
+    _purchasedHintUsed = false;
 
     if ((_isExplorer || _isAdventurer) && _targetText.isNotEmpty) {
       // Explorer & Adventurer: pre-reveal first letter, start typing at index 1
@@ -365,6 +381,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       // Correct letter!
       Haptics.correct();
       widget.statsService?.recordLetterTap(key);
+      widget.statsService?.recordDailyAccuracy(_todayKey, correct: 1, wrong: 0);
       widget.adaptiveDifficultyService?.recordEvent(correct: true);
       setState(() {
         _revealedLetters[_currentLetterIndex] = true;
@@ -390,6 +407,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Track the wrong tap with what was expected
     final expected = _targetText[_currentLetterIndex];
     widget.statsService?.recordWrongTap(tappedKey, expected);
+    widget.statsService?.recordDailyAccuracy(_todayKey, correct: 0, wrong: 1);
     widget.adaptiveDifficultyService?.recordEvent(correct: false);
     // Notify personality service of incorrect attempt
     if (widget.profileId.isNotEmpty) {
@@ -443,6 +461,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       setState(() => _nudgeKey = expected);
       _nudgeController.forward(from: 0);
     }
+  }
+
+  /// Buy a hint for 2 star coins — reveals the correct next letter.
+  /// Only available for Adventurer/Champion tiers, once per word.
+  static const _hintCost = 2;
+
+  void _buyHint() {
+    if (_purchasedHintUsed) return;
+    if (_currentLetterIndex >= _targetText.length) return;
+    if (!widget.progressService.spendStarCoins(_hintCost)) {
+      // Not enough coins — show feedback
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Not enough coins! Need $_hintCost coins.',
+            style: AppFonts.nunito(fontSize: 14, color: Colors.white),
+          ),
+          backgroundColor: AppColors.surface,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _purchasedHintUsed = true;
+      _hintRevealing = true;
+      final expected = _targetText[_currentLetterIndex].toUpperCase();
+      _nudgeKey = expected;
+    });
+    _nudgeController.forward(from: 0);
+
+    // Auto-hide after brief moment
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _hintRevealing = false);
+    });
   }
 
   /// Play a zone-themed level-complete phrase.
@@ -546,8 +602,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Champion quality gate
     final wordPassedChampion = !_isChampion || _mistakesThisWord <= 1;
 
-    // Champion perfect streak
+    // Champion perfect streak + tier mistake tracking
     if (_isChampion) {
+      _championTierMistakes += _mistakesThisWord;
       if (_mistakesThisWord == 0) {
         _perfectStreak++;
         _streakPopController.forward(from: 0);
