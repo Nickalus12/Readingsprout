@@ -3,10 +3,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/progress.dart';
 import '../services/progress_service.dart';
 import '../theme/app_theme.dart';
+import '../data/dolch_words.dart';
 
-/// A bottom sheet that lets the player pick Explorer / Adventurer / Champion
-/// before entering a level.
-class TierSelectionSheet extends StatelessWidget {
+/// A full-screen level detail overlay that shows:
+/// - The level's words displayed large and clear
+/// - A simple visual difficulty picker (3 big tappable cards)
+/// - A big PLAY button
+///
+/// Designed for a 4-year-old who cannot read — everything is visual.
+class TierSelectionSheet extends StatefulWidget {
   final int level;
   final String levelName;
   final String zoneName;
@@ -24,7 +29,7 @@ class TierSelectionSheet extends StatelessWidget {
     this.suggestedTier = 1,
   });
 
-  /// Show this sheet as a modal bottom sheet and return the selected tier.
+  /// Show this as a modal bottom sheet and return the selected tier.
   static Future<WordTier?> show({
     required BuildContext context,
     required int level,
@@ -49,14 +54,33 @@ class TierSelectionSheet extends StatelessWidget {
   }
 
   @override
+  State<TierSelectionSheet> createState() => _TierSelectionSheetState();
+}
+
+class _TierSelectionSheetState extends State<TierSelectionSheet> {
+  late int _selectedTierValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTierValue = widget.suggestedTier;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final lp = progressService.getLevel(level);
+    final screenW = MediaQuery.of(context).size.width;
+    final sf = (screenW / 400).clamp(0.7, 1.2);
+    final lp = widget.progressService.getLevel(widget.level);
+    final words = DolchWords.wordsForLevel(widget.level);
 
     return Container(
-      decoration: const BoxDecoration(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: const Border(
           top: BorderSide(color: AppColors.border, width: 1),
           left: BorderSide(color: AppColors.border, width: 1),
           right: BorderSide(color: AppColors.border, width: 1),
@@ -67,513 +91,424 @@ class TierSelectionSheet extends StatelessWidget {
             MediaQuery.of(context).padding.bottom +
             16,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag handle
-          Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 8),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.secondaryText.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          // Title
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
-            child: Text(
-              levelName,
-              style: AppFonts.fredoka(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primaryText,
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.secondaryText.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
-          Text(
-            zoneName,
-            style: AppFonts.nunito(
-              fontSize: 13,
-              color: AppColors.secondaryText,
-            ),
-          ),
 
-          const SizedBox(height: 10),
-
-          // Helper text explaining the tier system
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              'Choose your difficulty \u2014 earn a star for each tier!',
-              textAlign: TextAlign.center,
-              style: AppFonts.nunito(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: AppColors.secondaryText.withValues(alpha: 0.6),
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Tier cards
-          for (final tier in WordTier.values) ...[
-            _TierOptionCard(
-              tier: tier,
-              level: level,
-              levelProgress: lp,
-              unlocked: progressService.isTierUnlocked(level, tier.value),
-              isSuggested: tier.value == suggestedTier,
-              onTap: () => onTierSelected(tier),
-            )
-                .animate()
-                .fadeIn(
-                  delay: Duration(milliseconds: tier.value * 80),
-                  duration: 300.ms,
-                )
-                .slideY(
-                  begin: 0.08,
-                  end: 0,
-                  delay: Duration(milliseconds: tier.value * 80),
-                  curve: Curves.easeOutCubic,
+            // Level name
+            Padding(
+              padding: EdgeInsets.fromLTRB(24 * sf, 4 * sf, 24 * sf, 2 * sf),
+              child: Text(
+                widget.levelName,
+                style: AppFonts.fredoka(
+                  fontSize: 22 * sf,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primaryText,
                 ),
-          ],
+              ),
+            ),
 
-          const SizedBox(height: 8),
-        ],
+            // Star display — big and clear
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(3, (i) {
+                final earned = lp.highestCompletedTier > i;
+                final Color starColor;
+                if (i == 0) {
+                  starColor = AppColors.bronze;
+                } else if (i == 1) {
+                  starColor = AppColors.silver;
+                } else {
+                  starColor = AppColors.starGold;
+                }
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4 * sf),
+                  child: Icon(
+                    earned ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 28 * sf,
+                    color: earned
+                        ? starColor
+                        : AppColors.secondaryText.withValues(alpha: 0.25),
+                  ),
+                );
+              }),
+            ),
+
+            SizedBox(height: 12 * sf),
+
+            // Words grid — show ALL words big and clear
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20 * sf),
+              child: Wrap(
+                spacing: 8 * sf,
+                runSpacing: 8 * sf,
+                alignment: WrapAlignment.center,
+                children: words.map((word) {
+                  return Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 14 * sf,
+                      vertical: 8 * sf,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(12 * sf),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Text(
+                      word.text,
+                      style: AppFonts.fredoka(
+                        fontSize: 18 * sf,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.primaryText,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            SizedBox(height: 16 * sf),
+
+            // Difficulty picker — 3 big visual cards in a row
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16 * sf),
+              child: Row(
+                children: WordTier.values.map((tier) {
+                  final unlocked = widget.progressService
+                      .isTierUnlocked(widget.level, tier.value);
+                  final isSelected = _selectedTierValue == tier.value;
+                  final tierProg = lp.tierProgress[tier.value];
+                  final isComplete = tierProg?.isComplete ?? false;
+
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4 * sf),
+                      child: _DifficultyCard(
+                        tier: tier,
+                        unlocked: unlocked,
+                        isSelected: isSelected,
+                        isComplete: isComplete,
+                        sf: sf,
+                        onTap: unlocked
+                            ? () => setState(
+                                () => _selectedTierValue = tier.value)
+                            : null,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            SizedBox(height: 16 * sf),
+
+            // Big PLAY button
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24 * sf),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56 * sf,
+                child: _PlayButton(
+                  tier: WordTier.fromValue(_selectedTierValue)!,
+                  sf: sf,
+                  onTap: () {
+                    final tier = WordTier.fromValue(_selectedTierValue);
+                    if (tier != null) widget.onTierSelected(tier);
+                  },
+                ),
+              ),
+            ),
+
+            SizedBox(height: 8 * sf),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── Individual tier card ────────────────────────────────────────────────
+// ── Difficulty card (one of 3 in the horizontal row) ────────────────────
 
-class _TierOptionCard extends StatelessWidget {
+class _DifficultyCard extends StatelessWidget {
   final WordTier tier;
-  final int level;
-  final LevelProgress levelProgress;
   final bool unlocked;
-  final bool isSuggested;
-  final VoidCallback onTap;
+  final bool isSelected;
+  final bool isComplete;
+  final double sf;
+  final VoidCallback? onTap;
 
-  const _TierOptionCard({
+  const _DifficultyCard({
     required this.tier,
-    required this.level,
-    required this.levelProgress,
     required this.unlocked,
-    this.isSuggested = false,
-    required this.onTap,
+    required this.isSelected,
+    required this.isComplete,
+    required this.sf,
+    this.onTap,
   });
 
-  String get _tierEmoji {
+  IconData get _icon {
     switch (tier) {
       case WordTier.explorer:
-        return '\u{1F31F}'; // 🌟
+        return Icons.child_care_rounded;
       case WordTier.adventurer:
-        return '\u{2694}\u{FE0F}'; // ⚔️
-      case WordTier.champion:
-        return '\u{1F451}'; // 👑
-    }
-  }
-
-  IconData get _tierIcon {
-    switch (tier) {
-      case WordTier.explorer:
-        return Icons.explore_rounded;
-      case WordTier.adventurer:
-        return Icons.map_rounded;
+        return Icons.local_fire_department_rounded;
       case WordTier.champion:
         return Icons.emoji_events_rounded;
     }
   }
 
-  String get _tierTagline {
+  Color get _cardColor {
     switch (tier) {
       case WordTier.explorer:
-        return 'Learning mode \u2014 hints help you!';
+        return const Color(0xFF4CAF50); // green
       case WordTier.adventurer:
-        return 'Challenge mode \u2014 fewer hints!';
+        return const Color(0xFF42A5F5); // blue
       case WordTier.champion:
-        return 'Master mode \u2014 almost perfect!';
+        return AppColors.starGold;
     }
   }
 
-  String get _tierDetail {
+  String get _label {
     switch (tier) {
       case WordTier.explorer:
-        return 'Letters glow to guide you. Mistakes are OK!';
+        return 'Easy';
       case WordTier.adventurer:
-        return 'No letter hints. A few mistakes allowed.';
+        return 'Medium';
       case WordTier.champion:
-        return 'Spell from memory with near-zero mistakes.';
-    }
-  }
-
-  int get _difficultyStars => tier.value;
-
-  String? get _lockReason {
-    if (unlocked) return null;
-    switch (tier) {
-      case WordTier.explorer:
-        return null;
-      case WordTier.adventurer:
-        return 'Finish Explorer to unlock!';
-      case WordTier.champion:
-        return 'Finish Adventurer to unlock!';
+        return 'Hard';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final tierProg = levelProgress.tierProgress[tier.value];
-    final isComplete = tierProg?.isComplete ?? false;
-    final wordsCompleted = tierProg?.wordsCompleted ?? 0;
-    final accentColor = tier.color;
+    final color = _cardColor;
+    final starCount = tier.value;
 
-    final semanticStatus = isComplete
-        ? 'completed'
-        : unlocked
-            ? 'available'
-            : 'locked';
-
-    return Semantics(
-      label: '${tier.displayName} tier, $semanticStatus',
-      hint: unlocked ? 'Tap to play this tier' : 'Complete previous tier to unlock',
-      button: unlocked,
-      enabled: unlocked,
-      child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: GestureDetector(
-        onTap: unlocked ? onTap : null,
-        child: AnimatedOpacity(
-          opacity: unlocked ? 1.0 : 0.45,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        opacity: unlocked ? 1.0 : 0.4,
+        duration: const Duration(milliseconds: 200),
+        child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: isComplete
-                  ? accentColor.withValues(alpha: 0.08)
-                  : (isSuggested && unlocked)
-                      ? accentColor.withValues(alpha: 0.06)
-                      : AppColors.background.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: (isSuggested && unlocked && !isComplete)
-                    ? AppColors.electricBlue.withValues(alpha: 0.5)
-                    : isComplete
-                        ? accentColor.withValues(alpha: 0.35)
-                        : unlocked
-                            ? accentColor.withValues(alpha: 0.15)
-                            : AppColors.border.withValues(alpha: 0.3),
-                width: (isSuggested && unlocked && !isComplete) ? 2.0 : 1.5,
-              ),
-              boxShadow: [
-                if (isSuggested && unlocked && !isComplete)
-                  BoxShadow(
-                    color: AppColors.electricBlue.withValues(alpha: 0.08),
-                    blurRadius: 12,
-                    spreadRadius: 1,
-                  ),
-              ],
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.symmetric(
+            vertical: 12 * sf,
+            horizontal: 8 * sf,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? color.withValues(alpha: 0.15)
+                : AppColors.background.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16 * sf),
+            border: Border.all(
+              color: isSelected
+                  ? color.withValues(alpha: 0.6)
+                  : AppColors.border.withValues(alpha: 0.3),
+              width: isSelected ? 2.5 : 1.5,
             ),
-            child: Row(
-              children: [
-                // Tier icon with emoji badge
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon or lock
+              if (unlocked)
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: unlocked
-                            ? accentColor.withValues(alpha: 0.12)
-                            : AppColors.surface.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(13),
-                        border: isComplete
-                            ? Border.all(
-                                color: accentColor.withValues(alpha: 0.3),
-                                width: 1.5,
-                              )
-                            : null,
-                      ),
-                      child: unlocked
-                          ? Icon(_tierIcon, color: accentColor, size: 24)
-                          : Icon(
-                              Icons.lock_rounded,
-                              color: AppColors.secondaryText
-                                  .withValues(alpha: 0.35),
-                              size: 20,
-                            ),
+                    Icon(
+                      _icon,
+                      size: 32 * sf,
+                      color: isSelected ? color : color.withValues(alpha: 0.6),
                     ),
-                    // Emoji badge (top-right)
-                    if (unlocked)
-                      Positioned(
-                        top: -6,
-                        right: -6,
-                        child: Text(
-                          _tierEmoji,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    // Checkmark overlay for completed tiers
                     if (isComplete)
                       Positioned(
-                        bottom: -4,
-                        right: -4,
+                        top: -4 * sf,
+                        right: -8 * sf,
                         child: Container(
-                          width: 18,
-                          height: 18,
+                          width: 16 * sf,
+                          height: 16 * sf,
                           decoration: BoxDecoration(
-                            color: accentColor,
+                            color: color,
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: AppColors.surface,
-                              width: 2,
+                              width: 1.5,
                             ),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.check_rounded,
-                            size: 11,
+                            size: 10 * sf,
                             color: Colors.white,
                           ),
                         ),
                       ),
                   ],
-                ),
-                const SizedBox(width: 14),
-
-                // Name + tagline + detail + difficulty
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top row: name + recommended badge
-                      Row(
-                        children: [
-                          Text(
-                            tier.displayName,
-                            style: AppFonts.fredoka(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: unlocked
-                                  ? AppColors.primaryText
-                                  : AppColors.secondaryText,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Difficulty stars
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: List.generate(3, (i) {
-                              final filled = i < _difficultyStars;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 2),
-                                child: Icon(
-                                  filled
-                                      ? Icons.star_rounded
-                                      : Icons.star_border_rounded,
-                                  size: 13,
-                                  color: filled
-                                      ? (unlocked
-                                          ? accentColor
-                                          : AppColors.secondaryText
-                                              .withValues(alpha: 0.4))
-                                      : AppColors.secondaryText
-                                          .withValues(alpha: 0.25),
-                                ),
-                              );
-                            }),
-                          ),
-                          if (isSuggested && unlocked && !isComplete) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.electricBlue
-                                    .withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: AppColors.electricBlue
-                                      .withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.auto_awesome_rounded,
-                                    size: 10,
-                                    color: AppColors.electricBlue,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    'Best fit',
-                                    style: AppFonts.nunito(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.electricBlue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-
-                      // Tagline
-                      Text(
-                        unlocked ? _tierTagline : _lockReason ?? _tierTagline,
-                        style: AppFonts.nunito(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: unlocked
-                              ? accentColor.withValues(alpha: 0.85)
-                              : AppColors.secondaryText
-                                  .withValues(alpha: 0.5),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-
-                      // Detail description
-                      if (unlocked)
-                        Text(
-                          _tierDetail,
-                          style: AppFonts.nunito(
-                            fontSize: 11,
-                            color: AppColors.secondaryText
-                                .withValues(alpha: 0.6),
-                          ),
-                        ),
-
-                      // Progress indicator
-                      if (unlocked && wordsCompleted > 0 && !isComplete)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 5),
-                          child: Row(
-                            children: [
-                              // Mini progress bar
-                              SizedBox(
-                                width: 60,
-                                height: 4,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(2),
-                                  child: LinearProgressIndicator(
-                                    value: wordsCompleted / 10.0,
-                                    backgroundColor:
-                                        accentColor.withValues(alpha: 0.1),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      accentColor.withValues(alpha: 0.7),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '$wordsCompleted/10 words',
-                                style: AppFonts.nunito(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: accentColor.withValues(alpha: 0.8),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
+                )
+              else
+                Icon(
+                  Icons.lock_rounded,
+                  size: 28 * sf,
+                  color: AppColors.secondaryText.withValues(alpha: 0.3),
                 ),
 
-                const SizedBox(width: 8),
+              SizedBox(height: 6 * sf),
 
-                // Right side: play button or lock
-                if (unlocked)
-                  Container(
-                    constraints: const BoxConstraints(minHeight: 42),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: isSuggested && !isComplete
-                          ? LinearGradient(
-                              colors: [
-                                accentColor.withValues(alpha: 0.2),
-                                accentColor.withValues(alpha: 0.12),
-                              ],
-                            )
-                          : null,
-                      color: isSuggested && !isComplete
-                          ? null
-                          : accentColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: 0.35),
-                      ),
-                      boxShadow: [
-                        if (isSuggested && !isComplete)
-                          BoxShadow(
-                            color: accentColor.withValues(alpha: 0.18),
-                            blurRadius: 12,
-                            spreadRadius: 1,
-                          ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isComplete
-                              ? Icons.replay_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 18,
-                          color: accentColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          isComplete ? 'REPLAY' : 'PLAY',
-                          style: AppFonts.fredoka(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: accentColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  // Locked state - show lock with tier number
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.surface.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: AppColors.border.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.lock_rounded,
-                      size: 18,
-                      color: AppColors.secondaryText.withValues(alpha: 0.3),
-                    ),
-                  ),
-              ],
-            ),
+              // Star indicators
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (i) {
+                  final filled = i < starCount;
+                  return Icon(
+                    filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 14 * sf,
+                    color: filled
+                        ? (unlocked
+                            ? color
+                            : AppColors.secondaryText.withValues(alpha: 0.3))
+                        : AppColors.secondaryText.withValues(alpha: 0.2),
+                  );
+                }),
+              ),
+
+              SizedBox(height: 4 * sf),
+
+              // Label
+              Text(
+                _label,
+                style: AppFonts.fredoka(
+                  fontSize: 13 * sf,
+                  fontWeight: FontWeight.w600,
+                  color: unlocked
+                      ? (isSelected ? color : AppColors.secondaryText)
+                      : AppColors.secondaryText.withValues(alpha: 0.4),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-      ),
     );
+  }
+}
+
+// ── Big PLAY button ────────────────────────────────────────────────────
+
+class _PlayButton extends StatefulWidget {
+  final WordTier tier;
+  final double sf;
+  final VoidCallback onTap;
+
+  const _PlayButton({
+    required this.tier,
+    required this.sf,
+    required this.onTap,
+  });
+
+  @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> {
+  double _scale = 1.0;
+
+  Color get _color {
+    switch (widget.tier) {
+      case WordTier.explorer:
+        return const Color(0xFF4CAF50);
+      case WordTier.adventurer:
+        return const Color(0xFF42A5F5);
+      case WordTier.champion:
+        return AppColors.starGold;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _color;
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapUp: (_) {
+        setState(() => _scale = 1.0);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _scale = 1.0),
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 100),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                color.withValues(alpha: 0.3),
+                color.withValues(alpha: 0.15),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20 * widget.sf),
+            border: Border.all(
+              color: color.withValues(alpha: 0.5),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.2),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.play_arrow_rounded,
+                size: 32 * widget.sf,
+                color: color,
+              ),
+              SizedBox(width: 8 * widget.sf),
+              Text(
+                'PLAY',
+                style: AppFonts.fredoka(
+                  fontSize: 22 * widget.sf,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(duration: 300.ms)
+        .scaleXY(begin: 0.9, end: 1.0, duration: 300.ms, curve: Curves.easeOutCubic);
   }
 }

@@ -56,16 +56,22 @@ class LevelSelectScreen extends StatefulWidget {
 
 class _LevelSelectScreenState extends State<LevelSelectScreen>
     with TickerProviderStateMixin {
-  // Track which zones are expanded. Default: expand the zone containing the
-  // highest unlocked level, collapse others.
+  // Track which zones are expanded.
   late final Map<int, bool> _expanded;
 
-  /// Tracks which locked zone is currently shaking (gentle "not yet!" hint).
+  /// Tracks which locked zone is currently shaking.
   int? _shakingZoneIndex;
   AnimationController? _lockedShakeController;
 
-  /// Zone index for the animated background (based on highest unlocked level).
+  /// Tracks which locked level card is currently shaking.
+  int? _shakingLevelNumber;
+  AnimationController? _lockedLevelShakeController;
+
+  /// Zone index for the animated background.
   late final int _activeZoneIndex;
+
+  /// Overlay entry for the "locked" tooltip bubble.
+  OverlayEntry? _lockedTooltipEntry;
 
   @override
   void initState() {
@@ -75,15 +81,12 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     _expanded = {};
     for (int i = 0; i < DolchWords.zones.length; i++) {
       final zone = DolchWords.zones[i];
-      // Only expand if the zone contains the highest unlocked level
-      // AND the zone is actually unlocked
       final zoneHasUnlocked = List.generate(
         zone.levelCount,
         (j) => widget.progressService.isLevelUnlocked(zone.startLevel + j),
       ).any((u) => u);
       _expanded[i] = zoneHasUnlocked && zone.containsLevel(highestUnlocked);
     }
-    // If nothing matched (shouldn't happen), open the first zone.
     if (!_expanded.values.any((v) => v)) {
       _expanded[0] = true;
     }
@@ -97,17 +100,71 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
           if (mounted) setState(() => _shakingZoneIndex = null);
         }
       });
+
+    _lockedLevelShakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _lockedLevelShakeController?.reset();
+          if (mounted) setState(() => _shakingLevelNumber = null);
+        }
+      });
   }
 
   @override
   void dispose() {
     _lockedShakeController?.dispose();
+    _lockedLevelShakeController?.dispose();
+    _dismissLockedTooltip();
     super.dispose();
   }
 
   void _shakeLockedZone(int zoneIndex) {
     setState(() => _shakingZoneIndex = zoneIndex);
     _lockedShakeController?.forward(from: 0);
+  }
+
+  void _shakeLockedLevel(int levelNumber, BuildContext cardContext) {
+    setState(() => _shakingLevelNumber = levelNumber);
+    _lockedLevelShakeController?.forward(from: 0);
+    widget.audioService.playError();
+    _showLockedTooltip(cardContext, levelNumber);
+  }
+
+  void _showLockedTooltip(BuildContext cardContext, int levelNumber) {
+    _dismissLockedTooltip();
+
+    final renderBox = cardContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    // Find what level they need to complete first
+    final previousLevel = levelNumber - 1;
+    final previousName =
+        previousLevel >= 1 ? DolchWords.levelName(previousLevel) : '';
+
+    _lockedTooltipEntry = OverlayEntry(
+      builder: (context) => _LockedTooltip(
+        left: offset.dx + size.width / 2,
+        top: offset.dy - 8,
+        message: previousName.isNotEmpty
+            ? 'Finish $previousName first!'
+            : 'Not yet!',
+        onDismiss: _dismissLockedTooltip,
+      ),
+    );
+
+    Overlay.of(context).insert(_lockedTooltipEntry!);
+
+    // Auto-dismiss after 2 seconds
+    Future.delayed(const Duration(seconds: 2), _dismissLockedTooltip);
+  }
+
+  void _dismissLockedTooltip() {
+    _lockedTooltipEntry?.remove();
+    _lockedTooltipEntry = null;
   }
 
   @override
@@ -129,9 +186,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
           SafeArea(
             child: Column(
               children: [
-                // Header
+                // Header — wrapped to prevent overflow
                 Padding(
-                  padding: EdgeInsets.fromLTRB(8 * sf, 8 * sf, 16 * sf, 0),
+                  padding: EdgeInsets.fromLTRB(8 * sf, 8 * sf, 8 * sf, 0),
                   child: Row(
                     children: [
                       Semantics(
@@ -150,27 +207,31 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                         ),
                       ),
                       SizedBox(width: 4 * sf),
-                      GestureDetector(
-                        onTap: () => widget.audioService.playWord('adventure_path'),
-                        child: Text(
-                          'Adventure Path',
-                          style: AppFonts.fredoka(
-                            fontSize: 22 * sf,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryText,
-                            shadows: [
-                              Shadow(
-                                color: AppColors.electricBlue
-                                    .withValues(alpha: 0.3),
-                                blurRadius: 12 * sf,
-                              ),
-                            ],
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () =>
+                              widget.audioService.playWord('adventure_path'),
+                          child: Text(
+                            'Adventure Path',
+                            style: AppFonts.fredoka(
+                              fontSize: 22 * sf,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryText,
+                              shadows: [
+                                Shadow(
+                                  color: AppColors.electricBlue
+                                      .withValues(alpha: 0.3),
+                                  blurRadius: 12 * sf,
+                                ),
+                              ],
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                      const Spacer(),
+                      SizedBox(width: 6 * sf),
                       _CoinBadge(coins: widget.progressService.starCoins),
-                      SizedBox(width: 8 * sf),
+                      SizedBox(width: 6 * sf),
                       _TotalStarsBadge(
                         stars: widget.progressService.totalStars,
                         maxStars: DolchWords.totalLevels * 3,
@@ -184,7 +245,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                 Expanded(
                   child: ListView.builder(
                     physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(16 * sf, 4 * sf, 16 * sf, 24 * sf),
+                    padding: EdgeInsets.fromLTRB(
+                        12 * sf, 4 * sf, 12 * sf, 24 * sf),
                     itemCount: DolchWords.zones.length,
                     itemBuilder: (context, zoneIndex) {
                       return _buildZoneSection(context, zoneIndex);
@@ -220,9 +282,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     }
 
     final zoneComplete = zoneStars == zonePossibleStars;
-    final zoneProgress = zonePossibleStars > 0
-        ? zoneStars / zonePossibleStars
-        : 0.0;
+    final zoneProgress =
+        zonePossibleStars > 0 ? zoneStars / zonePossibleStars : 0.0;
 
     // Determine previous zone name for locked-zone hint
     String? previousZoneName;
@@ -234,14 +295,13 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
       padding: EdgeInsets.only(bottom: 6 * sf),
       child: Column(
         children: [
-          // Zone header (tappable to expand/collapse, shake if locked)
+          // Zone header
           GestureDetector(
             onTap: zoneUnlocked
                 ? () => setState(() {
                       _expanded[zoneIndex] = !isExpanded;
                     })
                 : () {
-                    // Gentle shake to indicate "not yet!"
                     _shakeLockedZone(zoneIndex);
                   },
             child: AnimatedBuilder(
@@ -258,145 +318,153 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                 );
               },
               child: AnimatedOpacity(
-              opacity: zoneUnlocked ? 1.0 : 0.55,
-              duration: const Duration(milliseconds: 250),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 14 * sf, vertical: 12 * sf),
-                decoration: BoxDecoration(
-                  color: zoneComplete
-                      ? AppColors.starGold.withValues(alpha: 0.06)
-                      : zoneUnlocked
-                          ? AppColors.surface.withValues(alpha: 0.8)
-                          : AppColors.surface.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(14 * sf),
-                  border: Border.all(
+                opacity: zoneUnlocked ? 1.0 : 0.55,
+                duration: const Duration(milliseconds: 250),
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: 14 * sf, vertical: 12 * sf),
+                  decoration: BoxDecoration(
                     color: zoneComplete
-                        ? AppColors.starGold.withValues(alpha: 0.25)
+                        ? AppColors.starGold.withValues(alpha: 0.06)
                         : zoneUnlocked
-                            ? AppColors.border
-                            : AppColors.border.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    // Zone icon
-                    Container(
-                      width: 38 * sf,
-                      height: 38 * sf,
-                      decoration: BoxDecoration(
-                        color: zoneComplete
-                            ? AppColors.starGold.withValues(alpha: 0.15)
-                            : zoneUnlocked
-                                ? AppColors.electricBlue.withValues(alpha: 0.1)
-                                : AppColors.surface.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(10 * sf),
-                      ),
-                      alignment: Alignment.center,
-                      child: zoneUnlocked
-                          ? Text(
-                              zone.icon,
-                              style: TextStyle(fontSize: 20 * sf),
-                            )
-                          : Icon(
-                              Icons.auto_awesome_rounded,
-                              color:
-                                  AppColors.secondaryText.withValues(alpha: 0.35),
-                              size: 18 * sf,
-                            ),
+                            ? AppColors.surface.withValues(alpha: 0.8)
+                            : AppColors.surface.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(14 * sf),
+                    border: Border.all(
+                      color: zoneComplete
+                          ? AppColors.starGold.withValues(alpha: 0.25)
+                          : zoneUnlocked
+                              ? AppColors.border
+                              : AppColors.border.withValues(alpha: 0.35),
                     ),
-                    SizedBox(width: 12 * sf),
+                  ),
+                  child: Row(
+                    children: [
+                      // Zone icon
+                      Container(
+                        width: 38 * sf,
+                        height: 38 * sf,
+                        decoration: BoxDecoration(
+                          color: zoneComplete
+                              ? AppColors.starGold.withValues(alpha: 0.15)
+                              : zoneUnlocked
+                                  ? AppColors.electricBlue
+                                      .withValues(alpha: 0.1)
+                                  : AppColors.surface.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(10 * sf),
+                        ),
+                        alignment: Alignment.center,
+                        child: zoneUnlocked
+                            ? Text(
+                                zone.icon,
+                                style: TextStyle(fontSize: 20 * sf),
+                              )
+                            : Icon(
+                                Icons.auto_awesome_rounded,
+                                color: AppColors.secondaryText
+                                    .withValues(alpha: 0.35),
+                                size: 18 * sf,
+                              ),
+                      ),
+                      SizedBox(width: 12 * sf),
 
-                    // Zone name + star count / locked message
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GestureDetector(
-                            onTap: () => widget.audioService.playWord(
-                              zone.name.toLowerCase().replaceAll(' ', '_'),
-                            ),
-                            child: Text(
-                              zone.name,
-                              style: AppFonts.fredoka(
-                                fontSize: 17 * sf,
-                                fontWeight: FontWeight.w600,
-                                color: zoneUnlocked
-                                    ? AppColors.primaryText
-                                    : AppColors.secondaryText
-                                        .withValues(alpha: 0.7),
+                      // Zone name + star count / locked message
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () => widget.audioService.playWord(
+                                zone.name.toLowerCase().replaceAll(' ', '_'),
+                              ),
+                              child: Text(
+                                zone.name,
+                                style: AppFonts.fredoka(
+                                  fontSize: 17 * sf,
+                                  fontWeight: FontWeight.w600,
+                                  color: zoneUnlocked
+                                      ? AppColors.primaryText
+                                      : AppColors.secondaryText
+                                          .withValues(alpha: 0.7),
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
-                          SizedBox(height: 4 * sf),
-                          if (zoneUnlocked)
-                            Row(
-                              children: [
-                                Icon(Icons.star_rounded,
-                                    size: 13 * sf, color: AppColors.starGold),
-                                SizedBox(width: 3 * sf),
-                                Text(
-                                  '$zoneStars / $zonePossibleStars',
-                                  style: AppFonts.nunito(
-                                    fontSize: 12 * sf,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.secondaryText,
+                            SizedBox(height: 4 * sf),
+                            if (zoneUnlocked)
+                              Row(
+                                children: [
+                                  Icon(Icons.star_rounded,
+                                      size: 13 * sf,
+                                      color: AppColors.starGold),
+                                  SizedBox(width: 3 * sf),
+                                  Text(
+                                    '$zoneStars / $zonePossibleStars',
+                                    style: AppFonts.nunito(
+                                      fontSize: 12 * sf,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.secondaryText,
+                                    ),
                                   ),
-                                ),
-                                SizedBox(width: 12 * sf),
-                                // Progress bar
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(2 * sf),
-                                    child: SizedBox(
-                                      height: 4 * sf,
-                                      child: LinearProgressIndicator(
-                                        value: zoneProgress,
-                                        backgroundColor: AppColors.background,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          zoneComplete
-                                              ? AppColors.starGold
-                                              : AppColors.electricBlue,
+                                  SizedBox(width: 8 * sf),
+                                  // Progress bar
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius:
+                                          BorderRadius.circular(2 * sf),
+                                      child: SizedBox(
+                                        height: 4 * sf,
+                                        child: LinearProgressIndicator(
+                                          value: zoneProgress,
+                                          backgroundColor:
+                                              AppColors.background,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                            zoneComplete
+                                                ? AppColors.starGold
+                                                : AppColors.electricBlue,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
+                                ],
+                              )
+                            else
+                              Text(
+                                previousZoneName != null
+                                    ? 'Finish $previousZoneName first'
+                                    : 'Coming soon!',
+                                style: AppFonts.nunito(
+                                  fontSize: 12 * sf,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.secondaryText
+                                      .withValues(alpha: 0.5),
+                                  fontStyle: FontStyle.italic,
                                 ),
-                              ],
-                            )
-                          else
-                            Text(
-                              previousZoneName != null
-                                  ? 'Coming soon! Finish $previousZoneName first'
-                                  : 'Coming soon!',
-                              style: AppFonts.nunito(
-                                fontSize: 12 * sf,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.secondaryText
-                                    .withValues(alpha: 0.5),
-                                fontStyle: FontStyle.italic,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 8 * sf),
+                      SizedBox(width: 4 * sf),
 
-                    // Expand/collapse chevron
-                    AnimatedRotation(
-                      turns: isExpanded ? 0.5 : 0.0,
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.secondaryText.withValues(alpha: 0.6),
-                        size: 24 * sf,
+                      // Expand/collapse chevron
+                      AnimatedRotation(
+                        turns: isExpanded ? 0.5 : 0.0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color:
+                              AppColors.secondaryText.withValues(alpha: 0.6),
+                          size: 24 * sf,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           )
               .animate()
@@ -405,7 +473,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                 duration: 400.ms,
               ),
 
-          // Level cards (collapsible) — smooth spring expand/collapse
+          // Level cards (collapsible)
           if (zoneUnlocked)
             AnimatedSize(
               duration: const Duration(milliseconds: 350),
@@ -442,14 +510,18 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
             unlocked: unlocked,
             levelProgress: lp,
             accentColor: colors.first,
-            wordPreview:
-                words.take(5).map((w) => w.text).join(', '),
+            wordPreview: words.take(5).map((w) => w.text).join(', '),
             isTier2Unlocked:
                 widget.progressService.isTierUnlocked(level, 2),
             isTier3Unlocked:
                 widget.progressService.isTierUnlocked(level, 3),
+            isShaking: _shakingLevelNumber == level,
+            shakeController: _lockedLevelShakeController!,
             onTap: unlocked
                 ? () => _onLevelTapped(context, level)
+                : null,
+            onLockedTap: !unlocked
+                ? (cardContext) => _shakeLockedLevel(level, cardContext)
                 : null,
           )
               .animate()
@@ -474,8 +546,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   // ── Level tap → show TierSelectionSheet → navigate to game ──────────
 
   Future<void> _onLevelTapped(BuildContext context, int level) async {
-    final zoneName =
-        DolchWords.zoneForLevel(level).name;
+    final zoneName = DolchWords.zoneForLevel(level).name;
     final suggestedTier =
         widget.progressService.suggestedTierForLevel(level);
 
@@ -497,7 +568,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     final masteredBefore = <int>{};
     for (int i = 0; i < DolchWords.zones.length; i++) {
       final z = DolchWords.zones[i];
-      if (widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+      if (widget.progressService
+          .isZoneFullyMastered(z.startLevel, z.endLevel)) {
         masteredBefore.add(i);
       }
     }
@@ -556,14 +628,13 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     for (int i = 0; i < DolchWords.zones.length; i++) {
       if (masteredBefore.contains(i)) continue;
       final z = DolchWords.zones[i];
-      if (!widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+      if (!widget.progressService
+          .isZoneFullyMastered(z.startLevel, z.endLevel)) {
         continue;
       }
-      // Zone i was just mastered!
       final isLastZone = i + 1 >= DolchWords.zones.length;
       final nextZoneIndex = isLastZone ? i : i + 1;
 
-      // Play level complete sound as zone unlock fanfare
       widget.audioService.playLevelCompleteEffect();
 
       if (!context.mounted) return;
@@ -575,7 +646,6 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
         isAllComplete: isLastZone,
       );
 
-      // Only show one celebration at a time
       break;
     }
   }
@@ -592,7 +662,10 @@ class _LevelCard extends StatefulWidget {
   final String wordPreview;
   final bool isTier2Unlocked;
   final bool isTier3Unlocked;
+  final bool isShaking;
+  final AnimationController shakeController;
   final VoidCallback? onTap;
+  final void Function(BuildContext)? onLockedTap;
 
   const _LevelCard({
     required this.level,
@@ -603,7 +676,10 @@ class _LevelCard extends StatefulWidget {
     required this.wordPreview,
     required this.isTier2Unlocked,
     required this.isTier3Unlocked,
+    required this.isShaking,
+    required this.shakeController,
     this.onTap,
+    this.onLockedTap,
   });
 
   @override
@@ -614,7 +690,7 @@ class _LevelCardState extends State<_LevelCard> {
   double _scale = 1.0;
 
   void _onTapDown(TapDownDetails _) {
-    if (widget.onTap == null) return;
+    if (widget.onTap == null && widget.onLockedTap == null) return;
     setState(() => _scale = 0.95);
   }
 
@@ -634,115 +710,137 @@ class _LevelCardState extends State<_LevelCard> {
     final isComplete = widget.levelProgress.isComplete;
     final starsEarned = widget.levelProgress.starsEarned;
     final hasAnyStars = starsEarned > 0;
-    // "Next to play" = unlocked, not complete, and has no stars yet
     final isNextToPlay = widget.unlocked && !hasAnyStars && !isComplete;
 
     return Padding(
       padding: EdgeInsets.only(bottom: 8 * sf),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onTapDown: _onTapDown,
-        onTapUp: _onTapUp,
-        onTapCancel: _onTapCancel,
-        child: AnimatedScale(
-          scale: _scale,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-          child: AnimatedOpacity(
-            opacity: widget.unlocked ? 1.0 : 0.45,
-            duration: const Duration(milliseconds: 200),
-            child: Container(
-              padding: EdgeInsets.all(14 * sf),
-              decoration: BoxDecoration(
-                color: hasAnyStars
-                    ? widget.accentColor.withValues(alpha: 0.06)
-                    : isNextToPlay
-                        ? widget.accentColor.withValues(alpha: 0.04)
-                        : AppColors.surface.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(16 * sf),
-                border: Border.all(
+      child: AnimatedBuilder(
+        animation: widget.shakeController,
+        builder: (context, child) {
+          double offsetX = 0;
+          if (widget.isShaking && !widget.unlocked) {
+            final t = widget.shakeController.value;
+            offsetX = sin(t * pi * 4) * 6 * (1.0 - t);
+          }
+          return Transform.translate(
+            offset: Offset(offsetX, 0),
+            child: child,
+          );
+        },
+        child: GestureDetector(
+          onTap: widget.onTap ??
+              (widget.onLockedTap != null
+                  ? () => widget.onLockedTap!(context)
+                  : null),
+          onTapDown: _onTapDown,
+          onTapUp: _onTapUp,
+          onTapCancel: _onTapCancel,
+          child: AnimatedScale(
+            scale: _scale,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOut,
+            child: AnimatedOpacity(
+              opacity: widget.unlocked ? 1.0 : 0.45,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                padding: EdgeInsets.all(14 * sf),
+                decoration: BoxDecoration(
                   color: hasAnyStars
-                      ? widget.accentColor.withValues(alpha: 0.25)
+                      ? widget.accentColor.withValues(alpha: 0.06)
                       : isNextToPlay
-                          ? widget.accentColor.withValues(alpha: 0.3)
-                          : widget.unlocked
-                              ? widget.accentColor.withValues(alpha: 0.15)
-                              : AppColors.border.withValues(alpha: 0.5),
-                  width: isNextToPlay ? 1.8 : 1.5,
+                          ? widget.accentColor.withValues(alpha: 0.04)
+                          : AppColors.surface.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(16 * sf),
+                  border: Border.all(
+                    color: hasAnyStars
+                        ? widget.accentColor.withValues(alpha: 0.25)
+                        : isNextToPlay
+                            ? widget.accentColor.withValues(alpha: 0.3)
+                            : widget.unlocked
+                                ? widget.accentColor
+                                    .withValues(alpha: 0.15)
+                                : AppColors.border.withValues(alpha: 0.5),
+                    width: isNextToPlay ? 1.8 : 1.5,
+                  ),
+                  boxShadow: [
+                    if (isComplete)
+                      BoxShadow(
+                        color:
+                            widget.accentColor.withValues(alpha: 0.08),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    if (isNextToPlay)
+                      BoxShadow(
+                        color:
+                            widget.accentColor.withValues(alpha: 0.1),
+                        blurRadius: 12,
+                      ),
+                  ],
                 ),
-                boxShadow: [
-                  if (isComplete)
-                    BoxShadow(
-                      color: widget.accentColor.withValues(alpha: 0.08),
-                      blurRadius: 14,
-                      spreadRadius: 1,
+                child: Row(
+                  children: [
+                    // Left: Level number badge
+                    _LevelBadge(
+                      level: widget.level,
+                      unlocked: widget.unlocked,
+                      accentColor: widget.accentColor,
+                      overallProgress:
+                          widget.levelProgress.overallProgress,
+                      starsEarned: starsEarned,
                     ),
-                  if (isNextToPlay)
-                    BoxShadow(
-                      color: widget.accentColor.withValues(alpha: 0.1),
-                      blurRadius: 12,
-                    ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Left: Level number badge
-                  _LevelBadge(
-                    level: widget.level,
-                    unlocked: widget.unlocked,
-                    accentColor: widget.accentColor,
-                    overallProgress: widget.levelProgress.overallProgress,
-                    starsEarned: starsEarned,
-                  ),
-                  SizedBox(width: 14 * sf),
+                    SizedBox(width: 14 * sf),
 
-                  // Center: Level name + word preview
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.name,
-                          style: AppFonts.fredoka(
-                            fontSize: 15 * sf,
-                            fontWeight: FontWeight.w600,
-                            color: widget.unlocked
-                                ? AppColors.primaryText
-                                : AppColors.secondaryText,
+                    // Center: Level name + word preview
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.name,
+                            style: AppFonts.fredoka(
+                              fontSize: 15 * sf,
+                              fontWeight: FontWeight.w600,
+                              color: widget.unlocked
+                                  ? AppColors.primaryText
+                                  : AppColors.secondaryText,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        SizedBox(height: 4 * sf),
-                        Text(
-                          widget.wordPreview,
-                          style: AppFonts.nunito(
-                            fontSize: 12 * sf,
-                            color: AppColors.secondaryText
-                                .withValues(alpha: 0.7),
-                            fontStyle: FontStyle.italic,
+                          SizedBox(height: 4 * sf),
+                          Text(
+                            widget.wordPreview,
+                            style: AppFonts.nunito(
+                              fontSize: 12 * sf,
+                              color: AppColors.secondaryText
+                                  .withValues(alpha: 0.7),
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 10 * sf),
+                    SizedBox(width: 8 * sf),
 
-                  // Right: 3-star tier display or lock icon
-                  if (widget.unlocked)
-                    TierStarsDisplay(
-                      levelProgress: widget.levelProgress,
-                      isTier2Unlocked: widget.isTier2Unlocked,
-                      isTier3Unlocked: widget.isTier3Unlocked,
-                      starSize: 18 * sf,
-                    )
-                  else
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      color: AppColors.secondaryText.withValues(alpha: 0.3),
-                      size: 18 * sf,
-                    ),
-                ],
+                    // Right: 3-star tier display or lock icon
+                    if (widget.unlocked)
+                      TierStarsDisplay(
+                        levelProgress: widget.levelProgress,
+                        isTier2Unlocked: widget.isTier2Unlocked,
+                        isTier3Unlocked: widget.isTier3Unlocked,
+                        starSize: 18 * sf,
+                      )
+                    else
+                      Icon(
+                        Icons.auto_awesome_rounded,
+                        color: AppColors.secondaryText
+                            .withValues(alpha: 0.3),
+                        size: 18 * sf,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -774,7 +872,6 @@ class _LevelBadge extends StatelessWidget {
     final screenW = MediaQuery.of(context).size.width;
     final sf = (screenW / 400).clamp(0.7, 1.2);
 
-    // Ring color reflects highest tier completed
     final Color ringColor;
     if (starsEarned >= 3) {
       ringColor = AppColors.starGold;
@@ -820,6 +917,115 @@ class _LevelBadge extends StatelessWidget {
   }
 }
 
+// ── Locked Tooltip ──────────────────────────────────────────────────────
+
+class _LockedTooltip extends StatefulWidget {
+  final double left;
+  final double top;
+  final String message;
+  final VoidCallback onDismiss;
+
+  const _LockedTooltip({
+    required this.left,
+    required this.top,
+    required this.message,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_LockedTooltip> createState() => _LockedTooltipState();
+}
+
+class _LockedTooltipState extends State<_LockedTooltip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 8),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: widget.top - 40,
+      child: GestureDetector(
+        onTap: widget.onDismiss,
+        behavior: HitTestBehavior.translucent,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Opacity(
+              opacity: _opacity.value,
+              child: Transform.translate(
+                offset: _slide.value,
+                child: child,
+              ),
+            );
+          },
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.electricBlue.withValues(alpha: 0.3),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.electricBlue.withValues(alpha: 0.1),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.lock_rounded,
+                    size: 16,
+                    color: AppColors.electricBlue.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.message,
+                    style: AppFonts.fredoka(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.primaryText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Coin Badge ───────────────────────────────────────────────────────
 
 class _CoinBadge extends StatelessWidget {
@@ -832,7 +1038,7 @@ class _CoinBadge extends StatelessWidget {
     final sf = (screenW / 400).clamp(0.7, 1.2);
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10 * sf, vertical: 5 * sf),
+      padding: EdgeInsets.symmetric(horizontal: 8 * sf, vertical: 4 * sf),
       decoration: BoxDecoration(
         color: AppColors.starGold.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12 * sf),
@@ -844,12 +1050,13 @@ class _CoinBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.monetization_on_rounded,
-              color: AppColors.starGold.withValues(alpha: 0.8), size: 16 * sf),
-          SizedBox(width: 4 * sf),
+              color: AppColors.starGold.withValues(alpha: 0.8),
+              size: 14 * sf),
+          SizedBox(width: 3 * sf),
           Text(
             '$coins',
             style: AppFonts.fredoka(
-              fontSize: 14 * sf,
+              fontSize: 12 * sf,
               fontWeight: FontWeight.w600,
               color: AppColors.starGold.withValues(alpha: 0.8),
             ),
@@ -873,7 +1080,7 @@ class _TotalStarsBadge extends StatelessWidget {
     final sf = (screenW / 400).clamp(0.7, 1.2);
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10 * sf, vertical: 5 * sf),
+      padding: EdgeInsets.symmetric(horizontal: 8 * sf, vertical: 4 * sf),
       decoration: BoxDecoration(
         color: AppColors.starGold.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12 * sf),
@@ -885,12 +1092,12 @@ class _TotalStarsBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.star_rounded,
-              color: AppColors.starGold, size: 16 * sf),
-          SizedBox(width: 4 * sf),
+              color: AppColors.starGold, size: 14 * sf),
+          SizedBox(width: 3 * sf),
           Text(
             '$stars/$maxStars',
             style: AppFonts.fredoka(
-              fontSize: 14 * sf,
+              fontSize: 12 * sf,
               fontWeight: FontWeight.w600,
               color: AppColors.starGold,
             ),
