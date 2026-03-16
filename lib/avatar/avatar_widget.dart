@@ -3117,19 +3117,36 @@ class NosePainter extends CustomPainter {
       ..color = (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.22) ?? skinColor)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
 
-    // Breathing: nostrils flare more visibly
-    final breathFlare = breathingValue.value * 0.05;
+    // Breathing: nostrils flare subtly
+    final breathFlare = breathingValue.value * 0.04;
     // Nostril size pulses with breathing
-    final nostrilPulse = 1.0 + breathingValue.value * 0.15;
+    final nostrilPulse = 1.0 + breathingValue.value * 0.12;
 
     switch (style) {
-      case 0: // Button
-        canvas.drawCircle(Offset(w * 0.5, h * 0.5), w * 0.22, nosePaint);
-        // Nostril shadows (with breathing flare + pulse)
+      case 0: // Button — soft, subtle bump rather than hard circle
+        // Softer nose shape with gradient fade (not a solid circle)
+        final noseRect = Rect.fromCenter(
+          center: Offset(w * 0.5, h * 0.5),
+          width: w * 0.44,
+          height: h * 0.44,
+        );
+        canvas.drawOval(
+          noseRect,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                nosePaint.color.withValues(alpha: 0.65),
+                nosePaint.color.withValues(alpha: 0.25),
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ).createShader(noseRect),
+        );
+        // Nostril shadows (with breathing flare + pulse) — smaller for child
         canvas.drawCircle(
-            Offset(w * (0.36 - breathFlare), h * 0.58), w * 0.065 * nostrilPulse, shadowPaint);
+            Offset(w * (0.38 - breathFlare), h * 0.58), w * 0.055 * nostrilPulse, shadowPaint);
         canvas.drawCircle(
-            Offset(w * (0.64 + breathFlare), h * 0.58), w * 0.065 * nostrilPulse, shadowPaint);
+            Offset(w * (0.62 + breathFlare), h * 0.58), w * 0.055 * nostrilPulse, shadowPaint);
         // Bridge highlight
         canvas.drawCircle(Offset(w * 0.53, h * 0.36), w * 0.09, highlightPaint);
         // Nose bridge shadow refinement
@@ -3139,12 +3156,28 @@ class NosePainter extends CustomPainter {
         // Specular highlight at tip
         _drawNoseSpecular(canvas, w, h, Offset(w * 0.52, h * 0.42));
 
-      case 1: // Small
-        canvas.drawCircle(Offset(w * 0.5, h * 0.5), w * 0.14, nosePaint);
+      case 1: // Small — barely-there button nose, most kid-friendly
+        final smallNoseRect = Rect.fromCenter(
+          center: Offset(w * 0.5, h * 0.5),
+          width: w * 0.28,
+          height: h * 0.28,
+        );
+        canvas.drawOval(
+          smallNoseRect,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                nosePaint.color.withValues(alpha: 0.50),
+                nosePaint.color.withValues(alpha: 0.15),
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ).createShader(smallNoseRect),
+        );
         canvas.drawCircle(
-            Offset(w * (0.42 - breathFlare), h * 0.56), w * 0.035 * nostrilPulse, shadowPaint);
+            Offset(w * (0.42 - breathFlare), h * 0.56), w * 0.032 * nostrilPulse, shadowPaint);
         canvas.drawCircle(
-            Offset(w * (0.58 + breathFlare), h * 0.56), w * 0.035 * nostrilPulse, shadowPaint);
+            Offset(w * (0.58 + breathFlare), h * 0.56), w * 0.032 * nostrilPulse, shadowPaint);
         canvas.drawCircle(Offset(w * 0.53, h * 0.42), w * 0.05, highlightPaint);
         _drawBridgeShadow(canvas, w, h);
         _drawNoseTipGlow(canvas, w, h, Offset(w * 0.5, h * 0.5));
