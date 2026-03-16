@@ -877,26 +877,55 @@ class _MemoryMatchGameState extends State<MemoryMatchGame>
                     ),
                     const SizedBox(height: 28),
 
-                    // Replay button
-                    ElevatedButton.icon(
-                      onPressed: _restartGame,
-                      icon: const Icon(Icons.replay_rounded, size: 22),
-                      label: Text(
-                        'Play Again',
-                        style: AppFonts.fredoka(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
+                    // Action buttons
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _restartGame,
+                          icon: const Icon(Icons.replay_rounded, size: 22),
+                          label: Text(
+                            'Play Again',
+                            style: AppFonts.fredoka(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.violet,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.violet,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 32, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.home_rounded, size: 22),
+                          label: Text(
+                            'Done',
+                            style: AppFonts.fredoka(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.surface,
+                            foregroundColor: AppColors.primaryText,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: AppColors.border.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
