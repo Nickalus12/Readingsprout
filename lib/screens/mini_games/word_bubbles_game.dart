@@ -1095,7 +1095,7 @@ class _WordBubblesGameState extends State<WordBubblesGame>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _lives <= 0 ? 'Out of Lives!' : "Time's Up!",
+                _score > 0 ? 'Great Bubbling!' : 'Nice Try!',
                 style: AppFonts.fredoka(
                   fontSize: 30,
                   fontWeight: FontWeight.w600,

@@ -1572,7 +1572,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         children: [
           // Game over title
           Text(
-            'GAME OVER',
+            _wordsCompleted > 0 ? 'GREAT JOB!' : 'NICE TRY!',
             style: AppFonts.fredoka(
               fontSize: 42,
               fontWeight: FontWeight.w700,

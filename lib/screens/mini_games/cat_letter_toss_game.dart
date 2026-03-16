@@ -998,7 +998,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            _wordsCompleted >= _wordsPerRound ? 'AMAZING!' : 'GAME OVER',
+            _wordsCompleted >= _wordsPerRound ? 'AMAZING!' : 'GREAT JOB!',
             style: AppFonts.fredoka(
               fontSize: 42,
               fontWeight: FontWeight.w700,

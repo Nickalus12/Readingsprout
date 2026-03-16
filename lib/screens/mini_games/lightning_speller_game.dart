@@ -604,11 +604,11 @@ class _LightningSpellerGameState extends State<LightningSpellerGame>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.flash_off_rounded,
-                  color: Color(0xFFFF4466), size: 48),
+              const Icon(Icons.bolt_rounded,
+                  color: AppColors.electricBlue, size: 48),
               const SizedBox(height: 12),
               Text(
-                'Storm Over!',
+                _score > 0 ? 'Great Spelling!' : 'Nice Try!',
                 style: AppFonts.fredoka(
                   fontSize: 32,
                   fontWeight: FontWeight.w700,
