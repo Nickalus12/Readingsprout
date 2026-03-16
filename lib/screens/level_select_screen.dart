@@ -12,6 +12,7 @@ import '../services/adaptive_music_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/review_service.dart';
 import '../services/adaptive_difficulty_service.dart';
+import '../services/player_settings_service.dart';
 import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
@@ -27,6 +28,7 @@ class LevelSelectScreen extends StatefulWidget {
   final ReviewService? reviewService;
   final AdaptiveDifficultyService? adaptiveDifficultyService;
   final AdaptiveMusicService? musicService;
+  final PlayerSettingsService? settingsService;
   final String playerName;
   final String profileId;
 
@@ -41,6 +43,7 @@ class LevelSelectScreen extends StatefulWidget {
     this.reviewService,
     this.adaptiveDifficultyService,
     this.musicService,
+    this.settingsService,
     this.playerName = '',
     this.profileId = '',
   });
@@ -431,6 +434,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     );
 
     if (selectedTier == null || !context.mounted) return;
+
+    // Record last-played for Continue button on home screen
+    widget.settingsService?.setLastPlayed(level, selectedTier.value);
 
     Navigator.push(
       context,

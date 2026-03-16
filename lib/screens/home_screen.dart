@@ -12,6 +12,7 @@ import '../services/stats_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/adaptive_music_service.dart';
 import '../services/review_service.dart';
+import '../services/player_settings_service.dart';
 import '../avatar/avatar_widget.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
@@ -33,6 +34,7 @@ class HomeScreen extends StatefulWidget {
   final ReviewService? reviewService;
   final AdaptiveDifficultyService? adaptiveDifficultyService;
   final AdaptiveMusicService? musicService;
+  final PlayerSettingsService? settingsService;
   final String playerName;
   final String profileId;
   final VoidCallback? onChangeName;
@@ -50,6 +52,7 @@ class HomeScreen extends StatefulWidget {
     this.reviewService,
     this.adaptiveDifficultyService,
     this.musicService,
+    this.settingsService,
     this.playerName = '',
     this.profileId = '',
     this.onChangeName,
@@ -398,6 +401,7 @@ class _HomeScreenState extends State<HomeScreen>
                           reviewService: widget.reviewService,
                           adaptiveDifficultyService: widget.adaptiveDifficultyService,
                           musicService: widget.musicService,
+                          settingsService: widget.settingsService,
                           playerName: widget.playerName,
                           profileId: widget.profileId,
                         )),

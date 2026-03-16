@@ -279,6 +279,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
       reviewService: _reviewService,
       adaptiveDifficultyService: _adaptiveDifficultyService,
       musicService: _adaptiveMusicService,
+      settingsService: _settingsService,
       playerName: _settingsService.playerName,
       profileId: _settingsService.activeProfileId ?? '',
       onChangeName: _onChangeName,
