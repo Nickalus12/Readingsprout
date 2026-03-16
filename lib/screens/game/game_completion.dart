@@ -126,6 +126,11 @@ class GameLevelComplete extends StatelessWidget {
                   end: 0,
                   duration: 900.ms,
                   curve: Curves.elasticOut,
+                )
+                .then(delay: 200.ms)
+                .shimmer(
+                  duration: 1200.ms,
+                  color: tierIconColor.withValues(alpha: 0.4),
                 ),
             const SizedBox(height: 20),
 
@@ -353,7 +358,15 @@ class GameLevelComplete extends StatelessWidget {
                   )
                       .animate()
                       .fadeIn(delay: 850.ms, duration: 300.ms)
-                      .slideY(begin: 0.3, end: 0, delay: 850.ms, duration: 300.ms),
+                      .slideY(begin: 0.3, end: 0, delay: 850.ms, duration: 300.ms)
+                      .then(delay: 600.ms)
+                      .animate(onPlay: (c) => c.repeat(reverse: true))
+                      .scaleXY(
+                        begin: 1.0,
+                        end: 1.06,
+                        duration: 1200.ms,
+                        curve: Curves.easeInOut,
+                      ),
                 ],
               ],
             ),
