@@ -1398,8 +1398,9 @@ class FacePainter extends CustomPainter {
   }
 
   void _drawEars(Canvas canvas, double w, double h) {
-    final earW = w * 0.13;
-    final earH = h * 0.17;
+    // Smaller ears for child proportions (kids have smaller ear-to-head ratio)
+    final earW = w * 0.11;
+    final earH = h * 0.14;
     final earY = h * 0.38;
 
     for (final isLeft in [true, false]) {
@@ -1722,10 +1723,17 @@ class EyesPainter extends CustomPainter {
 
   /// Multi-layered iris: base gradient, SweepGradient fiber overlay,
   /// radial fiber lines, caustic crescent, limbal ring.
+  /// Vibrant saturated colors for kid appeal — eyes should sparkle.
   void _drawIris(Canvas canvas, Offset irisCenter, double irisR) {
     final irisRect = Rect.fromCircle(center: irisCenter, radius: irisR);
 
-    // 1. Base radial gradient
+    // Boost iris saturation for more vibrant kid-friendly eyes
+    final saturatedEye = HSLColor.fromColor(eyeColor)
+        .withSaturation((HSLColor.fromColor(eyeColor).saturation * 1.15).clamp(0.0, 1.0))
+        .withLightness((HSLColor.fromColor(eyeColor).lightness * 1.05).clamp(0.0, 1.0))
+        .toColor();
+
+    // 1. Base radial gradient — brighter center, richer edge
     canvas.drawCircle(
       irisCenter,
       irisR,
@@ -1734,12 +1742,12 @@ class EyesPainter extends CustomPainter {
           center: Alignment.center,
           radius: 1.0,
           colors: [
-            (Color.lerp(eyeColor, Colors.white, 0.45) ?? eyeColor),
-            (Color.lerp(eyeColor, Colors.white, 0.15) ?? eyeColor),
-            eyeColor,
-            (Color.lerp(eyeColor, Colors.black, 0.25) ?? eyeColor),
+            (Color.lerp(saturatedEye, Colors.white, 0.50) ?? saturatedEye),
+            (Color.lerp(saturatedEye, Colors.white, 0.20) ?? saturatedEye),
+            saturatedEye,
+            (Color.lerp(saturatedEye, Colors.black, 0.25) ?? saturatedEye),
           ],
-          stops: const [0.0, 0.25, 0.6, 1.0],
+          stops: const [0.0, 0.22, 0.58, 1.0],
         ).createShader(irisRect),
     );
 
