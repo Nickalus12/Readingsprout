@@ -525,43 +525,43 @@ class ShoulderPainter extends CustomPainter {
 
     for (final side in [-1.0, 1.0]) {
       final dy = side < 0 ? leftShoulderDy : rightShoulderDy;
-      // Align with torso shoulder dome (0.48 * shoulderW from center)
-      final sCx = cx + side * shoulderW * 0.48;
+      // Align with torso shoulder dome (0.46 matches torso bezier endpoint)
+      final sCx = cx + side * shoulderW * 0.46;
       final sCy = shoulderY + dy * h;
-      // Wider, flatter cap for child-like roundness (matches wider arms)
-      final capW = w * 0.18;
-      final capH = h * 0.060;
+      // Rounder, taller cap for child-like plumpness
+      final capW = w * 0.15;
+      final capH = h * 0.080;
 
-      // Cap top sits slightly above shoulderY for overlap with torso dome
-      final capTop = sCy - capH * 0.15;
-      // Cap bottom aligns with arm start (shoulderY + h*0.035)
+      // Cap top overlaps torso dome for seamless blend
+      final capTop = sCy - capH * 0.35;
+      // Cap bottom meets arm start
       final capBottom = sCy + h * 0.035;
 
       final capRect = Rect.fromLTRB(
-        sCx - capW * 0.55, capTop,
-        sCx + capW * 0.55, capBottom,
+        sCx - capW * 0.6, capTop,
+        sCx + capW * 0.6, capBottom,
       );
 
-      // Soft rounded dome via cubic beziers for child-like shape
+      // Plump rounded dome — taller and rounder for cartoon child look
       final capPath = Path();
       // Start at inner-bottom (torso side)
-      capPath.moveTo(sCx - side * capW * 0.5, capBottom);
-      // Rise up the inner edge into the dome peak
+      capPath.moveTo(sCx - side * capW * 0.45, capBottom);
+      // Rise up inner edge with generous dome
       capPath.cubicTo(
-        sCx - side * capW * 0.45, sCy - capH * 0.05,
-        sCx - side * capW * 0.2, capTop - capH * 0.1,
-        sCx, capTop - capH * 0.15,
+        sCx - side * capW * 0.40, sCy - capH * 0.15,
+        sCx - side * capW * 0.15, capTop - capH * 0.05,
+        sCx, capTop,
       );
       // Dome peak down to outer edge
       capPath.cubicTo(
-        sCx + side * capW * 0.2, capTop - capH * 0.1,
-        sCx + side * capW * 0.45, sCy + capH * 0.05,
-        sCx + side * capW * 0.5, capBottom,
+        sCx + side * capW * 0.15, capTop - capH * 0.05,
+        sCx + side * capW * 0.40, sCy - capH * 0.08,
+        sCx + side * capW * 0.45, capBottom,
       );
-      // Smooth bottom connecting to arm zone
+      // Smooth bottom connecting to arm
       capPath.quadraticBezierTo(
-        sCx, capBottom + capH * 0.08,
-        sCx - side * capW * 0.5, capBottom,
+        sCx, capBottom + capH * 0.06,
+        sCx - side * capW * 0.45, capBottom,
       );
       capPath.close();
 
@@ -595,10 +595,10 @@ class ShoulderPainter extends CustomPainter {
         ..color = shirtSH.withValues(alpha: 0.25)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
       final seamPath = Path()
-        ..moveTo(sCx - side * capW * 0.4, capBottom - 1)
+        ..moveTo(sCx - side * capW * 0.35, capBottom - 1)
         ..quadraticBezierTo(
           sCx, capBottom + capH * 0.04,
-          sCx + side * capW * 0.4, capBottom - 1,
+          sCx + side * capW * 0.35, capBottom - 1,
         );
       canvas.drawPath(seamPath, seamPaint);
     }
@@ -664,8 +664,8 @@ class ArmPainter extends CustomPainter {
   void _drawArm(Canvas canvas, double w, double h, double cx,
       double shoulderW, double shoulderY, double side,
       Color highlight, Color shadow, double boneRotation) {
-    // Align arm center with shoulder cap center (0.48)
-    final armCx = cx + side * shoulderW * 0.48;
+    // Align arm center with shoulder cap center (0.46 matches torso + cap)
+    final armCx = cx + side * shoulderW * 0.46;
     // Chubby child proportions: wider, rounder arm tubes
     final shoulderArmW = w * 0.095;
     final wristArmW = w * 0.065;
