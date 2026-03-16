@@ -16,6 +16,7 @@ import '../services/player_settings_service.dart';
 import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
+import '../widgets/zone_unlock_overlay.dart';
 import 'game_screen.dart';
 
 class LevelSelectScreen extends StatefulWidget {
@@ -440,7 +441,16 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     // Record last-played for Continue button on home screen
     widget.settingsService?.setLastPlayed(level, selectedTier.value);
 
-    Navigator.push(
+    // Snapshot which zones are fully mastered BEFORE entering the game
+    final masteredBefore = <int>{};
+    for (int i = 0; i < DolchWords.zones.length; i++) {
+      final z = DolchWords.zones[i];
+      if (widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+        masteredBefore.add(i);
+      }
+    }
+
+    await Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => GameScreen(
@@ -470,6 +480,48 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
         transitionDuration: const Duration(milliseconds: 350),
       ),
     );
+
+    // After returning from GameScreen, check for newly mastered zones
+    if (!context.mounted) return;
+    await _checkForZoneUnlock(context, masteredBefore);
+
+    // Refresh the level list to reflect updated progress
+    if (mounted) setState(() {});
+  }
+
+  /// Compare zone mastery state before/after gameplay and show celebration.
+  Future<void> _checkForZoneUnlock(
+    BuildContext context,
+    Set<int> masteredBefore,
+  ) async {
+    for (int i = 0; i < DolchWords.zones.length; i++) {
+      if (masteredBefore.contains(i)) continue;
+      final z = DolchWords.zones[i];
+      if (!widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+        continue;
+      }
+      // Zone i was just mastered! Show celebration if there's a next zone.
+      final nextZoneIndex = i + 1;
+      if (nextZoneIndex >= DolchWords.zones.length) {
+        // Last zone mastered — show mastery celebration without a "next zone"
+        // (could be extended later; for now, celebrate with same zone)
+        continue;
+      }
+
+      // Play level complete sound as zone unlock fanfare
+      widget.audioService.playLevelCompleteEffect();
+
+      if (!context.mounted) return;
+      await ZoneUnlockOverlay.show(
+        context,
+        masteredZoneIndex: i,
+        newZoneIndex: nextZoneIndex,
+        playerName: widget.playerName,
+      );
+
+      // Only show one celebration at a time
+      break;
+    }
   }
 }
 
