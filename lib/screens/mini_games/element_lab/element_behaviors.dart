@@ -963,6 +963,125 @@ extension ElementBehaviors on SimulationEngine {
           life[ni] = 100;
           markProcessed(ni);
         }
+        // Lava melts nearby sand into glass (volcanic glass / obsidian)
+        if (neighbor == El.sand && rng.nextInt(40) == 0) {
+          grid[ni] = El.glass;
+          life[ni] = 0;
+          markProcessed(ni);
+          queueReactionFlash(nx, ny, 255, 200, 100, 3);
+        }
+      }
+    }
+
+    // --- Volcanic gas: surface lava emits smoke and steam ---
+    final uy = y - gravityDir;
+    if (rng.nextInt(80) == 0 && inBounds(x, uy) && grid[uy * gridW + x] == El.empty) {
+      // Emit smoke (2/3) or steam (1/3)
+      final gasIdx = uy * gridW + x;
+      if (rng.nextInt(3) == 0) {
+        grid[gasIdx] = El.steam;
+      } else {
+        grid[gasIdx] = El.smoke;
+      }
+      life[gasIdx] = 0;
+      markProcessed(gasIdx);
+    }
+
+    // --- Eruption pressure: lava trapped under stone builds pressure ---
+    if (rng.nextInt(60) == 0) {
+      final g = gravityDir;
+      int capDepth = 0;
+      for (int cy = y - g; inBounds(x, cy) && capDepth < 6; cy -= g) {
+        if (grid[cy * gridW + x] == El.stone) {
+          capDepth++;
+        } else {
+          break;
+        }
+      }
+      int lavaBelow = 0;
+      for (int cy = y + g; inBounds(x, cy) && lavaBelow < 8; cy += g) {
+        if (grid[cy * gridW + x] == El.lava) {
+          lavaBelow++;
+        } else {
+          break;
+        }
+      }
+      // Need at least 2 stone cap and 3 lava below to build pressure
+      if (capDepth >= 2 && lavaBelow >= 3 && rng.nextInt(20) == 0) {
+        // Blast through the stone cap
+        final blastY = y - g * capDepth;
+        if (inBounds(x, blastY)) {
+          final blastIdx = blastY * gridW + x;
+          grid[blastIdx] = El.lava;
+          life[blastIdx] = 0;
+          markProcessed(blastIdx);
+          queueReactionFlash(x, blastY, 255, 200, 50, 8);
+        }
+        // Blast neighboring stone for wider eruption
+        for (final dx in [-1, 1]) {
+          final bx = x + dx;
+          final by2 = y - g * (capDepth - 1);
+          if (inBounds(bx, by2) &&
+              grid[by2 * gridW + bx] == El.stone &&
+              rng.nextBool()) {
+            grid[by2 * gridW + bx] = El.fire;
+            life[by2 * gridW + bx] = 0;
+            markProcessed(by2 * gridW + bx);
+          }
+        }
+      }
+    }
+
+    // --- Lava spatter: surface lava ejects molten droplets upward ---
+    if (rng.nextInt(100) == 0 && inBounds(x, uy) && grid[uy * gridW + x] == El.empty) {
+      int lavaNeighbors = 0;
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx2 = x + dx2;
+          final ny2 = y + dy2;
+          if (inBounds(nx2, ny2) && grid[ny2 * gridW + nx2] == El.lava) {
+            lavaNeighbors++;
+          }
+        }
+      }
+      // Pools of lava (3+ neighbors) spatter more dramatically
+      if (lavaNeighbors >= 3) {
+        final spatterH = 2 + rng.nextInt(4);
+        final spatterDx = rng.nextInt(3) - 1;
+        for (int d = 1; d <= spatterH; d++) {
+          final sy = y - gravityDir * d;
+          final sx = x + (d > 1 ? spatterDx : 0);
+          if (!inBounds(sx, sy)) break;
+          final si = sy * gridW + sx;
+          if (grid[si] != El.empty) break;
+          if (d <= 2) {
+            grid[si] = El.lava;
+            life[si] = 0;
+          } else {
+            grid[si] = El.fire;
+            life[si] = 0;
+          }
+          markProcessed(si);
+        }
+        queueReactionFlash(x, uy, 255, 180, 30, 5);
+      }
+    }
+
+    // --- Heat stone: stone adjacent to lava gradually heats up ---
+    if (frameCount % 8 == 0) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx2 = x + dx2;
+          final ny2 = y + dy2;
+          if (!inBounds(nx2, ny2)) continue;
+          final ni = ny2 * gridW + nx2;
+          if (grid[ni] == El.stone) {
+            final heat = velX[ni].clamp(0, 5);
+            velX[ni] = (heat + 1).clamp(0, 5);
+          }
+        }
       }
     }
 

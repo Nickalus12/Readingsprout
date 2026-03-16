@@ -177,7 +177,9 @@ class PixelRenderer {
       bool hasEmissive = false;
       for (int i = 0; i < total; i++) {
         final el = g[i];
-        if (el != El.fire && el != El.lava && el != El.lightning) continue;
+        // Heated stone also emits glow (heat stored in velX, 0-5)
+        final isHeatedStone = el == El.stone && engine.velX[i] > 0;
+        if (el != El.fire && el != El.lava && el != El.lightning && !isHeatedStone) continue;
         hasEmissive = true;
         final ex = i % w;
         final ey = i ~/ w;
@@ -205,9 +207,28 @@ class PixelRenderer {
               glowB8[ni] = (glowB8[ni] + (intensity * 2 ~/ 3)).clamp(0, 255);
             }
           }
+        } else if (isHeatedStone) {
+          // Heated stone: subtle red-orange glow, radius 2
+          final stoneHeat = engine.velX[i].clamp(0, 5);
+          final heatIntensity = (stoneHeat * 4).clamp(0, 20);
+          for (int dy = -2; dy <= 2; dy++) {
+            final ny = ey + dy;
+            if (ny < 0 || ny >= h) continue;
+            for (int dx = -2; dx <= 2; dx++) {
+              final nx = ex + dx;
+              if (nx < 0 || nx >= w) continue;
+              final dist = dx.abs() + dy.abs();
+              if (dist == 0) continue;
+              final ni = ny * w + nx;
+              if (g[ni] != El.empty) continue;
+              final falloff = dist <= 1 ? heatIntensity : heatIntensity ~/ 2;
+              glowR8[ni] = (glowR8[ni] + falloff).clamp(0, 255);
+              glowG8[ni] = (glowG8[ni] + falloff ~/ 3).clamp(0, 255);
+            }
+          }
         } else {
           final isFire = el == El.fire;
-          final glowRadius = el == El.lava ? 3 : 2;
+          final glowRadius = el == El.lava ? 4 : 2;
           for (int dy = -glowRadius; dy <= glowRadius; dy++) {
             final ny = ey + dy;
             if (ny < 0 || ny >= h) continue;
@@ -340,8 +361,13 @@ class PixelRenderer {
                   spawnParticle(x + rng.nextInt(3) - 1, y - 1, sparkR, sparkG, sparkB, 4 + rng.nextInt(4));
                 }
               } else if (el == El.lava) {
-                if (rng.nextInt(150) < 2 && y > 1) {
-                  spawnParticle(x + rng.nextInt(3) - 1, y - 1, 255, 140 + rng.nextInt(60), 20 + rng.nextInt(30), 5 + rng.nextInt(3));
+                if (rng.nextInt(80) < 3 && y > 1) {
+                  // More frequent embers from lava surface
+                  spawnParticle(x + rng.nextInt(3) - 1, y - 1, 255, 140 + rng.nextInt(60), 20 + rng.nextInt(30), 5 + rng.nextInt(4));
+                }
+                // Occasional white-hot sparks from fresh lava
+                if (rng.nextInt(200) < 1 && y > 1 && engine.life[i] < 30) {
+                  spawnParticle(x, y - 1, 255, 255, 200 + rng.nextInt(55), 3 + rng.nextInt(3));
                 }
               } else if (el == El.lightning) {
                 // Electric sparks from lightning
@@ -731,6 +757,19 @@ class PixelRenderer {
           case 1: _inlineR = 118; _inlineG = 118; _inlineB = 118;
           case 2: _inlineR = 100; _inlineG = 100; _inlineB = 105;
           default: _inlineR = 125; _inlineG = 128; _inlineB = 135;
+        }
+        // Heated stone glows orange-red (heat stored in velX, 0-5)
+        final stoneHeat = velX[idx].clamp(0, 5);
+        if (stoneHeat > 0) {
+          final heatFrac = stoneHeat / 5.0;
+          final heatPulse = (frameCount + idx * 7) % 12 < 5 ? 15 : 0;
+          _inlineR = (_inlineR + (heatFrac * 120).round() + heatPulse).clamp(0, 255);
+          _inlineG = (_inlineG + (heatFrac * 40).round() + heatPulse ~/ 3).clamp(0, 255);
+          _inlineB = (_inlineB - (heatFrac * 60).round()).clamp(0, 255);
+          // Stone heat slowly dissipates in renderer
+          if (frameCount % 20 == 0) {
+            velX[idx] = (stoneHeat - 1).clamp(0, 5);
+          }
         }
 
       case El.mud:
