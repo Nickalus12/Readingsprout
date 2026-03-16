@@ -9,6 +9,7 @@ import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/streak_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/game_animations.dart';
 import '../avatar/avatar_widget.dart';
 import '../widgets/daily_treasure.dart';
 import '../widgets/sticker_book.dart';
@@ -148,23 +149,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   void _openAvatarEditor() async {
     final result = await Navigator.push<AvatarConfig>(
       context,
-      PageRouteBuilder<AvatarConfig>(
-        pageBuilder: (_, __, ___) => AvatarEditorScreen(
-          profileService: widget.profileService,
-          wordsMastered: _wordCount,
-          streakDays: _streak,
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      ),
+      GameAnimations.smoothRoute<AvatarConfig>(AvatarEditorScreen(
+        profileService: widget.profileService,
+        wordsMastered: _wordCount,
+        streakDays: _streak,
+      )),
     );
     if (result != null && mounted) {
       setState(() => _avatar = result);
@@ -1374,35 +1363,42 @@ class _AvatarHomeFrame extends StatelessWidget {
               ),
             ),
 
-            // Edit badge — bottom-right
+            // Edit badge — bottom-right with gentle pulse to attract attention
             Positioned(
               right: -6 * sf,
               bottom: -6 * sf,
               child: GestureDetector(
                 onTap: onEditTap,
                 child: Container(
-                  width: 30 * sf,
-                  height: 30 * sf,
+                  width: 32 * sf,
+                  height: 32 * sf,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppColors.violet,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.violet, AppColors.magenta],
+                    ),
                     border: Border.all(
                       color: AppColors.background,
                       width: 2.5 * sf,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.violet.withValues(alpha: 0.4),
-                        blurRadius: 8 * sf,
+                        color: AppColors.violet.withValues(alpha: 0.5),
+                        blurRadius: 10 * sf,
+                        spreadRadius: 1,
                       ),
                     ],
                   ),
                   child: Icon(
                     Icons.edit_rounded,
-                    size: 14 * sf,
+                    size: 15 * sf,
                     color: Colors.white,
                   ),
-                ),
+                )
+                    .animate(onPlay: (c) => c.repeat(reverse: true))
+                    .scaleXY(begin: 1.0, end: 1.12, duration: 1800.ms, curve: Curves.easeInOut),
               ),
             ),
 
