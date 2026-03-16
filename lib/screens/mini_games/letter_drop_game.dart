@@ -109,7 +109,7 @@ class _TrailDot {
 
 class _LetterDropSim extends ChangeNotifier {
   final List<_LetterBody> letterBodies;
-  final List<_Slot> slots;
+  List<_Slot> slots;
   final List<_Particle> particles;
   final List<_TrailDot> trails;
   String currentWord;
@@ -1492,7 +1492,7 @@ class _LetterDropPainter extends CustomPainter {
         borderAlpha = 0.9;
         shadowAlpha = 0.6;
       } else {
-        final isDragging = false; // drag state not easily trackable in painter
+        const isDragging = false; // drag state not easily trackable in painter
         color = lb.isBouncing && sim.hintsEnabled
             ? AppColors.error
             : lb.isDropping
