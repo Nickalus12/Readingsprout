@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -14,7 +13,7 @@ import 'zone_background.dart';
 /// 3. Mastered zone icon scales up with glow
 /// 4. Story text: "You've mastered [old zone]!"
 /// 5. New zone icon reveals with sparkle
-/// 6. "Welcome to [new zone], [name]!" text
+/// 6. "Welcome to {new zone}, {name}!" text
 /// 7. Tap to dismiss
 ///
 /// Use [ZoneUnlockOverlay.show] to trigger from anywhere.
@@ -405,10 +404,9 @@ class _ZoneUnlockOverlayState extends State<ZoneUnlockOverlay>
                             .animate(
                               onPlay: (c) => c.repeat(reverse: true),
                             )
-                            .fadeIn(duration: 600.ms)
-                            .fadeOut(
-                              begin: 1.0,
-                              end: 0.3,
+                            .fade(
+                              begin: 0.3,
+                              end: 1.0,
                               duration: 1200.ms,
                             ),
                     ],
