@@ -139,10 +139,10 @@ class _KeyboardKeyState extends State<KeyboardKey> {
     final screenH = MediaQuery.of(context).size.height;
     final shortScreen = screenH < 600;
     final keyMargin = (screenW / 200).clamp(1.5, 3.0);
-    final keyWidth = ((screenW - 16) / 10 - keyMargin * 2).clamp(28.0, 44.0);
-    final maxKeyH = shortScreen ? 44.0 : 56.0;
-    final keyHeight = (keyWidth * 1.3).clamp(34.0, maxKeyH);
-    final fontSize = (keyWidth * 0.5).clamp(14.0, 22.0);
+    final keyWidth = ((screenW - 12) / 10 - keyMargin * 2).clamp(30.0, 44.0);
+    final maxKeyH = shortScreen ? 46.0 : 56.0;
+    final keyHeight = (keyWidth * 1.35).clamp(38.0, maxKeyH);
+    final fontSize = (keyWidth * 0.52).clamp(15.0, 22.0);
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
