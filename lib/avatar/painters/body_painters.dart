@@ -226,8 +226,11 @@ class TorsoPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
 
-    final cx = w * 0.5 + sin(swayValue * pi) * w * 0.006;
-    final breathExpand = sin(breathingValue * pi) * 0.012;
+    // Quantize sway/breath to reduce sub-pixel jitter that causes shimmer
+    final qSway = (swayValue * 20).roundToDouble() / 20;
+    final qBreath = (breathingValue * 20).roundToDouble() / 20;
+    final cx = w * 0.5 + sin(qSway * pi) * w * 0.004;
+    final breathExpand = sin(qBreath * pi) * 0.008;
     final shoulderW = w * (0.72 + breathExpand);
     final waistW = w * (0.55 + breathExpand * 0.5);
     final shoulderY = h * 0.78;
@@ -285,8 +288,12 @@ class TorsoPainter extends CustomPainter {
     );
     torsoPath.close();
 
+    // Use stable bounds for the gradient to prevent shimmer from
+    // sub-pixel shader coordinate changes each frame
+    final stableShoulderW = w * 0.73; // slightly wider than max to avoid clipping
     final torsoRect = Rect.fromLTRB(
-      cx - shoulderW / 2, shoulderY, cx + shoulderW / 2, torsoBottom,
+      w * 0.5 - stableShoulderW / 2, shoulderY,
+      w * 0.5 + stableShoulderW / 2, torsoBottom,
     );
 
     // ── 3D fabric gradient (left-to-right) ──
@@ -472,8 +479,8 @@ class TorsoPainter extends CustomPainter {
   bool shouldRepaint(TorsoPainter old) =>
       old.shirtColor != shirtColor ||
       old.collarStyle != collarStyle ||
-      (old.breathingValue * 100).round() != (breathingValue * 100).round() ||
-      (old.swayValue * 100).round() != (swayValue * 100).round();
+      (old.breathingValue * 20).round() != (breathingValue * 20).round() ||
+      (old.swayValue * 20).round() != (swayValue * 20).round();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
