@@ -104,7 +104,23 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
             _buildPreview(),
             const SizedBox(height: 12),
             _buildCategoryTabs(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            // Category title
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _categories[_selectedCategory].label,
+                  style: AppFonts.fredoka(
+                    fontSize: 16,
+                    color: AppColors.primaryText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
             Expanded(child: _buildOptionsPageView()),
             _buildDoneButton(),
             const SizedBox(height: 12),
