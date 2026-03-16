@@ -115,19 +115,21 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   void _onAvatarTap() {
     _tapCount++;
-    // Cycle through fun expressions so repeated taps feel different
-    final expressions = [
+    // Cycle through fun expressions AND animations so repeated taps feel alive
+    const expressions = [
       AvatarExpression.excited,
       AvatarExpression.happy,
       AvatarExpression.surprised,
       AvatarExpression.excited,
       AvatarExpression.happy,
     ];
-    final expr = expressions[_tapCount % expressions.length];
+    const animations = ['wave', 'giggle', 'surprise', 'clap', 'nod'];
+    final idx = _tapCount % expressions.length;
     _avatarController.setExpression(
-      expr,
+      expressions[idx],
       duration: const Duration(milliseconds: 1500),
     );
+    _avatarController.playAnimation(animations[idx]);
     widget.audioService.playSuccess();
   }
 
@@ -147,16 +149,29 @@ class _ProfileScreenState extends State<ProfileScreen>
   ReadingLevel get _readingLevel => widget.profileService.readingLevel;
 
   void _openAvatarEditor() async {
+    // Avatar looks curious when child opens editor
+    _avatarController.setExpression(
+      AvatarExpression.thinking,
+      duration: const Duration(seconds: 2),
+    );
+    _avatarController.playAnimation('think');
     final result = await Navigator.push<AvatarConfig>(
       context,
       GameAnimations.smoothRoute<AvatarConfig>(AvatarEditorScreen(
         profileService: widget.profileService,
+        audioService: widget.audioService,
         wordsMastered: _wordCount,
         streakDays: _streak,
       )),
     );
     if (result != null && mounted) {
       setState(() => _avatar = result);
+      // Avatar is excited about the new look
+      _avatarController.setExpression(
+        AvatarExpression.excited,
+        duration: const Duration(seconds: 2),
+      );
+      _avatarController.playAnimation('celebrate');
     }
   }
 

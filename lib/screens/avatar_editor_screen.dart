@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../avatar/data/avatar_options.dart';
 import '../models/player_profile.dart';
+import '../services/audio_service.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 import '../avatar/avatar_widget.dart';
@@ -15,12 +16,14 @@ import '../avatar/avatar_widget.dart';
 /// live avatar preview in the top 40%, and glowing selection indicators.
 class AvatarEditorScreen extends StatefulWidget {
   final ProfileService profileService;
+  final AudioService? audioService;
   final int wordsMastered;
   final int streakDays;
 
   const AvatarEditorScreen({
     super.key,
     required this.profileService,
+    this.audioService,
     this.wordsMastered = 0,
     this.streakDays = 0,
   });
@@ -104,6 +107,7 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen>
 
   Future<void> _save() async {
     await widget.profileService.setAvatar(_config);
+    widget.audioService?.playSuccess();
     if (mounted) Navigator.of(context).pop(_config);
   }
 
