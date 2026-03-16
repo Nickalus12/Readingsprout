@@ -980,31 +980,32 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     switch (item.powerUp!) {
       case _PowerUpType.shield:
         _lives = (_lives + 1).clamp(0, _maxLives + 1);
-        _flashColor = AppColors.emerald;
-        _flashOpacity = 0.2;
+        _sim.flashColor = AppColors.emerald;
+        _sim.flashOpacity = 0.2;
         break;
       case _PowerUpType.slowdown:
-        _slowActive = true;
-        _slowTimer = 5.0;
-        for (final it in _items) {
+        _sim.slowActive = true;
+        _sim.slowTimer = 5.0;
+        for (final it in _sim.items) {
           if (!it.captured && !it.shattered) {
             it.speed *= 0.4;
           }
         }
-        _flashColor = AppColors.cyan;
-        _flashOpacity = 0.2;
+        _sim.flashColor = AppColors.cyan;
+        _sim.flashOpacity = 0.2;
         break;
       case _PowerUpType.reveal:
-        _revealActive = true;
-        _revealTimer = 3.0;
-        _flashColor = AppColors.violet;
-        _flashOpacity = 0.2;
+        _sim.revealActive = true;
+        _sim.revealTimer = 3.0;
+        _sim.flashColor = AppColors.violet;
+        _sim.flashOpacity = 0.2;
         break;
     }
     item.captured = true;
     item.captureAnimT = 0;
     widget.audioService.playSuccess();
     Haptics.correct();
+    setState(() {});
   }
 
   void _awardMiniGameStickers() {
@@ -1026,23 +1027,12 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   }
 
   void _restartGame() {
-    _items.clear();
-    _fragments.clear();
-    _dustParticles.clear();
-    _sparkles.clear();
-    _disintegrationParticles.clear();
-    _shockwaves.clear();
+    _sim.reset(_maxLives);
     _score = 0;
     _lives = _maxLives;
     _wordsCompleted = 0;
     _gameOver = false;
-    _slowActive = false;
-    _revealActive = false;
-    _spawnAccumulator = 0;
-    _nextItemId = 0;
     _lastTick = Duration.zero;
-    _screenShakeTimer = 0;
-    _screenShakeOffset = Offset.zero;
     _buildWordPool();
     _nextWord();
     if (!_ticker.isActive) _ticker.start();
@@ -1078,77 +1068,75 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         _screenSize = size;
-        return Transform.translate(
-          offset: _screenShakeOffset,
-          child: Stack(
-            children: [
-              // Stars background
-              RepaintBoundary(
-                child: CustomPaint(
-                  size: size,
-                  painter: _StarFieldPainter(
-                    stars: _stars,
-                    shootingStar: _shootingStar,
-                  ),
-                ),
-              ),
-
-              // Tap-anywhere detector for shockwave
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTapDown: (details) =>
-                      _onScreenTap(details.localPosition),
-                ),
-              ),
-
-              // Falling items (no individual GestureDetectors)
-              ..._items.where((i) => !i.missed).map(
-                    (item) => _buildFallingItem(item, size)),
-
-              // All particles + shockwaves in one painter (avoids per-particle widgets)
-              RepaintBoundary(
-                child: IgnorePointer(
+        return ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) => Transform.translate(
+            offset: _sim.screenShakeOffset,
+            child: Stack(
+              children: [
+                RepaintBoundary(
                   child: CustomPaint(
                     size: size,
-                    painter: _EffectsPainter(
-                      fragments: _fragments,
-                      dustParticles: _dustParticles,
-                      sparkles: _sparkles,
-                      disintegrationParticles: _disintegrationParticles,
-                      shockwaves: _shockwaves,
+                    painter: _StarFieldPainter(
+                      stars: _sim.stars,
+                      shootingStar: _sim.shootingStar,
+                      repaintSignal: _sim,
                     ),
                   ),
                 ),
-              ),
 
-              // Screen flash overlay
-              if (_flashColor != null && _flashOpacity > 0)
-                IgnorePointer(
-                  child: Container(
-                    color: _flashColor!
-                        .withValues(alpha: _flashOpacity.clamp(0.0, 1.0)),
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTapDown: (details) =>
+                        _onScreenTap(details.localPosition),
                   ),
                 ),
 
-              // Warning flash
-              if (_warningFlash)
-                IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: AppColors.error.withValues(
-                            alpha:
-                                (1.0 - _warningFlashT * 2).clamp(0.0, 0.8)),
-                        width: 4,
+                ..._sim.items.where((i) => !i.missed).map(
+                      (item) => _buildFallingItem(item, size)),
+
+                RepaintBoundary(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      size: size,
+                      painter: _EffectsPainter(
+                        fragments: _sim.fragments,
+                        dustParticles: _sim.dustParticles,
+                        sparkles: _sim.sparkles,
+                        disintegrationParticles: _sim.disintegrationParticles,
+                        shockwaves: _sim.shockwaves,
+                        repaintSignal: _sim,
                       ),
                     ),
                   ),
                 ),
 
-              // HUD
-              _buildHUD(size),
-            ],
+                if (_sim.flashColor != null && _sim.flashOpacity > 0)
+                  IgnorePointer(
+                    child: Container(
+                      color: _sim.flashColor!
+                          .withValues(alpha: _sim.flashOpacity.clamp(0.0, 1.0)),
+                    ),
+                  ),
+
+                if (_sim.warningFlash)
+                  IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.error.withValues(
+                              alpha:
+                                  (1.0 - _sim.warningFlashT * 2).clamp(0.0, 0.8)),
+                          width: 4,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                _buildHUD(size),
+              ],
+            ),
           ),
         );
       },
@@ -1197,7 +1185,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   }
 
   Widget _letterTile(_FallingItem item, {bool highlight = false}) {
-    final isRevealed = _revealActive &&
+    final isRevealed = _sim.revealActive &&
         _nextLetterIndex < _currentWord.length &&
         item.letter == _currentWord[_nextLetterIndex];
     final shouldGlow = highlight || isRevealed;
@@ -1405,20 +1393,20 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         _buildWordSlots(screenSize),
 
         // Power-up indicators
-        if (_slowActive || _revealActive)
+        if (_sim.slowActive || _sim.revealActive)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (_slowActive)
+                if (_sim.slowActive)
                   _powerUpIndicator(
-                      Icons.ac_unit, AppColors.cyan, _slowTimer),
-                if (_slowActive && _revealActive)
+                      Icons.ac_unit, AppColors.cyan, _sim.slowTimer),
+                if (_sim.slowActive && _sim.revealActive)
                   const SizedBox(width: 8),
-                if (_revealActive)
+                if (_sim.revealActive)
                   _powerUpIndicator(
-                      Icons.visibility, AppColors.violet, _revealTimer),
+                      Icons.visibility, AppColors.violet, _sim.revealTimer),
               ],
             ),
           ),

@@ -595,11 +595,12 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       backgroundColor: const Color(0xFF05051A),
       body: LayoutBuilder(builder: (context, constraints) {
         _screenSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return _gameOver
-            ? _buildGameOver()
-            : _gameStarted
-                ? _buildGameplay()
-                : _buildStartScreen();
+        if (_gameOver) return _buildGameOver();
+        if (_gameStarted) return _buildGameplay();
+        return ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) => _buildStartScreen(),
+        );
       }),
     );
   }
@@ -1412,7 +1413,7 @@ class _BackgroundStarsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     for (final s in stars) {
       final alpha =
-          (0.3 + sin(time * s.speed + s.phase) * 0.4).clamp(0.1, 0.8);
+          (0.3 + sin(sim.astronautBob * s.speed + s.phase) * 0.4).clamp(0.1, 0.8);
       canvas.drawCircle(
         Offset(s.x * size.width, s.y * size.height),
         s.size,
@@ -1449,5 +1450,5 @@ class _BackgroundStarsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _BackgroundStarsPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _BackgroundStarsPainter old) => false;
 }

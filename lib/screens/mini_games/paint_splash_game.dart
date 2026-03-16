@@ -591,11 +591,12 @@ class _PaintSplashGameState extends State<PaintSplashGame>
       backgroundColor: const Color(0xFFFFF8F0),
       body: LayoutBuilder(builder: (context, constraints) {
         _screenSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return _gameOver
-            ? _buildGameOver()
-            : _gameStarted
-                ? _buildGameplay()
-                : _buildStartScreen();
+        if (_gameOver) return _buildGameOver();
+        if (_gameStarted) return _buildGameplay();
+        return ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) => _buildStartScreen(),
+        );
       }),
     );
   }

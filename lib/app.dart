@@ -78,6 +78,7 @@ class _ReadingSproutAppState extends State<ReadingSproutApp> {
     final prefs = await SharedPreferences.getInstance();
 
     // Initialize all services in parallel for faster startup
+    final initSw = Stopwatch()..start();
     await Future.wait([
       _progressService.init(prefs).catchError((e) {
         debugPrint('ProgressService init failed: $e');
@@ -313,6 +314,8 @@ class _SplashScreen extends StatelessWidget {
                   'assets/images/logo.png',
                   width: 140,
                   height: 140,
+                  cacheWidth: 280,
+                  cacheHeight: 280,
                 ),
                 const SizedBox(height: 24),
                 Text(
