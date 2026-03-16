@@ -406,7 +406,7 @@ class _AvatarWidgetState extends State<AvatarWidget>
   // ── Game loop — called every frame (~60fps) ─────────────────────────
 
   void _onTick() {
-    if (!mounted) return;
+    if (!mounted || !_tickCtrl.isAnimating) return;
 
     final now = _tickCtrl.value * 3600.0; // hours → seconds
     final dt = _lastTickTime == 0.0
@@ -449,7 +449,8 @@ class _AvatarWidgetState extends State<AvatarWidget>
     _twinkleValue = (_totalTime / 3.0) % 1.0; // 3s loop
 
     // 6b. Update talking mouth from controller (synced with vsync tick)
-    widget.controller?.updateTalkingFrame();
+    // Guard: only update if widget is still mounted and controller exists
+    if (mounted) widget.controller?.updateTalkingFrame();
 
     // 7. Blink state machine
     if (_isBlinking) {
@@ -1089,7 +1090,15 @@ class _ConstantAnimation extends Animation<double> {
 // ═══════════════════════════════════════════════════════════════════════
 
 class _TickNotifier extends ChangeNotifier {
-  void notify() => notifyListeners();
+  bool _disposed = false;
+  void notify() {
+    if (!_disposed) notifyListeners();
+  }
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
