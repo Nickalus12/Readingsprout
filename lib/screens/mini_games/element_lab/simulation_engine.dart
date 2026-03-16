@@ -32,6 +32,9 @@ final Uint8List _neverSettle = () {
   t[El.wood] = 1;     // burns, waterlogging
   t[El.metal] = 1;    // rusts
   t[El.oil] = 1;      // floats on water
+  t[El.mud] = 1;      // viscous flow
+  t[El.snow] = 1;     // slow fall, melting, compression
+  t[El.rainbow] = 1;  // always rising and cycling
   return t;
 }();
 
