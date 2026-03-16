@@ -24,6 +24,11 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
     fallGranular(x, y, idx, El.sand);
+    // Angle of repose: sand avalanches off steep piles
+    // If sand didn't move (still at same index), check for slope collapse
+    if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
+      _avalancheGranular(x, y, idx);
+    }
   }
 
   void simWater(int x, int y, int idx) {
@@ -1051,6 +1056,10 @@ extension ElementBehaviors on SimulationEngine {
         return;
       }
     }
+    // Snow avalanches more easily than sand (softer)
+    if (grid[idx] == El.snow && rng.nextInt(2) == 0) {
+      _avalancheGranular(x, y, idx);
+    }
   }
 
   void simWood(int x, int y, int idx) {
@@ -1641,6 +1650,40 @@ extension ElementBehaviors on SimulationEngine {
     }
     if (inBounds(x2, y) && grid[y * gridW + x2] == El.empty) {
       swap(idx, y * gridW + x2);
+    }
+  }
+
+  /// Avalanche check for granular materials (angle of repose).
+  /// If a grain is sitting on a pile with steep sides, it slides down.
+  void _avalancheGranular(int x, int y, int idx) {
+    final g = gravityDir;
+    final by = y + g;
+    // Only avalanche if resting on something solid
+    if (!inBounds(x, by) || grid[by * gridW + x] == El.empty) return;
+
+    final goLeft = rng.nextBool();
+    final dir1 = goLeft ? -1 : 1;
+    final dir2 = goLeft ? 1 : -1;
+
+    for (final dir in [dir1, dir2]) {
+      final sx = x + dir;
+      final sy = y;
+      final sx2 = x + dir * 2;
+      final sy2 = y + g;
+      // Check: side is empty AND two-below-diagonal is empty (steep slope)
+      if (inBounds(sx, sy) && grid[sy * gridW + sx] == El.empty &&
+          inBounds(sx, sy2) && grid[sy2 * gridW + sx] == El.empty) {
+        // Slide to the diagonal-below position
+        swap(idx, sy2 * gridW + sx);
+        return;
+      }
+      // Extended avalanche: check 2 cells out for very steep piles
+      if (inBounds(sx, sy) && grid[sy * gridW + sx] == El.empty &&
+          inBounds(sx2, sy2) && grid[sy2 * gridW + sx2] == El.empty &&
+          inBounds(sx2, sy) && grid[sy * gridW + sx2] == El.empty) {
+        swap(idx, sy * gridW + sx);
+        return;
+      }
     }
   }
 }
