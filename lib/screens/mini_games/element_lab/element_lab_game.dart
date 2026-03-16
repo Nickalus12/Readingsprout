@@ -953,11 +953,15 @@ class _ElementLabGameState extends State<ElementLabGame>
                     placeholderBuilder: (_) => Icon(Icons.eco_rounded, size: iconSz, color: Colors.white),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
-                  'Seed',
-                  style: AppFonts.fredoka(fontSize: labelSz, fontWeight: FontWeight.w500,
-                    color: isSelected ? color : AppColors.secondaryText),
+                  isSelected && _input.selectedSeedType > 0
+                      ? seedNames[_input.selectedSeedType]
+                      : 'Seed',
+                  style: AppFonts.fredoka(fontSize: labelSz, fontWeight: FontWeight.w600,
+                    color: isSelected
+                        ? seedColors[_input.selectedSeedType.clamp(0, 5)]
+                        : AppColors.secondaryText),
                 ),
               ],
             ),
@@ -983,6 +987,23 @@ class _ElementLabGameState extends State<ElementLabGame>
                         onTap: () {
                           setState(() { _input.selectedSeedType = st; _showSeedPopup = false; });
                           Haptics.tap();
+                          // Speak the seed type name (spell it out)
+                          final seedWord = seedNames[st].toLowerCase();
+                          final audioName = _displayToAudioName[seedWord] ?? seedWord;
+                          if (speakableWords.contains(audioName)) {
+                            _speakWord(audioName);
+                          } else if (speakableWords.contains(seedWord)) {
+                            _speakWord(seedWord);
+                          } else {
+                            // Spell it out letter by letter
+                            () async {
+                              for (final letter in seedWord.split('')) {
+                                if (!mounted || _isMuted) break;
+                                await widget.audioService.playLetter(letter);
+                                await Future.delayed(const Duration(milliseconds: 250));
+                              }
+                            }();
+                          }
                         },
                         child: Container(
                           width: popupItemW, height: popupItemH,
