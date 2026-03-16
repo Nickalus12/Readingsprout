@@ -1570,6 +1570,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 ],
               ),
 
+            // Coin reward notification
+            if (!championNotDone)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.starGold.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AppColors.starGold.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.monetization_on_rounded,
+                        size: 18,
+                        color: AppColors.starGold,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '+${_words.length + 5} coins earned!',
+                        style: AppFonts.fredoka(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.starGold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+                  .animate()
+                  .fadeIn(delay: 800.ms, duration: 400.ms)
+                  .slideY(begin: 0.2, end: 0, delay: 800.ms, duration: 400.ms),
+
             const SizedBox(height: 32),
 
             // Action buttons
