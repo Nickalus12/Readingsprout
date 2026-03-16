@@ -182,22 +182,36 @@ class GameLetterTiles extends StatelessWidget {
                 .animate(key: ValueKey('pop_${currentWordIndex}_$i'))
                 .scaleXY(begin: 1.2, end: 1.0, duration: 300.ms, curve: Curves.elasticOut);
           }
-          // Wave animation when word is complete (stagger each tile)
+          // Wave animation + glow when word is complete (stagger each tile)
           if (allRevealed && showingCelebration) {
             tile = tile
                 .animate(key: ValueKey('wave_${currentWordIndex}_$i'))
+                .scaleXY(
+                  begin: 1.0,
+                  end: 1.15,
+                  delay: Duration(milliseconds: i * 70),
+                  duration: 200.ms,
+                  curve: Curves.easeOut,
+                )
+                .then()
+                .scaleXY(
+                  begin: 1.15,
+                  end: 1.0,
+                  duration: 250.ms,
+                  curve: Curves.bounceOut,
+                )
                 .slideY(
                   begin: 0,
-                  end: -0.15,
-                  delay: Duration(milliseconds: i * 60),
+                  end: -0.18,
+                  delay: Duration(milliseconds: i * 70),
                   duration: 200.ms,
                   curve: Curves.easeOut,
                 )
                 .then()
                 .slideY(
-                  begin: -0.15,
+                  begin: -0.18,
                   end: 0,
-                  duration: 200.ms,
+                  duration: 250.ms,
                   curve: Curves.bounceOut,
                 );
           }
