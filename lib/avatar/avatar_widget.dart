@@ -116,11 +116,18 @@ class AvatarController extends ChangeNotifier {
     }
   }
 
+  // ── Talking state (driven by widget tick loop, not a separate timer) ──
+  int _talkStartMs = 0;
+  int _talkDurationMs = 0;
+  double _talkBaseFreq = 7.0;
+  double _talkAmpBase = 0.55;
+  double _talkAmpRange = 0.20;
+
   /// Simulate talking with organic mouth movement for [duration].
   ///
-  /// Uses randomized amplitude (0.3–0.9) and frequency (6–12 Hz) with
-  /// perlin-like layering for natural feel. Ramps up over 100ms at start,
-  /// ramps down over 100ms at end.
+  /// Sets up parameters for the talking animation. The actual mouth value
+  /// is computed each frame by [updateTalkingFrame] called from the widget's
+  /// vsync-driven tick loop, avoiding race conditions from separate timers.
   void simulateTalking({Duration duration = const Duration(seconds: 2)}) {
     _expressionTimer?.cancel();
     _talkingTimer?.cancel();
@@ -128,46 +135,52 @@ class AvatarController extends ChangeNotifier {
 
     _expression = AvatarExpression.talking;
     _mouthOpenAmount = 0.0;
-    notifyListeners();
 
-    final startMs = DateTime.now().millisecondsSinceEpoch;
-    final durationMs = duration.inMilliseconds;
-    const rampMs = 100.0; // ease in/out duration
+    _talkStartMs = DateTime.now().millisecondsSinceEpoch;
+    _talkDurationMs = duration.inMilliseconds;
 
     // Randomized per-session parameters for organic feel
-    // Wider amplitude range so mouth movement is clearly visible to kids
-    final baseFreq = 5.0 + _rng.nextDouble() * 5.0;   // 5–10 Hz
-    final ampBase = 0.45 + _rng.nextDouble() * 0.3;    // 0.45–0.75 base
-    final ampRange = 0.15 + _rng.nextDouble() * 0.20;  // variation range
+    _talkBaseFreq = 5.0 + _rng.nextDouble() * 5.0;   // 5–10 Hz
+    _talkAmpBase = 0.45 + _rng.nextDouble() * 0.3;    // 0.45–0.75 base
+    _talkAmpRange = 0.15 + _rng.nextDouble() * 0.20;  // variation range
 
-    _talkCycleTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      final elapsed = DateTime.now().millisecondsSinceEpoch - startMs;
-      final t = elapsed / 1000.0; // seconds
+    notifyListeners();
 
-      // Ramp envelope: ease in at start, ease out at end
-      double envelope = 1.0;
-      if (elapsed < rampMs) {
-        envelope = elapsed / rampMs;
-      } else if (elapsed > durationMs - rampMs) {
-        envelope = ((durationMs - elapsed) / rampMs).clamp(0.0, 1.0);
-      }
-
-      // Multi-layer oscillation for organic mouth movement
-      final layer1 = sin(t * baseFreq * 2 * pi) * 0.5 + 0.5;
-      final layer2 = sin(t * baseFreq * 1.3 * 2 * pi + 0.7) * 0.3 + 0.5;
-      final layer3 = sin(t * baseFreq * 0.5 * 2 * pi + 2.1) * 0.2 + 0.5;
-
-      // Combine layers with randomized amplitude
-      final amplitude = ampBase + sin(t * 1.7) * ampRange;
-      final raw = (layer1 * 0.5 + layer2 * 0.3 + layer3 * 0.2) * amplitude;
-
-      _mouthOpenAmount = (raw * envelope).clamp(0.0, 1.0);
-      notifyListeners();
-    });
-
+    // Auto-stop after duration
     _talkingTimer = Timer(duration, () {
       stopTalking();
     });
+  }
+
+  /// Called each frame from the widget's tick loop to update mouth openness
+  /// in sync with the render cycle. Prevents the stutter caused by a
+  /// separate Timer.periodic running at a slightly different rate.
+  void updateTalkingFrame() {
+    if (_expression != AvatarExpression.talking || _talkDurationMs == 0) return;
+
+    final elapsed = DateTime.now().millisecondsSinceEpoch - _talkStartMs;
+    final t = elapsed / 1000.0; // seconds
+    const rampMs = 100.0;
+
+    // Ramp envelope: ease in at start, ease out at end
+    double envelope = 1.0;
+    if (elapsed < rampMs) {
+      envelope = elapsed / rampMs;
+    } else if (elapsed > _talkDurationMs - rampMs) {
+      envelope = ((_talkDurationMs - elapsed) / rampMs).clamp(0.0, 1.0);
+    }
+
+    // Multi-layer oscillation for organic mouth movement
+    final layer1 = sin(t * _talkBaseFreq * 2 * pi) * 0.5 + 0.5;
+    final layer2 = sin(t * _talkBaseFreq * 1.3 * 2 * pi + 0.7) * 0.3 + 0.5;
+    final layer3 = sin(t * _talkBaseFreq * 0.5 * 2 * pi + 2.1) * 0.2 + 0.5;
+
+    // Combine layers with randomized amplitude
+    final amplitude = _talkAmpBase + sin(t * 1.7) * _talkAmpRange;
+    final raw = (layer1 * 0.5 + layer2 * 0.3 + layer3 * 0.2) * amplitude;
+
+    _mouthOpenAmount = (raw * envelope).clamp(0.0, 1.0);
+    // No notifyListeners — widget tick loop already calls setState
   }
 
   /// Stop any active talking animation and return to idle mouth.
@@ -176,6 +189,7 @@ class AvatarController extends ChangeNotifier {
     _talkCycleTimer = null;
     _talkingTimer?.cancel();
     _talkingTimer = null;
+    _talkDurationMs = 0;
     _mouthOpenAmount = 0.0;
     _expression = AvatarExpression.neutral;
     notifyListeners();
@@ -393,6 +407,9 @@ class _AvatarWidgetState extends State<AvatarWidget>
     _idleSwayValue = sin(_totalTime * 0.785) * 0.5 + 0.5;  // ~4s cycle
     _pupilDilationValue = sin(_totalTime * 0.628) * 0.5 + 0.5; // ~5s cycle
     _twinkleValue = (_totalTime / 3.0) % 1.0; // 3s loop
+
+    // 6b. Update talking mouth from controller (synced with vsync tick)
+    widget.controller?.updateTalkingFrame();
 
     // 7. Blink state machine
     if (_isBlinking) {
