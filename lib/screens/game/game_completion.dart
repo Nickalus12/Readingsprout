@@ -14,6 +14,7 @@ class GameLevelComplete extends StatelessWidget {
   final int perfectWords;
   final int perfectStreak;
   final int totalWords;
+  final int totalTierMistakes;
   final String levelCompletePhrase;
   final ProgressService progressService;
   final VoidCallback onReplay;
@@ -26,6 +27,7 @@ class GameLevelComplete extends StatelessWidget {
     required this.perfectWords,
     required this.perfectStreak,
     required this.totalWords,
+    this.totalTierMistakes = 0,
     required this.levelCompletePhrase,
     required this.progressService,
     required this.onReplay,

@@ -113,7 +113,7 @@ class ChampionRetryOverlay extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.skip_next_rounded,
                             size: 20,
                             color: AppColors.secondaryText,
@@ -170,7 +170,7 @@ class ChampionRetryOverlay extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.refresh_rounded,
                             size: 20,
                             color: AppColors.electricBlue,

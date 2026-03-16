@@ -855,6 +855,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             perfectWords: _perfectWords,
                             perfectStreak: _perfectStreak,
                             totalWords: _words.length,
+                            totalTierMistakes: _championTierMistakes,
                             levelCompletePhrase: _levelCompletePhrase,
                             progressService: widget.progressService,
                             onReplay: () {
@@ -863,6 +864,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 _currentWordIndex = 0;
                                 _perfectWords = 0;
                                 _perfectStreak = 0;
+                                _championTierMistakes = 0;
                                 _initRevealedLetters();
                                 _levelComplete = false;
                               });
