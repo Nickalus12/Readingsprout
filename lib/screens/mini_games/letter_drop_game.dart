@@ -112,11 +112,11 @@ class _LetterDropSim extends ChangeNotifier {
   List<_Slot> slots;
   final List<_Particle> particles;
   final List<_TrailDot> trails;
-  String currentWord;
-  double slotShelfY;
-  double scale;
-  double areaWidth;
-  double areaHeight;
+  String currentWord = '';
+  double slotShelfY = 0;
+  double scale = 50.0;
+  double areaWidth = 0;
+  double areaHeight = 0;
   List<Color> themeColors;
   bool hintsEnabled;
   double wordCelebrateT = 0;
