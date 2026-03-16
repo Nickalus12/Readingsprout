@@ -940,11 +940,25 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (frameCount.isOdd) return;
+    // Lava is very viscous — moves every 3rd frame (slower than water)
+    if (frameCount % 3 != 0) return;
 
     final by = y + gravityDir;
     if (inBounds(x, by) && grid[by * gridW + x] == El.empty) {
       swap(idx, by * gridW + x);
+      return;
+    }
+
+    // Lava sinks through water (heavier)
+    if (inBounds(x, by) && grid[by * gridW + x] == El.water) {
+      final bi = by * gridW + x;
+      grid[bi] = El.lava;
+      life[bi] = life[idx];
+      grid[idx] = El.steam;
+      life[idx] = 0;
+      markProcessed(idx);
+      markProcessed(bi);
+      queueReactionFlash(x, y, 220, 220, 255, 4);
       return;
     }
 
@@ -960,12 +974,15 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    if (inBounds(x1, y) && grid[y * gridW + x1] == El.empty) {
-      swap(idx, y * gridW + x1);
-      return;
-    }
-    if (inBounds(x2, y) && grid[y * gridW + x2] == El.empty) {
-      swap(idx, y * gridW + x2);
+    // Lateral flow is very slow for lava — only every 6th frame
+    if (frameCount % 6 == 0) {
+      if (inBounds(x1, y) && grid[y * gridW + x1] == El.empty) {
+        swap(idx, y * gridW + x1);
+        return;
+      }
+      if (inBounds(x2, y) && grid[y * gridW + x2] == El.empty) {
+        swap(idx, y * gridW + x2);
+      }
     }
   }
 
