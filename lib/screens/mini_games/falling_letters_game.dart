@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -461,6 +460,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
 
   bool _gameStarted = false;
   bool _gameOver = false;
+  bool _showingStartOverlay = true;
   int _score = 0;
   late int _lives;
   int _wordsCompleted = 0;
@@ -492,13 +492,8 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _initStars();
     _ticker = createTicker(_onTick);
 
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() => _gameStarted = true);
-        _nextWord();
-        _ticker.start();
-      }
-    });
+    // Game starts when overlay is dismissed
+
   }
 
   @override
@@ -507,6 +502,15 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _sim.dispose();
     _sessionTimer.stop();
     super.dispose();
+  }
+
+  void _dismissStartOverlay() {
+    setState(() {
+      _showingStartOverlay = false;
+      _gameStarted = true;
+    });
+    _nextWord();
+    _ticker.start();
   }
 
   // ── Word pool ──────────────────────────────────────────────────────────
@@ -1060,7 +1064,97 @@ class _FallingLettersGameState extends State<FallingLettersGame>
           ),
         ),
         child: SafeArea(
-          child: _gameOver ? _buildGameOver() : _buildGame(),
+          child: _gameOver
+              ? _buildGameOver()
+              : Stack(
+                  children: [
+                    _buildGame(),
+                    if (_showingStartOverlay) _buildStartOverlay(),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStartOverlay() {
+    return GestureDetector(
+      onTap: _dismissStartOverlay,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.7),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: AppColors.electricBlue.withValues(alpha: 0.4),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.electricBlue.withValues(alpha: 0.15),
+                  blurRadius: 24,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Falling Letters',
+                  style: AppFonts.fredoka(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryText,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Visual hint: tap falling letter
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.arrow_downward_rounded,
+                        color: AppColors.electricBlue, size: 28),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.electricBlue.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.electricBlue.withValues(alpha: 0.5),
+                          width: 2,
+                        ),
+                      ),
+                      child: Text(
+                        'A',
+                        style: AppFonts.fredoka(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.electricBlue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.touch_app_rounded,
+                        color: AppColors.starGold, size: 28),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Tap to Start!',
+                  style: AppFonts.fredoka(
+                    fontSize: 18,
+                    color: AppColors.secondaryText,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

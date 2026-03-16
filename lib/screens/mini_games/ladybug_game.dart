@@ -954,15 +954,43 @@ class _LadybugGameState extends State<LadybugGame>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Tap the correct word to\nfeed the ladybug!',
-                    textAlign: TextAlign.center,
-                    style: AppFonts.nunito(
-                      fontSize: 16,
-                      color: AppColors.secondaryText,
-                    ),
+                  const SizedBox(height: 12),
+                  // Visual hint: speaker icon + word leaf example
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.volume_up_rounded,
+                          color: AppColors.emerald, size: 32),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded,
+                          color: AppColors.secondaryText, size: 20),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.emerald.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.emerald.withValues(alpha: 0.6),
+                            width: 2,
+                          ),
+                        ),
+                        child: Text(
+                          'cat',
+                          style: AppFonts.fredoka(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.touch_app_rounded,
+                          color: AppColors.starGold, size: 28),
+                    ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: _startGame,
                     style: ElevatedButton.styleFrom(

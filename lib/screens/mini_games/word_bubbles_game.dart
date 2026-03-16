@@ -451,15 +451,17 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     );
     _loopController.addListener(_gameLoop);
 
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted) {
-        _sim.gameStarted = true;
-        setState(() => _gameStarted = true);
-        _pickNewTarget();
-        _startCountdown();
-        _loopController.forward();
-      }
+    // Game starts when overlay is dismissed
+    _loopController.forward(); // Background animation runs even during overlay
+  }
+
+  void _dismissStartOverlay() {
+    setState(() {
+      _gameStarted = true;
+      _sim.gameStarted = true;
     });
+    _pickNewTarget();
+    _startCountdown();
   }
 
   // ── Word pool ──────────────────────────────────────────────────────────
@@ -1047,21 +1049,92 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   // ── Get Ready overlay ──────────────────────────────────────────────────
 
   Widget _buildGetReady(BuildContext context) {
-    return Container(
-      color: Colors.black.withValues(alpha: 0.5),
-      child: Center(
-        child: Text(
-          'Get Ready!',
-          style: AppFonts.fredoka(
-            fontSize: 40,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF60C0FF),
-            shadows: [
-              Shadow(
-                color: const Color(0xFF40A0FF).withValues(alpha: 0.6),
-                blurRadius: 20,
+    return GestureDetector(
+      onTap: _dismissStartOverlay,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.6),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1535),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: const Color(0xFF60C0FF).withValues(alpha: 0.4),
+                width: 2,
               ),
-            ],
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF40A0FF).withValues(alpha: 0.15),
+                  blurRadius: 24,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Word Bubbles',
+                  style: AppFonts.fredoka(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF60C0FF),
+                    shadows: [
+                      Shadow(
+                        color: const Color(0xFF40A0FF).withValues(alpha: 0.6),
+                        blurRadius: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Visual hint: listen then pop bubble
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.volume_up_rounded,
+                        color: Color(0xFF60C0FF), size: 28),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward_rounded,
+                        color: Colors.white38, size: 20),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF60C0FF).withValues(alpha: 0.15),
+                        border: Border.all(
+                          color: const Color(0xFF60C0FF).withValues(alpha: 0.5),
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'cat',
+                        style: AppFonts.fredoka(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.touch_app_rounded,
+                        color: AppColors.starGold, size: 28),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Tap to Start!',
+                  style: AppFonts.fredoka(
+                    fontSize: 18,
+                    color: Colors.white60,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
