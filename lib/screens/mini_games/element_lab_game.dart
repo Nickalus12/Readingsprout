@@ -1563,17 +1563,38 @@ class _ElementLabGameState extends State<ElementLabGame>
   }
 
   void _growMushroom(int x, int y, int idx, int curSize) {
-    // Mushroom: 2-3 tall, cap at top, spreads in wet soil
-    if (curSize < 3) {
+    // Mushroom: 3-4 tall, visible cap shape, spore release
+    if (curSize < 4) {
       final uy = y - _gravityDir;
       if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
         final ni = uy * _gridW + x;
         _grid[ni] = El.plant; _life[ni] = _life[idx];
         final newSize = curSize + 1;
-        _setPlantData(ni, kPlantMushroom, newSize >= 2 ? kStMature : kStGrowing);
+        _setPlantData(ni, kPlantMushroom, newSize >= 3 ? kStMature : kStGrowing);
         _velY[ni] = newSize;
         _flags[ni] = 1;
         _velY[idx] = newSize;
+      }
+      // Cap shape: at top, spread cap sideways (3 cells wide)
+      if (curSize >= 3) {
+        for (final side in [x - 1, x + 1]) {
+          if (_inBounds(side, y) && _grid[y * _gridW + side] == El.empty) {
+            final ni = y * _gridW + side;
+            _grid[ni] = El.plant; _life[ni] = _life[idx];
+            _setPlantData(ni, kPlantMushroom, kStMature); _velY[ni] = curSize;
+            _flags[ni] = 1;
+          }
+        }
+      }
+    }
+    // Spore release: mature mushrooms emit spore particles above cap
+    if (curSize >= 3 && _rng.nextInt(200) == 0) {
+      final sporeY = y - _gravityDir;
+      if (_inBounds(x, sporeY) && _grid[sporeY * _gridW + x] == El.empty) {
+        final ni = sporeY * _gridW + x;
+        _grid[ni] = El.seed; _life[ni] = 0;
+        _velX[ni] = kPlantMushroom; // seed with mushroom type
+        _flags[ni] = 1;
       }
     }
     // Spread to nearby wet soil
@@ -3326,21 +3347,64 @@ class _ElementLabGameState extends State<ElementLabGame>
       final el = g[i];
       final pi4 = i * 4;
       if (el == El.empty) {
-        // Lightweight glow check: only check cardinal neighbors (4 not 8)
-        int glowR = 0, glowG = 0;
+        // Glow check for fire/lava/lightning — enhanced at night
+        int glowR = 0, glowG = 0, glowB = 0;
         if (doGlow) {
           final x = i % w;
           final y = i ~/ w;
-          // Check 4 cardinal neighbors only (much faster than 8)
+          // Check 4 cardinal neighbors (radius 1) for fire/lava
           if (y > 0)     { final n = g[i - w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
           if (y < h - 1) { final n = g[i + w]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
           if (x > 0)     { final n = g[i - 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
           if (x < w - 1) { final n = g[i + 1]; if (n == El.fire || n == El.lava) { glowR += glowIntR; if (n == El.fire) glowG += glowIntG; } }
+          // At night: lava casts wider glow (radius 2), fire flickers more
+          if (t > 0.1) {
+            // Radius 2 check for lava (intense orange glow)
+            for (int dy = -2; dy <= 2; dy++) {
+              for (int dx = -2; dx <= 2; dx++) {
+                if (dx.abs() <= 1 && dy.abs() <= 1) continue; // already checked
+                final nx = x + dx;
+                final ny = y + dy;
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                final n = g[ny * w + nx];
+                if (n == El.lava) {
+                  final dist = dx.abs() > dy.abs() ? dx.abs() : dy.abs();
+                  final falloff = dist == 2 ? 6 : 10;
+                  glowR += (falloff * glowMul).round();
+                  glowG += (falloff * 0.3 * glowMul).round();
+                }
+              }
+            }
+            // Fire flicker boost at night
+            if (glowR > 0) {
+              final flicker = (_frameCount + i * 7) % 6;
+              if (flicker < 2) glowR = (glowR * 1.4).round();
+            }
+          }
+          // Lightning illumination (3-cell radius, only during flash)
+          if (_lightningFlashFrames > 0) {
+            for (int dy = -3; dy <= 3; dy++) {
+              for (int dx = -3; dx <= 3; dx++) {
+                if (dx * dx + dy * dy > 9) continue;
+                final nx = x + dx;
+                final ny = y + dy;
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                if (g[ny * w + nx] == El.lightning) {
+                  final dist2 = dx * dx + dy * dy;
+                  final bright = (40 - dist2 * 4).clamp(5, 40);
+                  glowR += bright;
+                  glowG += bright;
+                  glowB += (bright * 0.7).round();
+                  break; // one lightning source is enough
+                }
+              }
+            }
+          }
         }
-        if (glowR > 0) {
-          _pixels[pi4] = (bgR + glowR.clamp(0, 60)).clamp(0, 255);
-          _pixels[pi4 + 1] = (bgG + glowG.clamp(0, 20)).clamp(0, 255);
-          _pixels[pi4 + 2] = bgB;
+        if (glowR > 0 || glowB > 0) {
+          _pixels[pi4] = (bgR + glowR.clamp(0, 80)).clamp(0, 255);
+          _pixels[pi4 + 1] = (bgG + glowG.clamp(0, 40)).clamp(0, 255);
+          _pixels[pi4 + 2] = (bgB + glowB.clamp(0, 40)).clamp(0, 255);
           _pixels[pi4 + 3] = 255;
         } else if (starSet.contains(i)) {
           // Twinkling stars at night
@@ -3376,9 +3440,16 @@ class _ElementLabGameState extends State<ElementLabGame>
 
       // Night lighting adjustments (pre-computed int factors)
       if (nightBoost > 0) {
-        if (el == El.fire || el == El.lava) {
-          r = (r + nightBoost).clamp(0, 255);
-          g2 = (g2 + nightBoostG).clamp(0, 255);
+        if (el == El.fire) {
+          // Fire flickers more dramatically at night
+          final fireFlicker = (_frameCount + i * 13) % 8;
+          final flBoost = fireFlicker < 3 ? nightBoost + 15 : nightBoost;
+          r = (r + flBoost).clamp(0, 255);
+          g2 = (g2 + nightBoostG + (fireFlicker < 2 ? 10 : 0)).clamp(0, 255);
+        } else if (el == El.lava) {
+          // Lava glows intensely at night
+          r = (r + nightBoost + 10).clamp(0, 255);
+          g2 = (g2 + nightBoostG + 5).clamp(0, 255);
         } else if (el == El.lightning) {
           // stays bright
         } else if (el == El.water) {
