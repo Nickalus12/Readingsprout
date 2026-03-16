@@ -373,22 +373,22 @@ class TorsoPainter extends CustomPainter {
         collarPath.lineTo(cx, sy + h * 0.065);
         collarPath.lineTo(cx + sw * 0.12, sy + h * 0.01);
 
-      case 2: // Collared shirt — two wing shapes
+      case 2: // Collared shirt — wider wing shapes for more visibility
         for (final side in [-1.0, 1.0]) {
-          collarPath.moveTo(cx + side * sw * 0.10, sy + h * 0.01);
+          collarPath.moveTo(cx + side * sw * 0.12, sy + h * 0.01);
           collarPath.cubicTo(
-            cx + side * sw * 0.16, sy - h * 0.012,
-            cx + side * sw * 0.09, sy - h * 0.022,
+            cx + side * sw * 0.19, sy - h * 0.015,
+            cx + side * sw * 0.11, sy - h * 0.028,
             cx + side * sw * 0.03, sy + h * 0.02,
           );
         }
-        // Collar fill (white triangle hint)
+        // Collar fill — more visible white V opening
         final collarFill = Paint()
-          ..color = Colors.white.withValues(alpha: 0.15);
+          ..color = Colors.white.withValues(alpha: 0.20);
         final fillPath = Path()
-          ..moveTo(cx - sw * 0.08, sy + h * 0.01)
-          ..lineTo(cx, sy + h * 0.04)
-          ..lineTo(cx + sw * 0.08, sy + h * 0.01)
+          ..moveTo(cx - sw * 0.10, sy + h * 0.01)
+          ..lineTo(cx, sy + h * 0.05)
+          ..lineTo(cx + sw * 0.10, sy + h * 0.01)
           ..close();
         canvas.drawPath(fillPath, collarFill);
 

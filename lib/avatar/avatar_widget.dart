@@ -1372,11 +1372,13 @@ class FacePainter extends CustomPainter {
     );
     canvas.restore();
 
-    // ── Head silhouette outline ──
+    // ── Head silhouette outline — very soft for child look ──
+    // Thinner and more transparent than adult character
     final outlinePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = skinColor.withValues(alpha: 0.3);
+      ..strokeWidth = 1.0
+      ..color = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.15) ?? skinColor)
+          .withValues(alpha: 0.20);
     canvas.drawPath(facePath, outlinePaint);
 
     // ── Skin glow shader (GPU subsurface scattering) ──
