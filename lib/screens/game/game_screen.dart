@@ -1109,7 +1109,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
                 // ── Champion retry prompt ───────────────────
                 if (_championRetryPrompt)
-                  _ChampionRetryOverlay(
+                  ChampionRetryOverlay(
                     word: _currentWord.text,
                     onRetry: _retryChampionWord,
                     onSkip: _skipChampionWord,
