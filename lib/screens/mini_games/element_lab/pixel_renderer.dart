@@ -634,9 +634,10 @@ class PixelRenderer {
         }
         // Add per-pixel noise from hash to break up remaining patterns
         final dirtNoise = ((dirtHash >> 8) % 13) - 6;
-        _inlineR = (baseR + dirtNoise - mFrac * 59).round().clamp(60, 150);
-        _inlineG = (baseG + dirtNoise ~/ 2 - mFrac * 50).round().clamp(40, 120);
-        _inlineB = (baseB - mFrac * 5).round().clamp(10, 50);
+        // Wet dirt: darker brown with slight blue tint (waterlogged look)
+        _inlineR = (baseR + dirtNoise - mFrac * 65).round().clamp(50, 150);
+        _inlineG = (baseG + dirtNoise ~/ 2 - mFrac * 55).round().clamp(30, 120);
+        _inlineB = (baseB + mFrac * 15 - mFrac * 5).round().clamp(10, 55);
         _inlineA = 255;
 
       case El.plant:
