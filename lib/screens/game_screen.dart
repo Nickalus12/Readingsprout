@@ -677,7 +677,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       );
     }
     _avatarController.dispose();
+    _shakeController.removeStatusListener(_onShakeStatus);
     _shakeController.dispose();
+    _nudgeController.removeStatusListener(_onNudgeStatus);
     _nudgeController.dispose();
     _streakPopController.dispose();
     _confettiController.stop();

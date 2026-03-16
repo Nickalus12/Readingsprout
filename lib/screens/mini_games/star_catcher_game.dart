@@ -109,18 +109,42 @@ class _ShootingStar {
   });
 }
 
+// ── Simulation ────────────────────────────────────────────────────────────
+
+class _StarCatcherSim extends ChangeNotifier {
+  final Random rng = Random();
+
+  static const double starZoneTop = 0.18;
+  static const double starZoneBottom = 0.88;
+
+  List<_Star> stars = [];
+  int nextStarId = 0;
+
+  final List<_ConstellationLine> constellationLines = [];
+  final List<Offset> caughtPositions = [];
+
+  final List<_SparkleParticle> particles = [];
+  final List<_ShootingStar> shootingStars = [];
+  double flashOpacity = 0;
+  Color flashColor = Colors.white;
+
+  double astronautBob = 0;
+
+  void tick(double dt) {
+    notifyListeners();
+  }
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 class _StarCatcherGameState extends State<StarCatcherGame>
     with SingleTickerProviderStateMixin {
-  final _rng = Random();
+  late final _StarCatcherSim _sim;
 
   // Game config
   late final int _gameDurationSecs;
-  static const double _starZoneTop = 0.18;
-  static const double _starZoneBottom = 0.88;
 
-  // Game state
+  // Game state (overlay)
   bool _gameStarted = false;
   bool _gameOver = false;
   bool _introPlayed = false;
@@ -136,20 +160,6 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   String _currentWord = '';
   int _nextLetterIndex = 0;
 
-  // Stars
-  List<_Star> _stars = [];
-  int _nextStarId = 0;
-
-  // Constellation lines (connect caught stars)
-  final List<_ConstellationLine> _constellationLines = [];
-  final List<Offset> _caughtPositions = [];
-
-  // Visual effects
-  final List<_SparkleParticle> _particles = [];
-  final List<_ShootingStar> _shootingStars = [];
-  double _flashOpacity = 0;
-  Color _flashColor = Colors.white;
-
   // Background stars (static twinkling)
   late List<_BackgroundStar> _bgStars;
 
@@ -158,26 +168,24 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   Duration _lastElapsed = Duration.zero;
   Size _screenSize = Size.zero;
 
-  // Astronaut bob
-  double _astronautBob = 0;
-
   late final Stopwatch _sessionTimer;
 
   @override
   void initState() {
     super.initState();
+    _sim = _StarCatcherSim();
     _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
     _timeRemaining = _gameDurationSecs;
     _sessionTimer = Stopwatch()..start();
     _wordPool = _buildWordPool();
 
-    // Background stars
+    final rng = _sim.rng;
     _bgStars = List.generate(50, (_) => _BackgroundStar(
-      x: _rng.nextDouble(),
-      y: _rng.nextDouble(),
-      size: 0.5 + _rng.nextDouble() * 2,
-      phase: _rng.nextDouble() * pi * 2,
-      speed: 0.5 + _rng.nextDouble() * 2,
+      x: rng.nextDouble(),
+      y: rng.nextDouble(),
+      size: 0.5 + rng.nextDouble() * 2,
+      phase: rng.nextDouble() * pi * 2,
+      speed: 0.5 + rng.nextDouble() * 2,
     ));
 
     _ticker = createTicker(_onTick);
@@ -187,6 +195,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   @override
   void dispose() {
     _ticker.dispose();
+    _sim.dispose();
     _gameTimer?.cancel();
     _sessionTimer.stop();
     super.dispose();
@@ -202,7 +211,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
     if (pool.isEmpty) {
       pool.addAll(DolchWords.wordsForLevel(1).map((w) => w.text));
     }
-    pool.shuffle(_rng);
+    pool.shuffle(_sim.rng);
     return pool;
   }
 
@@ -217,13 +226,13 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       _bestCombo = 0;
       _wordsCompleted = 0;
       _timeRemaining = _gameDurationSecs;
-      _stars = [];
-      _constellationLines.clear();
-      _caughtPositions.clear();
-      _particles.clear();
-      _shootingStars.clear();
+      _sim.stars = [];
+      _sim.constellationLines.clear();
+      _sim.caughtPositions.clear();
+      _sim.particles.clear();
+      _sim.shootingStars.clear();
       _nextLetterIndex = 0;
-      _wordPool.shuffle(_rng);
+      _wordPool.shuffle(_sim.rng);
     });
     _nextWord();
     _gameTimer?.cancel();
@@ -269,8 +278,8 @@ class _StarCatcherGameState extends State<StarCatcherGame>
     if (_wordPool.isEmpty) _wordPool = _buildWordPool();
     _currentWord = _wordPool.removeAt(0);
     _nextLetterIndex = 0;
-    _constellationLines.clear();
-    _caughtPositions.clear();
+    _sim.constellationLines.clear();
+    _sim.caughtPositions.clear();
     _spawnStars();
 
     // Speak the word
@@ -282,62 +291,62 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   }
 
   void _spawnStars() {
-    _stars.clear();
+    final rng = _sim.rng;
+    _sim.stars.clear();
     final letters = _currentWord.split('');
     final usedPositions = <Offset>[];
 
-    // Place correct letter stars
     for (int i = 0; i < letters.length; i++) {
       final pos = _findOpenPosition(usedPositions);
       usedPositions.add(pos);
-      _stars.add(_Star(
-        id: _nextStarId++,
+      _sim.stars.add(_Star(
+        id: _sim.nextStarId++,
         letter: letters[i].toUpperCase(),
         isCorrect: true,
         correctIndex: i,
         x: pos.dx,
         y: pos.dy,
-        vx: (_rng.nextDouble() - 0.5) * 0.06,
-        vy: (_rng.nextDouble() - 0.5) * 0.04,
-        twinklePhase: _rng.nextDouble() * pi * 2,
+        vx: (rng.nextDouble() - 0.5) * 0.06,
+        vy: (rng.nextDouble() - 0.5) * 0.04,
+        twinklePhase: rng.nextDouble() * pi * 2,
         radius: 28,
       ));
     }
 
-    // Add distractor stars (3-5 random letters)
-    final distractorCount = 3 + _rng.nextInt(3);
+    final distractorCount = 3 + rng.nextInt(3);
     const allLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     for (int i = 0; i < distractorCount; i++) {
       final pos = _findOpenPosition(usedPositions);
       usedPositions.add(pos);
       String letter;
       do {
-        letter = allLetters[_rng.nextInt(allLetters.length)];
+        letter = allLetters[rng.nextInt(allLetters.length)];
       } while (_currentWord.toUpperCase().contains(letter) &&
-          _rng.nextDouble() > 0.3);
+          rng.nextDouble() > 0.3);
 
-      _stars.add(_Star(
-        id: _nextStarId++,
+      _sim.stars.add(_Star(
+        id: _sim.nextStarId++,
         letter: letter,
         isCorrect: false,
         correctIndex: -1,
         x: pos.dx,
         y: pos.dy,
-        vx: (_rng.nextDouble() - 0.5) * 0.06,
-        vy: (_rng.nextDouble() - 0.5) * 0.04,
-        twinklePhase: _rng.nextDouble() * pi * 2,
+        vx: (rng.nextDouble() - 0.5) * 0.06,
+        vy: (rng.nextDouble() - 0.5) * 0.04,
+        twinklePhase: rng.nextDouble() * pi * 2,
         radius: 28,
       ));
     }
-    _stars.shuffle(_rng);
+    _sim.stars.shuffle(rng);
   }
 
   Offset _findOpenPosition(List<Offset> existing) {
+    final rng = _sim.rng;
     const margin = 0.08;
     for (int attempt = 0; attempt < 50; attempt++) {
-      final x = margin + _rng.nextDouble() * (1.0 - 2 * margin);
-      final y = _starZoneTop + 0.05 +
-          _rng.nextDouble() * (_starZoneBottom - _starZoneTop - 0.1);
+      final x = margin + rng.nextDouble() * (1.0 - 2 * margin);
+      final y = _StarCatcherSim.starZoneTop + 0.05 +
+          rng.nextDouble() * (_StarCatcherSim.starZoneBottom - _StarCatcherSim.starZoneTop - 0.1);
       bool tooClose = false;
       for (final e in existing) {
         if ((e.dx - x).abs() < 0.12 && (e.dy - y).abs() < 0.1) {
@@ -348,8 +357,8 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       if (!tooClose) return Offset(x, y);
     }
     return Offset(
-      margin + _rng.nextDouble() * (1.0 - 2 * margin),
-      _starZoneTop + _rng.nextDouble() * (_starZoneBottom - _starZoneTop),
+      margin + rng.nextDouble() * (1.0 - 2 * margin),
+      _StarCatcherSim.starZoneTop + rng.nextDouble() * (_StarCatcherSim.starZoneBottom - _StarCatcherSim.starZoneTop),
     );
   }
 
@@ -363,17 +372,13 @@ class _StarCatcherGameState extends State<StarCatcherGame>
     final tappedLetter = star.letter.toUpperCase();
 
     if (star.isCorrect && star.correctIndex == _nextLetterIndex) {
-      // Correct tap!
       _onCorrectTap(star);
     } else if (tappedLetter == expectedLetter && !star.caught) {
-      // Could be a duplicate letter matching -- check if this is a valid correct star
-      // for the current index
-      final validStar = _stars.firstWhere(
+      final validStar = _sim.stars.firstWhere(
         (s) => s.isCorrect && s.correctIndex == _nextLetterIndex && !s.caught,
         orElse: () => star,
       );
       if (validStar.id != star.id && tappedLetter == expectedLetter) {
-        // This star has the right letter but wrong index. Wobble it.
         _onWrongTap(star);
       } else {
         _onCorrectTap(star);
@@ -384,34 +389,29 @@ class _StarCatcherGameState extends State<StarCatcherGame>
   }
 
   void _onCorrectTap(_Star star) {
-    setState(() {
-      star.caught = true;
-      star.glowPulse = 1.0;
-      _combo++;
-      if (_combo > _bestCombo) _bestCombo = _combo;
+    star.caught = true;
+    star.glowPulse = 1.0;
+    _combo++;
+    if (_combo > _bestCombo) _bestCombo = _combo;
 
-      // Score: base 10 + combo bonus + speed bonus
-      final comboBonus = (_combo > 1) ? (_combo - 1) * 5 : 0;
-      final timeBonus = (_timeRemaining > 30) ? 5 : 0;
-      _score += 10 + comboBonus + timeBonus;
+    final comboBonus = (_combo > 1) ? (_combo - 1) * 5 : 0;
+    final timeBonus = (_timeRemaining > 30) ? 5 : 0;
+    _score += 10 + comboBonus + timeBonus;
 
-      // Track caught position for constellation lines
-      final pos = Offset(star.x, star.y);
-      if (_caughtPositions.isNotEmpty) {
-        _constellationLines.add(_ConstellationLine(
-          from: _caughtPositions.last,
-          to: pos,
-          opacity: 1.0,
-        ));
-      }
-      _caughtPositions.add(pos);
+    final pos = Offset(star.x, star.y);
+    if (_sim.caughtPositions.isNotEmpty) {
+      _sim.constellationLines.add(_ConstellationLine(
+        from: _sim.caughtPositions.last,
+        to: pos,
+        opacity: 1.0,
+      ));
+    }
+    _sim.caughtPositions.add(pos);
 
-      _nextLetterIndex++;
-    });
+    _nextLetterIndex++;
 
     widget.audioService.playLetter(star.letter.toLowerCase());
 
-    // Spawn sparkles
     if (_screenSize != Size.zero) {
       _spawnSparkles(
         star.x * _screenSize.width,
@@ -421,26 +421,24 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       );
     }
 
-    // Shooting star on combo >= 3
     if (_combo >= 3 && _screenSize != Size.zero) {
       _spawnShootingStar();
     }
 
-    // Check word complete
     if (_nextLetterIndex >= _currentWord.length) {
       widget.audioService.playSuccess();
       Haptics.success();
       _wordsCompleted++;
-      _flashOpacity = 0.3;
-      _flashColor = AppColors.starGold;
+      _sim.flashOpacity = 0.3;
+      _sim.flashColor = AppColors.starGold;
 
-      // Big sparkle burst for word completion
       if (_screenSize != Size.zero) {
-        for (final caught in _caughtPositions) {
+        final rng = _sim.rng;
+        for (final caught in _sim.caughtPositions) {
           _spawnSparkles(
             caught.dx * _screenSize.width,
             caught.dy * _screenSize.height,
-            AppColors.confettiColors[_rng.nextInt(AppColors.confettiColors.length)],
+            AppColors.confettiColors[rng.nextInt(AppColors.confettiColors.length)],
             6,
           );
         }
@@ -453,45 +451,48 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       widget.audioService.playSuccess();
       Haptics.correct();
     }
+
+    if (mounted) setState(() {});
   }
 
   void _onWrongTap(_Star star) {
-    setState(() {
-      star.wobbleAmount = 12;
-      star.wobbleTimer = 0.4;
-      _combo = 0;
-    });
+    star.wobbleAmount = 12;
+    star.wobbleTimer = 0.4;
+    _combo = 0;
     widget.audioService.playError();
     Haptics.wrong();
+    if (mounted) setState(() {});
   }
 
   // ── Effects ──────────────────────────────────────────────────────────────
 
   void _spawnSparkles(double cx, double cy, Color color, int count) {
+    final rng = _sim.rng;
     for (int i = 0; i < count; i++) {
-      final angle = _rng.nextDouble() * pi * 2;
-      final speed = 60 + _rng.nextDouble() * 120;
-      _particles.add(_SparkleParticle(
+      final angle = rng.nextDouble() * pi * 2;
+      final speed = 60 + rng.nextDouble() * 120;
+      _sim.particles.add(_SparkleParticle(
         x: cx,
         y: cy,
         vx: cos(angle) * speed,
         vy: sin(angle) * speed - 30,
-        size: 2 + _rng.nextDouble() * 4,
+        size: 2 + rng.nextDouble() * 4,
         life: 1.0,
-        color: Color.lerp(color, Colors.white, _rng.nextDouble() * 0.5)!,
+        color: Color.lerp(color, Colors.white, rng.nextDouble() * 0.5)!,
       ));
     }
   }
 
   void _spawnShootingStar() {
-    final startX = _rng.nextDouble() * _screenSize.width;
-    _shootingStars.add(_ShootingStar(
+    final rng = _sim.rng;
+    final startX = rng.nextDouble() * _screenSize.width;
+    _sim.shootingStars.add(_ShootingStar(
       x: startX,
       y: 0,
-      vx: (_rng.nextDouble() - 0.5) * 200,
-      vy: 300 + _rng.nextDouble() * 200,
+      vx: (rng.nextDouble() - 0.5) * 200,
+      vy: 300 + rng.nextDouble() * 200,
       life: 1.0,
-      length: 30 + _rng.nextDouble() * 40,
+      length: 30 + rng.nextDouble() * 40,
     ));
   }
 
@@ -501,17 +502,18 @@ class _StarCatcherGameState extends State<StarCatcherGame>
     final dtRaw = (elapsed - _lastElapsed).inMicroseconds / 1e6;
     _lastElapsed = elapsed;
     final dt = dtRaw.clamp(0.0, 0.05);
+    final sim = _sim;
+    final rng = sim.rng;
+
     if (_screenSize == Size.zero || !_gameStarted || _gameOver) {
-      // Still update astronaut bob for start screen
-      _astronautBob += dt * 1.5;
-      if (mounted) setState(() {});
+      sim.astronautBob += dt * 1.5;
+      sim.tick(dt);
       return;
     }
 
-    _astronautBob += dt * 1.5;
+    sim.astronautBob += dt * 1.5;
 
-    // Update stars
-    for (final s in _stars) {
+    for (final s in sim.stars) {
       if (s.caught) {
         s.glowPulse = (s.glowPulse - dt * 0.5).clamp(0.0, 1.0);
         continue;
@@ -521,33 +523,29 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       s.x += s.vx * dt;
       s.y += s.vy * dt;
 
-      // Wobble decay
       if (s.wobbleTimer > 0) {
         s.wobbleTimer -= dt;
         if (s.wobbleTimer <= 0) s.wobbleAmount = 0;
       }
 
-      // Bounce off edges
       final rNorm = s.radius / _screenSize.width;
       final rNormY = s.radius / _screenSize.height;
       if (s.x < rNorm) { s.x = rNorm; s.vx = s.vx.abs(); }
       if (s.x > 1 - rNorm) { s.x = 1 - rNorm; s.vx = -s.vx.abs(); }
-      if (s.y < _starZoneTop + rNormY) {
-        s.y = _starZoneTop + rNormY;
+      if (s.y < _StarCatcherSim.starZoneTop + rNormY) {
+        s.y = _StarCatcherSim.starZoneTop + rNormY;
         s.vy = s.vy.abs();
       }
-      if (s.y > _starZoneBottom - rNormY) {
-        s.y = _starZoneBottom - rNormY;
+      if (s.y > _StarCatcherSim.starZoneBottom - rNormY) {
+        s.y = _StarCatcherSim.starZoneBottom - rNormY;
         s.vy = -s.vy.abs();
       }
 
-      // Random nudges
-      if (_rng.nextDouble() < 0.02) {
-        s.vx += (_rng.nextDouble() - 0.5) * 0.02;
-        s.vy += (_rng.nextDouble() - 0.5) * 0.015;
+      if (rng.nextDouble() < 0.02) {
+        s.vx += (rng.nextDouble() - 0.5) * 0.02;
+        s.vy += (rng.nextDouble() - 0.5) * 0.015;
       }
 
-      // Dampen
       s.vx *= 0.998;
       s.vy *= 0.998;
       final speed = sqrt(s.vx * s.vx + s.vy * s.vy);
@@ -556,41 +554,37 @@ class _StarCatcherGameState extends State<StarCatcherGame>
         s.vy = s.vy / speed * 0.15;
       }
       if (speed < 0.01) {
-        s.vx += (_rng.nextDouble() - 0.5) * 0.03;
-        s.vy += (_rng.nextDouble() - 0.5) * 0.02;
+        s.vx += (rng.nextDouble() - 0.5) * 0.03;
+        s.vy += (rng.nextDouble() - 0.5) * 0.02;
       }
     }
 
-    // Update particles
-    for (final p in _particles) {
+    for (final p in sim.particles) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 60 * dt; // gravity
+      p.vy += 60 * dt;
       p.life -= dt * 1.5;
     }
-    _particles.removeWhere((p) => p.life <= 0);
+    sim.particles.removeWhere((p) => p.life <= 0);
 
-    // Update shooting stars
-    for (final s in _shootingStars) {
+    for (final s in sim.shootingStars) {
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.life -= dt * 1.2;
     }
-    _shootingStars.removeWhere((s) => s.life <= 0);
+    sim.shootingStars.removeWhere((s) => s.life <= 0);
 
-    // Flash decay
-    if (_flashOpacity > 0) {
-      _flashOpacity = (_flashOpacity - dt * 2).clamp(0.0, 1.0);
+    if (sim.flashOpacity > 0) {
+      sim.flashOpacity = (sim.flashOpacity - dt * 2).clamp(0.0, 1.0);
     }
 
-    // Constellation line fade-in
-    for (final line in _constellationLines) {
+    for (final line in sim.constellationLines) {
       if (line.opacity < 1.0) {
         line.opacity = (line.opacity + dt * 4).clamp(0.0, 1.0);
       }
     }
 
-    if (mounted) setState(() {});
+    sim.tick(dt);
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -644,7 +638,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
               const Spacer(flex: 2),
               // Astronaut icon
               Transform.translate(
-                offset: Offset(0, sin(_astronautBob) * 6),
+                offset: Offset(0, sin(_sim.astronautBob) * 6),
                 child: const Icon(Icons.rocket_launch_rounded,
                     size: 64, color: AppColors.electricBlue),
               ),
@@ -752,21 +746,27 @@ class _StarCatcherGameState extends State<StarCatcherGame>
       children: [
         _buildSpaceBackground(),
 
-        // Constellation lines
         RepaintBoundary(
           child: CustomPaint(
             size: _screenSize,
             painter: _ConstellationPainter(
-              lines: _constellationLines,
+              sim: _sim,
               screenSize: _screenSize,
             ),
           ),
         ),
 
-        // Stars
-        ..._stars.map((s) => _buildStarWidget(s)),
+        ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) {
+            return Stack(
+              children: [
+                ..._sim.stars.map((s) => _buildStarWidget(s)),
+              ],
+            );
+          },
+        ),
 
-        // HUD
         SafeArea(
           child: Column(
             children: [
@@ -776,27 +776,31 @@ class _StarCatcherGameState extends State<StarCatcherGame>
           ),
         ),
 
-        // Particles overlay
         RepaintBoundary(
           child: IgnorePointer(
             child: CustomPaint(
               size: _screenSize,
               painter: _SparklesPainter(
-                particles: _particles,
-                shootingStars: _shootingStars,
+                sim: _sim,
               ),
             ),
           ),
         ),
 
-        // Flash overlay
-        if (_flashOpacity > 0)
-          IgnorePointer(
-            child: Container(
-              color: _flashColor
-                  .withValues(alpha: _flashOpacity.clamp(0.0, 0.4)),
-            ),
-          ),
+        ListenableBuilder(
+          listenable: _sim,
+          builder: (context, _) {
+            if (_sim.flashOpacity > 0) {
+              return IgnorePointer(
+                child: Container(
+                  color: _sim.flashColor
+                      .withValues(alpha: _sim.flashOpacity.clamp(0.0, 0.4)),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
       ],
     );
   }
@@ -1179,7 +1183,7 @@ class _StarCatcherGameState extends State<StarCatcherGame>
             : _screenSize,
         painter: _BackgroundStarsPainter(
           stars: _bgStars,
-          time: _astronautBob,
+          sim: _sim,
         ),
       ),
     );
@@ -1278,17 +1282,17 @@ class _StarShapePainter extends CustomPainter {
 // ── Constellation line painter ─────────────────────────────────────────────
 
 class _ConstellationPainter extends CustomPainter {
-  final List<_ConstellationLine> lines;
+  final _StarCatcherSim sim;
   final Size screenSize;
 
-  const _ConstellationPainter({
-    required this.lines,
+  _ConstellationPainter({
+    required this.sim,
     required this.screenSize,
-  });
+  }) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final line in lines) {
+    for (final line in sim.constellationLines) {
       final from = Offset(
         line.from.dx * screenSize.width,
         line.from.dy * screenSize.height,
@@ -1324,24 +1328,19 @@ class _ConstellationPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ConstellationPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _ConstellationPainter old) => false;
 }
 
 // ── Sparkles / shooting star painter ───────────────────────────────────────
 
 class _SparklesPainter extends CustomPainter {
-  final List<_SparkleParticle> particles;
-  final List<_ShootingStar> shootingStars;
+  final _StarCatcherSim sim;
 
-  const _SparklesPainter({
-    required this.particles,
-    required this.shootingStars,
-  });
+  _SparklesPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Particles
-    for (final p in particles) {
+    for (final p in sim.particles) {
       final alpha = p.life.clamp(0.0, 1.0);
       canvas.drawCircle(
         Offset(p.x, p.y),
@@ -1357,8 +1356,7 @@ class _SparklesPainter extends CustomPainter {
       );
     }
 
-    // Shooting stars
-    for (final s in shootingStars) {
+    for (final s in sim.shootingStars) {
       final alpha = s.life.clamp(0.0, 1.0);
       final nx = s.vx / sqrt(s.vx * s.vx + s.vy * s.vy);
       final ny = s.vy / sqrt(s.vx * s.vx + s.vy * s.vy);
@@ -1388,7 +1386,7 @@ class _SparklesPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SparklesPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SparklesPainter old) => false;
 }
 
 // ── Background stars ───────────────────────────────────────────────────────
@@ -1406,9 +1404,9 @@ class _BackgroundStar {
 
 class _BackgroundStarsPainter extends CustomPainter {
   final List<_BackgroundStar> stars;
-  final double time;
+  final _StarCatcherSim sim;
 
-  const _BackgroundStarsPainter({required this.stars, required this.time});
+  _BackgroundStarsPainter({required this.stars, required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {

@@ -14,11 +14,6 @@ import '../../models/game_difficulty_params.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/haptics.dart';
 
-// ---------------------------------------------------------------------------
-// Rhyme Time — Match the rhyming word! Hear a word, tap its rhyme partner
-// from bouncing bubbles. Combos, streaks, and satisfying pop effects.
-// ---------------------------------------------------------------------------
-
 class RhymeTimeGame extends StatefulWidget {
   final ProgressService progressService;
   final AudioService audioService;
@@ -47,11 +42,11 @@ class _WordBubble {
   final int id;
   final String word;
   final bool isCorrect;
-  double x, y; // normalized 0..1
-  double vx, vy; // velocity (normalized/s)
-  double radius; // in pixels
+  double x, y;
+  double vx, vy;
+  double radius;
   double wobblePhase;
-  double popTimer; // >0 means popping
+  double popTimer;
   bool popped;
   Color color;
 
@@ -96,19 +91,170 @@ class _FloatingNote {
   });
 }
 
+// ── Simulation ChangeNotifier ───────────────────────────────────────────────
+
+class _RhymeTimeSim extends ChangeNotifier {
+  final Random rng;
+  List<_WordBubble> bubbles = [];
+  final List<_PopParticle> particles = [];
+  final List<_FloatingNote> floatingNotes = [];
+  double screenShake = 0;
+  double flashOpacity = 0;
+  Color? flashColor;
+  Size screenSize = Size.zero;
+
+  static const double bubbleZoneTop = 0.22;
+  static const double bubbleZoneBottom = 0.88;
+
+  _RhymeTimeSim({required this.rng});
+
+  void tick(double dt) {
+    if (screenSize == Size.zero) return;
+
+    for (final b in bubbles) {
+      if (b.popped) continue;
+      b.wobblePhase += dt * 2;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      if (rng.nextDouble() < 0.02) {
+        b.vx += (rng.nextDouble() - 0.5) * 0.04;
+        b.vy += (rng.nextDouble() - 0.5) * 0.03;
+      }
+
+      final rNorm = b.radius / screenSize.width;
+      if (b.x < rNorm) {
+        b.x = rNorm;
+        b.vx = b.vx.abs();
+      }
+      if (b.x > 1 - rNorm) {
+        b.x = 1 - rNorm;
+        b.vx = -b.vx.abs();
+      }
+
+      final rNormY = b.radius / screenSize.height;
+      final topBound = bubbleZoneTop + rNormY;
+      final bottomBound = bubbleZoneBottom - rNormY;
+      if (b.y < topBound) {
+        b.y = topBound;
+        b.vy = b.vy.abs();
+      }
+      if (b.y > bottomBound) {
+        b.y = bottomBound;
+        b.vy = -b.vy.abs();
+      }
+
+      if (b.popTimer > 0) {
+        b.popTimer -= dt;
+        if (b.popTimer <= 0) b.popped = true;
+      }
+    }
+
+    for (int i = 0; i < bubbles.length; i++) {
+      for (int j = i + 1; j < bubbles.length; j++) {
+        final a = bubbles[i];
+        final b = bubbles[j];
+        if (a.popped || b.popped) continue;
+        final dx = (a.x - b.x) * screenSize.width;
+        final dy = (a.y - b.y) * screenSize.height;
+        final dist = sqrt(dx * dx + dy * dy);
+        final minDist = a.radius + b.radius + 8;
+        if (dist < minDist && dist > 0) {
+          final nx = dx / dist;
+          final ny = dy / dist;
+          final push = (minDist - dist) / screenSize.width * 0.5;
+          a.vx += nx * push;
+          a.vy += ny * push / (screenSize.height / screenSize.width);
+          b.vx -= nx * push;
+          b.vy -= ny * push / (screenSize.height / screenSize.width);
+        }
+      }
+    }
+
+    for (final b in bubbles) {
+      if (b.popped) continue;
+      b.vx *= 0.997;
+      b.vy *= 0.997;
+      final speed = sqrt(b.vx * b.vx + b.vy * b.vy);
+      if (speed > 0.35) {
+        b.vx = b.vx / speed * 0.35;
+        b.vy = b.vy / speed * 0.35;
+      }
+      if (speed < 0.03) {
+        b.vx += (rng.nextDouble() - 0.5) * 0.06;
+        b.vy += (rng.nextDouble() - 0.5) * 0.05;
+      }
+    }
+
+    for (int i = particles.length - 1; i >= 0; i--) {
+      final p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 120 * dt;
+      p.life -= dt * 2;
+      if (p.life <= 0) particles.removeAt(i);
+    }
+
+    for (int i = floatingNotes.length - 1; i >= 0; i--) {
+      final n = floatingNotes[i];
+      n.y += n.vy * dt;
+      n.opacity -= dt * 1.5;
+      if (n.opacity <= 0) floatingNotes.removeAt(i);
+    }
+
+    if (screenShake > 0) screenShake *= 0.9;
+    if (screenShake < 0.5) screenShake = 0;
+
+    if (flashOpacity > 0) {
+      flashOpacity -= dt * 4;
+      if (flashOpacity < 0) flashOpacity = 0;
+    }
+
+    notifyListeners();
+  }
+
+  _WordBubble? hitTest(Offset localPos) {
+    if (screenSize == Size.zero) return null;
+    for (final b in bubbles) {
+      if (b.popped || b.popTimer > 0) continue;
+      final bx = b.x * screenSize.width;
+      final by = b.y * screenSize.height + sin(b.wobblePhase) * 3;
+      final dx = localPos.dx - bx;
+      final dy = localPos.dy - by;
+      if (dx * dx + dy * dy <= b.radius * b.radius) return b;
+    }
+    return null;
+  }
+
+  void spawnPopBurst(double cx, double cy, Color color, int count) {
+    for (int i = 0; i < count; i++) {
+      final angle = rng.nextDouble() * pi * 2;
+      final speed = 80 + rng.nextDouble() * 160;
+      particles.add(_PopParticle(
+        x: cx,
+        y: cy,
+        vx: cos(angle) * speed,
+        vy: sin(angle) * speed - 40,
+        size: 3 + rng.nextDouble() * 5,
+        life: 1.0,
+        color: Color.lerp(color, Colors.white, rng.nextDouble() * 0.4)!,
+      ));
+    }
+  }
+}
+
 // ── State ───────────────────────────────────────────────────────────────────
 
 class _RhymeTimeGameState extends State<RhymeTimeGame>
     with SingleTickerProviderStateMixin {
   final _rng = Random();
+  late final _RhymeTimeSim _sim;
 
-  // Game config
   late final int _gameDurationSecs;
   late final int _maxLives;
   late final int _startChoices;
   late final int _maxChoices;
 
-  // Game state
   bool _gameStarted = false;
   bool _gameOver = false;
   bool _introPlayed = false;
@@ -120,41 +266,27 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   late int _timeRemaining;
   Timer? _gameTimer;
 
-  // Current round
   String _targetWord = '';
-  List<_WordBubble> _bubbles = [];
   int _nextBubbleId = 0;
   bool _roundTransitioning = false;
 
-  // Difficulty
   late int _currentChoices;
 
-  // Effects
-  final List<_PopParticle> _particles = [];
-  final List<_FloatingNote> _floatingNotes = [];
-  double _screenShake = 0;
-  double _flashOpacity = 0;
-  Color? _flashColor;
-
-  // Animation
   late Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
-  Size _screenSize = Size.zero;
 
-  // Rhyme data
   late List<RhymeFamily> _shuffledFamilies;
   int _familyIndex = 0;
 
-  // Visual theme colors per round
   static const _roundColors = [
-    Color(0xFF00D4FF), // cyan
-    Color(0xFFFF69B4), // pink
-    Color(0xFF10B981), // emerald
-    Color(0xFFFFD700), // gold
-    Color(0xFF8B5CF6), // violet
-    Color(0xFFFF6B6B), // coral
-    Color(0xFF06B6D4), // teal
-    Color(0xFFF59E0B), // amber
+    Color(0xFF00D4FF),
+    Color(0xFFFF69B4),
+    Color(0xFF10B981),
+    Color(0xFFFFD700),
+    Color(0xFF8B5CF6),
+    Color(0xFFFF6B6B),
+    Color(0xFF06B6D4),
+    Color(0xFFF59E0B),
   ];
 
   late final Stopwatch _sessionTimer;
@@ -162,6 +294,7 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   @override
   void initState() {
     super.initState();
+    _sim = _RhymeTimeSim(rng: _rng);
     _gameDurationSecs = widget.difficultyParams?.gameDurationSeconds.toInt() ?? 60;
     _maxLives = widget.difficultyParams?.lives ?? 3;
     _startChoices = widget.difficultyParams?.distractorCount ?? 3;
@@ -179,13 +312,13 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     _ticker.dispose();
     _gameTimer?.cancel();
     _sessionTimer.stop();
+    _sim.dispose();
     super.dispose();
   }
 
   // ── Game lifecycle ────────────────────────────────────────────────────────
 
   void _playIntro() {
-    // Play the intro explanation voice
     widget.audioService.playWord('rhyme_time_intro');
   }
 
@@ -202,8 +335,8 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
       _currentChoices = _startChoices;
       _familyIndex = 0;
       _shuffledFamilies = List.of(rhymeFamilies)..shuffle(_rng);
-      _particles.clear();
-      _floatingNotes.clear();
+      _sim.particles.clear();
+      _sim.floatingNotes.clear();
     });
 
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -244,24 +377,20 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   void _loadRound() {
     if (_gameOver) return;
 
-    // Pick a family
     if (_familyIndex >= _shuffledFamilies.length) {
       _familyIndex = 0;
       _shuffledFamilies.shuffle(_rng);
     }
     final family = _shuffledFamilies[_familyIndex++];
 
-    // Pick target word from this family
     final familyWords = List.of(family.words)..shuffle(_rng);
     if (familyWords.isEmpty) return;
     _targetWord = familyWords.first;
 
-    // Pick one correct answer (different from target)
     final correctWord = familyWords.length > 1
         ? familyWords.firstWhere((w) => w != _targetWord, orElse: () => familyWords.first)
         : familyWords.first;
 
-    // Pick distractors from OTHER families
     final otherWords = <String>[];
     for (final f in _shuffledFamilies) {
       if (f.familyName != family.familyName) {
@@ -273,7 +402,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     final numDistractors = _currentChoices - 1;
     final distractors = otherWords.take(numDistractors).toList();
 
-    // Build bubbles
     final allChoices = <_WordBubble>[];
     final roundColor = _roundColors[_wordsMatched % _roundColors.length];
 
@@ -283,22 +411,18 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     }
     allChoices.shuffle(_rng);
 
+    _sim.bubbles = allChoices;
+    _roundTransitioning = false;
     setState(() {
-      _bubbles = allChoices;
-      _roundTransitioning = false;
+      // Update target word display in HUD
     });
 
-    // Speak the target word after bubbles appear
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted && !_gameOver) {
         widget.audioService.playWord(_targetWord);
       }
     });
   }
-
-  // Top of bubble zone (fraction of screen) — below the HUD + target area
-  static const double _bubbleZoneTop = 0.22;
-  static const double _bubbleZoneBottom = 0.88;
 
   _WordBubble _makeBubble(String word, bool correct, Color roundColor) {
     const xMargin = 0.08;
@@ -307,8 +431,8 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
       word: word,
       isCorrect: correct,
       x: xMargin + _rng.nextDouble() * (1.0 - 2 * xMargin),
-      y: _bubbleZoneTop + 0.05 +
-          _rng.nextDouble() * (_bubbleZoneBottom - _bubbleZoneTop - 0.1),
+      y: _RhymeTimeSim.bubbleZoneTop + 0.05 +
+          _rng.nextDouble() * (_RhymeTimeSim.bubbleZoneBottom - _RhymeTimeSim.bubbleZoneTop - 0.1),
       vx: (_rng.nextDouble() - 0.5) * 0.18,
       vy: (_rng.nextDouble() - 0.5) * 0.14,
       radius: 42,
@@ -330,130 +454,23 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     final dtRaw = (elapsed - _lastElapsed).inMicroseconds / 1e6;
     _lastElapsed = elapsed;
     final dt = dtRaw.clamp(0.0, 0.05);
-    if (_screenSize == Size.zero || !_gameStarted || _gameOver) return;
+    if (_sim.screenSize == Size.zero || !_gameStarted || _gameOver) return;
 
-    // Update bubbles — bounce off walls, stay in play zone
-    for (final b in _bubbles) {
-      if (b.popped) continue;
-      b.wobblePhase += dt * 2;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-
-      // Add small random velocity nudges for more dynamic movement
-      if (_rng.nextDouble() < 0.02) {
-        b.vx += (_rng.nextDouble() - 0.5) * 0.04;
-        b.vy += (_rng.nextDouble() - 0.5) * 0.03;
-      }
-
-      final rNorm = b.radius / _screenSize.width;
-      if (b.x < rNorm) {
-        b.x = rNorm;
-        b.vx = b.vx.abs();
-      }
-      if (b.x > 1 - rNorm) {
-        b.x = 1 - rNorm;
-        b.vx = -b.vx.abs();
-      }
-
-      // Use proper bubble zone bounds (not behind header)
-      final rNormY = b.radius / _screenSize.height;
-      final topBound = _bubbleZoneTop + rNormY;
-      final bottomBound = _bubbleZoneBottom - rNormY;
-      if (b.y < topBound) {
-        b.y = topBound;
-        b.vy = b.vy.abs();
-      }
-      if (b.y > bottomBound) {
-        b.y = bottomBound;
-        b.vy = -b.vy.abs();
-      }
-
-      // Pop animation
-      if (b.popTimer > 0) {
-        b.popTimer -= dt;
-        if (b.popTimer <= 0) b.popped = true;
-      }
-    }
-
-    // Bubble-to-bubble collision (simple repulsion)
-    for (int i = 0; i < _bubbles.length; i++) {
-      for (int j = i + 1; j < _bubbles.length; j++) {
-        final a = _bubbles[i];
-        final b = _bubbles[j];
-        if (a.popped || b.popped) continue;
-        final dx = (a.x - b.x) * _screenSize.width;
-        final dy = (a.y - b.y) * _screenSize.height;
-        final dist = sqrt(dx * dx + dy * dy);
-        final minDist = a.radius + b.radius + 8;
-        if (dist < minDist && dist > 0) {
-          final nx = dx / dist;
-          final ny = dy / dist;
-          final push = (minDist - dist) / _screenSize.width * 0.5;
-          a.vx += nx * push;
-          a.vy += ny * push / (_screenSize.height / _screenSize.width);
-          b.vx -= nx * push;
-          b.vy -= ny * push / (_screenSize.height / _screenSize.width);
-        }
-      }
-    }
-
-    // Dampen velocities but keep minimum movement
-    for (final b in _bubbles) {
-      if (b.popped) continue;
-      b.vx *= 0.997;
-      b.vy *= 0.997;
-      // Clamp max speed
-      final speed = sqrt(b.vx * b.vx + b.vy * b.vy);
-      if (speed > 0.35) {
-        b.vx = b.vx / speed * 0.35;
-        b.vy = b.vy / speed * 0.35;
-      }
-      // Ensure minimum speed so bubbles don't stagnate
-      if (speed < 0.03) {
-        b.vx += (_rng.nextDouble() - 0.5) * 0.06;
-        b.vy += (_rng.nextDouble() - 0.5) * 0.05;
-      }
-    }
-
-    // Update particles
-    for (int i = _particles.length - 1; i >= 0; i--) {
-      final p = _particles[i];
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 120 * dt; // gravity
-      p.life -= dt * 2;
-      if (p.life <= 0) _particles.removeAt(i);
-    }
-
-    // Update floating notes
-    for (int i = _floatingNotes.length - 1; i >= 0; i--) {
-      final n = _floatingNotes[i];
-      n.y += n.vy * dt;
-      n.opacity -= dt * 1.5;
-      if (n.opacity <= 0) _floatingNotes.removeAt(i);
-    }
-
-    // Screen shake decay
-    if (_screenShake > 0) _screenShake *= 0.9;
-    if (_screenShake < 0.5) _screenShake = 0;
-
-    // Flash decay
-    if (_flashOpacity > 0) {
-      _flashOpacity -= dt * 4;
-      if (_flashOpacity < 0) _flashOpacity = 0;
-    }
-
-    // Trigger rebuild for animations
-    if (mounted) setState(() {});
+    _sim.tick(dt);
   }
 
   // ── Bubble tap ────────────────────────────────────────────────────────────
+
+  void _onCanvasTap(TapUpDetails details) {
+    if (_gameOver || _roundTransitioning) return;
+    final bubble = _sim.hitTest(details.localPosition);
+    if (bubble != null) _onBubbleTap(bubble);
+  }
 
   void _onBubbleTap(_WordBubble bubble) {
     if (bubble.popped || bubble.popTimer > 0 || _roundTransitioning) return;
     if (_gameOver) return;
 
-    // Play the word
     widget.audioService.playWord(bubble.word);
 
     if (bubble.isCorrect) {
@@ -469,61 +486,57 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     if (_combo > _bestCombo) _bestCombo = _combo;
     final comboMultiplier = _combo >= 5 ? 3 : (_combo >= 3 ? 2 : 1);
     final points = 100 * comboMultiplier;
-    _score += points;
     _wordsMatched++;
 
-    // Pop the correct bubble
     bubble.popTimer = 0.3;
 
-    // Spawn particles
-    final bx = bubble.x * _screenSize.width;
-    final by = bubble.y * _screenSize.height;
-    _spawnPopBurst(bx, by, bubble.color, 16);
+    final bx = bubble.x * _sim.screenSize.width;
+    final by = bubble.y * _sim.screenSize.height;
+    _sim.spawnPopBurst(bx, by, bubble.color, 16);
 
-    // Floating score note
-    _floatingNotes.add(_FloatingNote(
+    _sim.floatingNotes.add(_FloatingNote(
       x: bx,
       y: by - 30,
       text: '+$points${_combo >= 3 ? ' x$comboMultiplier' : ''}',
     ));
 
     if (_combo >= 3) {
-      _floatingNotes.add(_FloatingNote(
+      _sim.floatingNotes.add(_FloatingNote(
         x: bx,
         y: by - 60,
         text: '$_combo combo!',
       ));
     }
 
-    // Flash green
-    _flashColor = AppColors.success;
-    _flashOpacity = 0.15;
+    _sim.flashColor = AppColors.success;
+    _sim.flashOpacity = 0.15;
 
-    // Increase difficulty every 3 words
     if (_wordsMatched % 3 == 0 && _currentChoices < _maxChoices) {
       _currentChoices++;
     }
 
     _roundTransitioning = true;
 
-    // Pop remaining wrong bubbles with quick stagger, then load next round
+    setState(() {
+      _score += points;
+    });
+
     Future.delayed(const Duration(milliseconds: 250), () {
       if (!mounted || _gameOver) return;
       int delay = 0;
-      for (final b in _bubbles) {
+      for (final b in _sim.bubbles) {
         if (!b.popped && b.popTimer <= 0) {
           Future.delayed(Duration(milliseconds: delay), () {
             if (!mounted) return;
             b.popTimer = 0.2;
-            final px = b.x * _screenSize.width;
-            final py = b.y * _screenSize.height;
-            _spawnPopBurst(px, py, b.color.withValues(alpha: 0.5), 6);
+            final px = b.x * _sim.screenSize.width;
+            final py = b.y * _sim.screenSize.height;
+            _sim.spawnPopBurst(px, py, b.color.withValues(alpha: 0.5), 6);
           });
           delay += 50;
         }
       }
 
-      // Load new round quickly after pops
       Future.delayed(Duration(milliseconds: delay + 300), () {
         if (mounted && !_gameOver) _loadRound();
       });
@@ -533,46 +546,31 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   void _onWrongTap(_WordBubble bubble) {
     Haptics.wrong();
     _combo = 0;
-    _lives--;
-    _screenShake = 8;
+    _sim.screenShake = 8;
 
-    // Flash red
-    _flashColor = AppColors.error;
-    _flashOpacity = 0.2;
+    _sim.flashColor = AppColors.error;
+    _sim.flashOpacity = 0.2;
 
-    // Pop wrong bubble
     bubble.popTimer = 0.25;
-    final bx = bubble.x * _screenSize.width;
-    final by = bubble.y * _screenSize.height;
-    _spawnPopBurst(bx, by, AppColors.error, 8);
+    final bx = bubble.x * _sim.screenSize.width;
+    final by = bubble.y * _sim.screenSize.height;
+    _sim.spawnPopBurst(bx, by, AppColors.error, 8);
 
     final wrongMessages = ['Not quite!', 'Hmm, nope!', 'Keep trying!', 'Almost!'];
-    _floatingNotes.add(_FloatingNote(
+    _sim.floatingNotes.add(_FloatingNote(
       x: bx,
       y: by - 30,
       text: wrongMessages[_rng.nextInt(wrongMessages.length)],
     ));
 
+    setState(() {
+      _lives--;
+    });
+
     if (_lives <= 0) {
       Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) _endGame();
       });
-    }
-  }
-
-  void _spawnPopBurst(double cx, double cy, Color color, int count) {
-    for (int i = 0; i < count; i++) {
-      final angle = _rng.nextDouble() * pi * 2;
-      final speed = 80 + _rng.nextDouble() * 160;
-      _particles.add(_PopParticle(
-        x: cx,
-        y: cy,
-        vx: cos(angle) * speed,
-        vy: sin(angle) * speed - 40,
-        size: 3 + _rng.nextDouble() * 5,
-        life: 1.0,
-        color: Color.lerp(color, Colors.white, _rng.nextDouble() * 0.4)!,
-      ));
     }
   }
 
@@ -587,7 +585,7 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: LayoutBuilder(builder: (context, constraints) {
-        _screenSize = Size(constraints.maxWidth, constraints.maxHeight);
+        _sim.screenSize = Size(constraints.maxWidth, constraints.maxHeight);
         return _gameOver
             ? _buildGameOver()
             : _gameStarted
@@ -600,7 +598,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   // ── Start screen ──────────────────────────────────────────────────────────
 
   Widget _buildStartScreen() {
-    // Auto-play intro voice once (guard prevents re-fire on rebuilds)
     if (!_introPlayed) {
       _introPlayed = true;
       Future.delayed(const Duration(milliseconds: 800), () {
@@ -614,7 +611,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
         SafeArea(
           child: Column(
             children: [
-              // Back button at top
               Align(
                 alignment: Alignment.topLeft,
                 child: Padding(
@@ -629,7 +625,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
               const Spacer(flex: 2),
 
-              // Title
               Text(
                 'Rhyme Time',
                 style: AppFonts.fredoka(
@@ -655,7 +650,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
               const SizedBox(height: 20),
 
-              // Large tappable speaker — plays voice explanation
               GestureDetector(
                 onTap: _playIntro,
                 child: Container(
@@ -690,11 +684,9 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
               const SizedBox(height: 20),
 
-              // Tappable example — cat → hat
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // "cat" bubble
                   GestureDetector(
                     onTap: () => widget.audioService.playWord('cat'),
                     child: Container(
@@ -746,7 +738,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
                         color: AppColors.secondaryText, size: 28),
                   ),
 
-                  // "hat" bubble — the rhyme answer
                   GestureDetector(
                     onTap: () => widget.audioService.playWord('hat'),
                     child: Container(
@@ -796,7 +787,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
               const Spacer(flex: 2),
 
-              // Play button
               GestureDetector(
                 onTap: _startGame,
                 child: Container(
@@ -856,57 +846,31 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   // ── Gameplay ──────────────────────────────────────────────────────────────
 
   Widget _buildGameplay() {
-    final shakeOffset = _screenShake > 0
-        ? Offset(
-            (_rng.nextDouble() - 0.5) * _screenShake * 2,
-            (_rng.nextDouble() - 0.5) * _screenShake * 2,
-          )
-        : Offset.zero;
+    return Stack(
+      children: [
+        _buildBackground(),
 
-    return Transform.translate(
-      offset: shakeOffset,
-      child: Stack(
-        children: [
-          _buildBackground(),
-
-          // Target word display at top
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHUD(),
-                _buildTargetArea(),
-              ],
-            ),
+        SafeArea(
+          child: Column(
+            children: [
+              _buildHUD(),
+              _buildTargetArea(),
+            ],
           ),
+        ),
 
-          // Bouncing word bubbles
-          ..._bubbles
-              .where((b) => !b.popped)
-              .map((b) => _buildBubbleWidget(b)),
-
-          // Particles overlay
-          RepaintBoundary(
-            child: IgnorePointer(
+        Positioned.fill(
+          child: RepaintBoundary(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapUp: _onCanvasTap,
               child: CustomPaint(
-                size: _screenSize,
-                painter: _ParticlePainter(
-                  particles: _particles,
-                  floatingNotes: _floatingNotes,
-                ),
+                painter: _RhymeTimeGamePainter(_sim),
               ),
             ),
           ),
-
-          // Flash overlay
-          if (_flashOpacity > 0)
-            IgnorePointer(
-              child: Container(
-                color: (_flashColor ?? Colors.white)
-                    .withValues(alpha: _flashOpacity.clamp(0.0, 1.0)),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -915,14 +879,12 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          // Back button
           IconButton(
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.arrow_back_rounded),
             color: AppColors.primaryText,
           ),
 
-          // Score
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
@@ -941,7 +903,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
           const Spacer(),
 
-          // Combo indicator
           if (_combo >= 2)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -969,7 +930,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
           const Spacer(),
 
-          // Lives
           Row(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(_maxLives, (i) {
@@ -990,7 +950,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
           const SizedBox(width: 8),
 
-          // Timer
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -1084,73 +1043,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
     );
   }
 
-  Widget _buildBubbleWidget(_WordBubble bubble) {
-    final px = bubble.x * _screenSize.width;
-    final py = bubble.y * _screenSize.height;
-    final wobble = sin(bubble.wobblePhase) * 3;
-    final scale = bubble.popTimer > 0
-        ? 1.0 + (0.3 - bubble.popTimer) * 2 // expand then fade
-        : 1.0;
-    final opacity = bubble.popTimer > 0
-        ? (bubble.popTimer / 0.3).clamp(0.0, 1.0)
-        : 1.0;
-
-    return Positioned(
-      left: px - bubble.radius,
-      top: py - bubble.radius + wobble,
-      child: GestureDetector(
-        onTap: () => _onBubbleTap(bubble),
-        child: Opacity(
-          opacity: opacity,
-          child: Transform.scale(
-            scale: scale,
-            child: Container(
-              width: bubble.radius * 2,
-              height: bubble.radius * 2,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  center: const Alignment(-0.3, -0.3),
-                  colors: [
-                    bubble.color.withValues(alpha: 0.5),
-                    bubble.color.withValues(alpha: 0.2),
-                  ],
-                ),
-                border: Border.all(
-                  color: bubble.color.withValues(alpha: 0.7),
-                  width: 2.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: bubble.color.withValues(alpha: 0.25),
-                    blurRadius: 16,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  bubble.word,
-                  style: AppFonts.fredoka(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Game Over ─────────────────────────────────────────────────────────────
 
   Widget _buildGameOver() {
@@ -1230,7 +1122,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
                 const SizedBox(height: 24),
 
-                // Stats (tappable — speaks the stat)
                 _buildStatRow(Icons.star_rounded, AppColors.starGold,
                     'Score', '$_score', 'score'),
                 const SizedBox(height: 8),
@@ -1242,7 +1133,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
                 const SizedBox(height: 32),
 
-                // Play again
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -1266,7 +1156,6 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   }
 
   void _speakStat(String statKey) {
-    // Speak the stat label as a word
     final wordMap = {
       'score': 'score',
       'rhymes_found': 'rhymes',
@@ -1376,20 +1265,97 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
   }
 }
 
-// ── Particle Painter ────────────────────────────────────────────────────────
+// ── Game Painter ─────────────────────────────────────────────────────────────
 
-class _ParticlePainter extends CustomPainter {
-  final List<_PopParticle> particles;
-  final List<_FloatingNote> floatingNotes;
+class _RhymeTimeGamePainter extends CustomPainter {
+  final _RhymeTimeSim sim;
 
-  _ParticlePainter({required this.particles, required this.floatingNotes});
+  _RhymeTimeGamePainter(this.sim) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rng = sim.rng;
+
+    // Screen shake offset
+    if (sim.screenShake > 0) {
+      final dx = (rng.nextDouble() - 0.5) * sim.screenShake * 2;
+      final dy = (rng.nextDouble() - 0.5) * sim.screenShake * 2;
+      canvas.save();
+      canvas.translate(dx, dy);
+    }
+
+    // Draw bubbles
+    for (final b in sim.bubbles) {
+      if (b.popped) continue;
+      final px = b.x * size.width;
+      final py = b.y * size.height;
+      final wobble = sin(b.wobblePhase) * 3;
+      final scale = b.popTimer > 0 ? 1.0 + (0.3 - b.popTimer) * 2 : 1.0;
+      final opacity = b.popTimer > 0
+          ? (b.popTimer / 0.3).clamp(0.0, 1.0)
+          : 1.0;
+
+      final r = b.radius * scale;
+      final center = Offset(px, py + wobble);
+
+      // Shadow/glow
+      canvas.drawCircle(
+        center,
+        r + 4,
+        Paint()
+          ..color = b.color.withValues(alpha: opacity * 0.25)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+      );
+
+      // Bubble fill gradient
+      final gradient = RadialGradient(
+        center: const Alignment(-0.3, -0.3),
+        colors: [
+          b.color.withValues(alpha: opacity * 0.5),
+          b.color.withValues(alpha: opacity * 0.2),
+        ],
+      );
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()..shader = gradient.createShader(Rect.fromCircle(center: center, radius: r)),
+      );
+
+      // Border
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..color = b.color.withValues(alpha: opacity * 0.7),
+      );
+
+      // Word text
+      final tp = TextPainter(
+        text: TextSpan(
+          text: b.word,
+          style: TextStyle(
+            fontFamily: 'Fredoka',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Colors.white.withValues(alpha: opacity),
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: opacity * 0.3),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+    }
+
     // Pop particles
-    for (final p in particles) {
+    for (final p in sim.particles) {
       final alpha = p.life.clamp(0.0, 1.0);
-      // Glow
       canvas.drawCircle(
         Offset(p.x, p.y),
         p.size * 2,
@@ -1397,7 +1363,6 @@ class _ParticlePainter extends CustomPainter {
           ..color = p.color.withValues(alpha: alpha * 0.3)
           ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size),
       );
-      // Core
       canvas.drawCircle(
         Offset(p.x, p.y),
         p.size * alpha,
@@ -1406,7 +1371,7 @@ class _ParticlePainter extends CustomPainter {
     }
 
     // Floating score notes
-    for (final n in floatingNotes) {
+    for (final n in sim.floatingNotes) {
       final tp = TextPainter(
         text: TextSpan(
           text: n.text,
@@ -1427,8 +1392,22 @@ class _ParticlePainter extends CustomPainter {
       )..layout();
       tp.paint(canvas, Offset(n.x - tp.width / 2, n.y));
     }
+
+    // Flash overlay
+    if (sim.flashOpacity > 0) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()
+          ..color = (sim.flashColor ?? Colors.white)
+              .withValues(alpha: sim.flashOpacity.clamp(0.0, 1.0)),
+      );
+    }
+
+    if (sim.screenShake > 0) {
+      canvas.restore();
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _ParticlePainter oldDelegate) => true;
+  bool shouldRepaint(covariant _RhymeTimeGamePainter old) => false;
 }

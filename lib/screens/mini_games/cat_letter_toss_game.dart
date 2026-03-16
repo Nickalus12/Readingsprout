@@ -104,23 +104,62 @@ class _Star {
   });
 }
 
+// ── Simulation ──────────────────────────────────────────────────────────────
+
+class _CatLetterTossSim extends ChangeNotifier {
+  final Random rng = Random();
+
+  static const double gravity = 420.0;
+  static const double tossInterval = 1.2;
+  static const double basketWidth = 90.0;
+  static const double basketHeight = 50.0;
+  static const double letterSize = 38.0;
+  static const double catMoveSpeed = 120.0;
+
+  double catX = 0.5;
+  double catTargetX = 0.5;
+  double catPawAngle = 0;
+  double catTailPhase = 0;
+  double catEarTwitch = 0;
+  double catGlowPhase = 0;
+  bool catTossing = false;
+  double catTossAnimT = 0;
+
+  double basketX = 0.5;
+
+  final List<_TossedLetter> letters = [];
+  double tossTimer = 0;
+
+  final List<_Sparkle> sparkles = [];
+  final List<_Star> stars = [];
+
+  double flashTimer = 0;
+  Color flashColor = Colors.transparent;
+
+  String feedbackText = '';
+  double feedbackTimer = 0;
+  Color feedbackColor = AppColors.success;
+
+  double totalTime = 0;
+  bool wordCelebrating = false;
+  double wordCelebrateT = 0;
+
+  void tick(double dt) {
+    notifyListeners();
+  }
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 class _CatLetterTossGameState extends State<CatLetterTossGame>
     with TickerProviderStateMixin {
-  final _rng = Random();
+  late final _CatLetterTossSim _sim;
 
   // Game config
   late final int _maxLives;
   late final int _wordsPerRound;
-  static const double _gravity = 420.0; // px/sec^2
-  static const double _tossInterval = 1.2; // seconds between tosses
-  static const double _basketWidth = 90.0;
-  static const double _basketHeight = 50.0;
-  static const double _letterSize = 38.0;
-  static const double _catMoveSpeed = 120.0; // px/sec
 
-  // Game state
+  // Game state (overlay-only, trigger setState on change)
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
@@ -128,7 +167,6 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   int _wordsCompleted = 0;
   int _combo = 0;
   int _bestCombo = 0;
-  double _totalTime = 0;
 
   // Word state
   List<String> _wordPool = [];
@@ -136,38 +174,6 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   String _currentWord = '';
   int _nextLetterIndex = 0;
   List<bool> _slotsFilled = [];
-  bool _wordCelebrating = false;
-  double _wordCelebrateT = 0;
-
-  // Cat state
-  double _catX = 0.5; // normalized 0..1
-  double _catTargetX = 0.5;
-  double _catPawAngle = 0; // toss animation
-  double _catTailPhase = 0;
-  double _catEarTwitch = 0;
-  double _catGlowPhase = 0;
-  bool _catTossing = false;
-  double _catTossAnimT = 0;
-
-  // Basket
-  double _basketX = 0.5; // normalized 0..1
-
-  // Tossed letters
-  final List<_TossedLetter> _letters = [];
-  double _tossTimer = 0;
-
-  // Particles
-  final List<_Sparkle> _sparkles = [];
-  final List<_Star> _stars = [];
-
-  // Flash
-  double _flashTimer = 0;
-  Color _flashColor = Colors.transparent;
-
-  // Feedback
-  String _feedbackText = '';
-  double _feedbackTimer = 0;
-  Color _feedbackColor = AppColors.success;
 
   // Ticker
   late Ticker _ticker;
@@ -182,6 +188,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   @override
   void initState() {
     super.initState();
+    _sim = _CatLetterTossSim();
     _maxLives = widget.difficultyParams?.lives ?? 3;
     _wordsPerRound = widget.difficultyParams?.wordCount ?? 10;
     _lives = _maxLives;
@@ -195,6 +202,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   @override
   void dispose() {
     _ticker.dispose();
+    _sim.dispose();
     _sessionTimer.stop();
     super.dispose();
   }
@@ -214,7 +222,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       pool.addAll(
           DolchWords.wordsForLevel(1).map((w) => w.text.toLowerCase()));
     }
-    pool.shuffle(_rng);
+    pool.shuffle(_sim.rng);
     _wordPool = pool;
     _wordPoolIndex = 0;
   }
@@ -222,28 +230,29 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
   void _nextWord() {
     if (_gameOver) return;
     if (_wordPoolIndex >= _wordPool.length) {
-      _wordPool.shuffle(_rng);
+      _wordPool.shuffle(_sim.rng);
       _wordPoolIndex = 0;
     }
     _currentWord = _wordPool[_wordPoolIndex++];
     _nextLetterIndex = 0;
     _slotsFilled = List.filled(_currentWord.length, false);
-    _wordCelebrating = false;
-    _wordCelebrateT = 0;
+    _sim.wordCelebrating = false;
+    _sim.wordCelebrateT = 0;
     widget.audioService.playWord(_currentWord);
   }
 
   // ── Stars ──────────────────────────────────────────────────────────────
 
   void _initStars() {
+    final rng = _sim.rng;
     for (int i = 0; i < 60; i++) {
-      _stars.add(_Star(
-        x: _rng.nextDouble(),
-        y: _rng.nextDouble(),
-        size: _rng.nextDouble() * 2.0 + 0.5,
-        twinklePhase: _rng.nextDouble() * pi * 2,
-        twinkleSpeed: _rng.nextDouble() * 2 + 1,
-        brightness: _rng.nextDouble() * 0.5 + 0.3,
+      _sim.stars.add(_Star(
+        x: rng.nextDouble(),
+        y: rng.nextDouble(),
+        size: rng.nextDouble() * 2.0 + 0.5,
+        twinklePhase: rng.nextDouble() * pi * 2,
+        twinkleSpeed: rng.nextDouble() * 2 + 1,
+        brightness: rng.nextDouble() * 0.5 + 0.3,
       ));
     }
   }
@@ -259,103 +268,95 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
     _lastTickTime = elapsed;
     if (dt <= 0 || dt > 0.1) return;
 
+    final sim = _sim;
+
     if (!_gameStarted || _gameOver) {
-      // Still animate stars + cat glow even before start
-      _catGlowPhase += dt * 2.5;
-      _catTailPhase += dt * 3.0;
-      for (final s in _stars) {
+      sim.catGlowPhase += dt * 2.5;
+      sim.catTailPhase += dt * 3.0;
+      for (final s in sim.stars) {
         s.twinklePhase += dt * s.twinkleSpeed;
       }
-      if (mounted) setState(() {});
+      sim.tick(dt);
       return;
     }
 
-    _totalTime += dt;
+    sim.totalTime += dt;
 
-    // Cat animation
-    _catGlowPhase += dt * 2.5;
-    _catTailPhase += dt * 3.0;
-    _catEarTwitch = sin(_totalTime * 4.0) * 0.1;
+    sim.catGlowPhase += dt * 2.5;
+    sim.catTailPhase += dt * 3.0;
+    sim.catEarTwitch = sin(sim.totalTime * 4.0) * 0.1;
 
-    // Cat movement toward target
-    final catDiff = _catTargetX - _catX;
+    final catDiff = sim.catTargetX - sim.catX;
     if (catDiff.abs() > 0.005) {
-      _catX += catDiff.sign * _catMoveSpeed * dt / 400;
-      _catX = _catX.clamp(0.1, 0.9);
+      sim.catX += catDiff.sign * _CatLetterTossSim.catMoveSpeed * dt / 400;
+      sim.catX = sim.catX.clamp(0.1, 0.9);
     }
 
-    // Cat toss animation
-    if (_catTossing) {
-      _catTossAnimT += dt * 6;
-      _catPawAngle = sin(_catTossAnimT * pi) * 0.5;
-      if (_catTossAnimT >= 1.0) {
-        _catTossing = false;
-        _catTossAnimT = 0;
-        _catPawAngle = 0;
+    if (sim.catTossing) {
+      sim.catTossAnimT += dt * 6;
+      sim.catPawAngle = sin(sim.catTossAnimT * pi) * 0.5;
+      if (sim.catTossAnimT >= 1.0) {
+        sim.catTossing = false;
+        sim.catTossAnimT = 0;
+        sim.catPawAngle = 0;
       }
     }
 
-    // Toss timer
-    if (!_wordCelebrating) {
-      _tossTimer += dt;
-      if (_tossTimer >= _tossInterval) {
-        _tossTimer = 0;
+    if (!sim.wordCelebrating) {
+      sim.tossTimer += dt;
+      if (sim.tossTimer >= _CatLetterTossSim.tossInterval) {
+        sim.tossTimer = 0;
         _tossLetter();
       }
     }
 
-    // Update letters (gravity physics)
     final screenSize = MediaQuery.of(context).size;
-    for (final l in _letters) {
+    for (final l in sim.letters) {
       if (l.caught) {
-        // Fly to slot
         l.catchAnimT += dt * 4;
         if (l.catchAnimT > 1.0) l.catchAnimT = 1.0;
         continue;
       }
       if (l.missed) continue;
 
-      l.vy += _gravity * dt;
+      l.vy += _CatLetterTossSim.gravity * dt;
       l.x += l.vx * dt;
       l.y += l.vy * dt;
       l.rotation += l.rotationSpeed * dt;
 
-      // Check basket collision
-      final basketPx = _basketX * screenSize.width;
-      final basketTop = screenSize.height - _basketHeight - 40;
-      if (l.y + _letterSize / 2 >= basketTop &&
-          l.y + _letterSize / 2 <= basketTop + _basketHeight &&
-          (l.x - basketPx).abs() < _basketWidth / 2 + _letterSize / 4) {
+      final basketPx = sim.basketX * screenSize.width;
+      final basketTop = screenSize.height - _CatLetterTossSim.basketHeight - 40;
+      if (l.y + _CatLetterTossSim.letterSize / 2 >= basketTop &&
+          l.y + _CatLetterTossSim.letterSize / 2 <= basketTop + _CatLetterTossSim.basketHeight &&
+          (l.x - basketPx).abs() < _CatLetterTossSim.basketWidth / 2 + _CatLetterTossSim.letterSize / 4) {
         _onLetterCaught(l);
       }
 
-      // Off screen bottom
       if (l.y > screenSize.height + 50) {
         l.missed = true;
       }
     }
 
-    // Remove old letters
-    _letters.removeWhere((l) => l.missed || (l.caught && l.catchAnimT >= 1.0));
+    sim.letters.removeWhere((l) => l.missed || (l.caught && l.catchAnimT >= 1.0));
 
-    // Update sparkles
-    for (final s in _sparkles) {
+    for (final s in sim.sparkles) {
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.life -= dt;
     }
-    _sparkles.removeWhere((s) => s.life <= 0);
+    sim.sparkles.removeWhere((s) => s.life <= 0);
 
-    // Twinkle stars
-    for (final s in _stars) {
+    for (final s in sim.stars) {
       s.twinklePhase += dt * s.twinkleSpeed;
     }
 
-    // Word celebrate
-    if (_wordCelebrating) {
-      _wordCelebrateT += dt * 1.5;
-      if (_wordCelebrateT >= 1.0) {
+    bool overlayChanged = false;
+
+    if (sim.wordCelebrating) {
+      sim.wordCelebrateT += dt * 1.5;
+      if (sim.wordCelebrateT >= 1.0) {
         _wordsCompleted++;
+        overlayChanged = true;
         if (_wordsCompleted >= _wordsPerRound) {
           _gameOver = true;
           _awardMiniGameStickers();
@@ -365,51 +366,44 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       }
     }
 
-    // Flash timer
-    if (_flashTimer > 0) _flashTimer -= dt;
+    if (sim.flashTimer > 0) sim.flashTimer -= dt;
+    if (sim.feedbackTimer > 0) sim.feedbackTimer -= dt;
 
-    // Feedback timer
-    if (_feedbackTimer > 0) _feedbackTimer -= dt;
-
-    if (mounted) setState(() {});
+    sim.tick(dt);
+    if (overlayChanged && mounted) setState(() {});
   }
 
   // ── Toss logic ─────────────────────────────────────────────────────────
 
   void _tossLetter() {
     final screenSize = MediaQuery.of(context).size;
+    final rng = _sim.rng;
 
-    // Decide if this letter is the next needed one
     final neededLetter = _currentWord[_nextLetterIndex];
-    final isCorrect = _rng.nextDouble() < 0.45; // ~45% chance of correct
+    final isCorrect = rng.nextDouble() < 0.45;
     final letter =
         isCorrect ? neededLetter : _randomDistractor(neededLetter);
 
-    // Move cat to a random position before tossing
-    _catTargetX = 0.15 + _rng.nextDouble() * 0.7;
+    _sim.catTargetX = 0.15 + rng.nextDouble() * 0.7;
+    _sim.catTossing = true;
+    _sim.catTossAnimT = 0;
 
-    // Toss animation
-    _catTossing = true;
-    _catTossAnimT = 0;
-
-    // Calculate toss arc
-    final catPx = _catX * screenSize.width;
-    const catY = 100.0; // Cat sits near top
-    // Random horizontal velocity toward center-ish
-    final targetX = 0.2 + _rng.nextDouble() * 0.6;
+    final catPx = _sim.catX * screenSize.width;
+    const catY = 100.0;
+    final targetX = 0.2 + rng.nextDouble() * 0.6;
     final dx = targetX * screenSize.width - catPx;
-    final vx = dx * (0.5 + _rng.nextDouble() * 0.3);
-    final vy = 40 + _rng.nextDouble() * 60; // initial downward speed
+    final vx = dx * (0.5 + rng.nextDouble() * 0.3);
+    final vy = 40 + rng.nextDouble() * 60;
 
-    _letters.add(_TossedLetter(
+    _sim.letters.add(_TossedLetter(
       letter: letter,
       isCorrect: isCorrect,
       x: catPx,
-      y: catY + 40, // from paw position
+      y: catY + 40,
       vx: vx,
       vy: vy,
-      rotation: _rng.nextDouble() * 0.5 - 0.25,
-      rotationSpeed: (_rng.nextDouble() - 0.5) * 4,
+      rotation: rng.nextDouble() * 0.5 - 0.25,
+      rotationSpeed: (rng.nextDouble() - 0.5) * 4,
     ));
   }
 
@@ -417,7 +411,7 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
     const alphabet = 'abcdefghijklmnopqrstuvwxyz';
     String c;
     do {
-      c = alphabet[_rng.nextInt(26)];
+      c = alphabet[_sim.rng.nextInt(26)];
     } while (c == avoid);
     return c;
   }
@@ -431,7 +425,6 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       letter.caught = true;
       letter.catchAnimT = 0;
 
-      // Calculate target slot
       if (_slotRects.isNotEmpty && _nextLetterIndex < _slotRects.length) {
         final rect = _slotRects[_nextLetterIndex];
         letter.catchTarget = rect.center;
@@ -442,40 +435,38 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       _combo++;
       if (_combo > _bestCombo) _bestCombo = _combo;
 
-      // Score: 10 base + combo bonus
       final comboMultiplier = _combo.clamp(1, 10);
       _score += 10 * comboMultiplier;
 
-      _feedbackText = _combo > 1 ? '${_combo}x Combo!' : 'Nice!';
-      _feedbackColor = AppColors.success;
-      _feedbackTimer = 1.0;
+      _sim.feedbackText = _combo > 1 ? '${_combo}x Combo!' : 'Nice!';
+      _sim.feedbackColor = AppColors.success;
+      _sim.feedbackTimer = 1.0;
 
-      // Sparkles
       _spawnSparkles(letter.x, letter.y, AppColors.magenta);
 
       widget.audioService.playSuccess();
       Haptics.correct();
 
-      // Word complete?
       if (_nextLetterIndex >= _currentWord.length) {
-        _wordCelebrating = true;
-        _wordCelebrateT = 0;
-        _score += 50; // word bonus
+        _sim.wordCelebrating = true;
+        _sim.wordCelebrateT = 0;
+        _score += 50;
         widget.audioService.playSuccess();
         Haptics.success();
         _spawnSparkles(
             MediaQuery.of(context).size.width / 2, 200, AppColors.starGold);
       }
+
+      if (mounted) setState(() {});
     } else {
-      // Wrong letter
       letter.missed = true;
       _combo = 0;
       _lives--;
-      _flashTimer = 0.3;
-      _flashColor = AppColors.error;
-      _feedbackText = 'Oops!';
-      _feedbackColor = AppColors.error;
-      _feedbackTimer = 1.0;
+      _sim.flashTimer = 0.3;
+      _sim.flashColor = AppColors.error;
+      _sim.feedbackText = 'Oops!';
+      _sim.feedbackColor = AppColors.error;
+      _sim.feedbackTimer = 1.0;
 
       widget.audioService.playError();
       Haptics.wrong();
@@ -484,22 +475,25 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
         _gameOver = true;
         _awardMiniGameStickers();
       }
+
+      if (mounted) setState(() {});
     }
   }
 
   void _spawnSparkles(double x, double y, Color baseColor) {
+    final rng = _sim.rng;
     for (int i = 0; i < 12; i++) {
-      final angle = _rng.nextDouble() * pi * 2;
-      final speed = 60 + _rng.nextDouble() * 120;
-      _sparkles.add(_Sparkle(
+      final angle = rng.nextDouble() * pi * 2;
+      final speed = 60 + rng.nextDouble() * 120;
+      _sim.sparkles.add(_Sparkle(
         x: x,
         y: y,
         vx: cos(angle) * speed,
         vy: sin(angle) * speed,
-        life: 0.5 + _rng.nextDouble() * 0.5,
+        life: 0.5 + rng.nextDouble() * 0.5,
         color: Color.lerp(
-            baseColor, AppColors.starGold, _rng.nextDouble() * 0.5)!,
-        size: 3 + _rng.nextDouble() * 4,
+            baseColor, AppColors.starGold, rng.nextDouble() * 0.5)!,
+        size: 3 + rng.nextDouble() * 4,
       ));
     }
   }
@@ -532,14 +526,14 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
     _wordsCompleted = 0;
     _combo = 0;
     _bestCombo = 0;
-    _totalTime = 0;
-    _letters.clear();
-    _sparkles.clear();
-    _tossTimer = 0;
-    _flashTimer = 0;
-    _feedbackTimer = 0;
-    _wordCelebrating = false;
-    _wordCelebrateT = 0;
+    _sim.totalTime = 0;
+    _sim.letters.clear();
+    _sim.sparkles.clear();
+    _sim.tossTimer = 0;
+    _sim.flashTimer = 0;
+    _sim.feedbackTimer = 0;
+    _sim.wordCelebrating = false;
+    _sim.wordCelebrateT = 0;
     _buildWordPool();
     _nextWord();
   }
@@ -596,93 +590,77 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
           onTap: !_gameStarted
               ? () => setState(() => _gameStarted = true)
               : null,
-          // Use onPan (any direction) instead of onHorizontalDrag,
-          // because horizontal-only requires significant horizontal movement
-          // which fails on Windows mouse input and diagonal drags.
           onPanUpdate: _gameStarted
               ? (details) {
-                  _basketX =
+                  _sim.basketX =
                       (details.localPosition.dx / size.width).clamp(0.1, 0.9);
                 }
               : null,
           onPanStart: _gameStarted
               ? (details) {
-                  _basketX =
+                  _sim.basketX =
                       (details.localPosition.dx / size.width).clamp(0.1, 0.9);
                 }
               : null,
-          // Also handle simple taps to reposition basket when game is running
           onTapDown: _gameStarted
               ? (details) {
-                  _basketX =
+                  _sim.basketX =
                       (details.localPosition.dx / size.width).clamp(0.1, 0.9);
                 }
               : null,
           child: Stack(
             children: [
-              // Star background
               RepaintBoundary(
                 child: IgnorePointer(
                   child: CustomPaint(
                     size: size,
                     painter: _StarFieldPainter(
-                      stars: _stars,
-                      totalTime: _totalTime,
+                      sim: _sim,
                     ),
                   ),
                 ),
               ),
 
-              // Cat
               RepaintBoundary(
                 child: IgnorePointer(
                   child: CustomPaint(
                     size: size,
                     painter: _CatPainter(
-                      catX: _catX,
-                      pawAngle: _catPawAngle,
-                      tailPhase: _catTailPhase,
-                      earTwitch: _catEarTwitch,
-                      glowPhase: _catGlowPhase,
+                      sim: _sim,
                     ),
                   ),
                 ),
               ),
 
-              // Tossed letters
               RepaintBoundary(
                 child: IgnorePointer(
                   child: CustomPaint(
                     size: size,
                     painter: _LettersPainter(
-                      letters: _letters,
-                      sparkles: _sparkles,
+                      sim: _sim,
                       hintsEnabled: widget.hintsEnabled,
                     ),
                   ),
                 ),
               ),
 
-              // Basket
               RepaintBoundary(
                 child: IgnorePointer(
                   child: CustomPaint(
                     size: size,
                     painter: _BasketPainter(
-                      basketX: _basketX,
-                      basketWidth: _basketWidth,
-                      basketHeight: _basketHeight,
+                      sim: _sim,
                     ),
                   ),
                 ),
               ),
 
               // Flash overlay
-              if (_flashTimer > 0)
+              if (_sim.flashTimer > 0)
                 IgnorePointer(
                   child: Container(
-                    color: _flashColor
-                        .withValues(alpha: (_flashTimer / 0.3) * 0.15),
+                    color: _sim.flashColor
+                        .withValues(alpha: (_sim.flashTimer / 0.3) * 0.15),
                   ),
                 ),
 
@@ -690,22 +668,22 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
               _buildHUD(size),
 
               // Feedback text
-              if (_feedbackTimer > 0)
+              if (_sim.feedbackTimer > 0)
                 Positioned(
                   top: size.height * 0.4,
                   left: 0,
                   right: 0,
                   child: Center(
                     child: Text(
-                      _feedbackText,
+                      _sim.feedbackText,
                       style: AppFonts.fredoka(
                         fontSize: 28,
                         fontWeight: FontWeight.w700,
-                        color: _feedbackColor
-                            .withValues(alpha: _feedbackTimer.clamp(0.0, 1.0)),
+                        color: _sim.feedbackColor
+                            .withValues(alpha: _sim.feedbackTimer.clamp(0.0, 1.0)),
                         shadows: [
                           Shadow(
-                            color: _feedbackColor.withValues(alpha: 0.6),
+                            color: _sim.feedbackColor.withValues(alpha: 0.6),
                             blurRadius: 12,
                           ),
                         ],
@@ -714,7 +692,6 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
                   ),
                 ),
 
-              // Start overlay
               if (!_gameStarted) _buildStartOverlay(size),
             ],
           ),
@@ -925,8 +902,8 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       _calculateSlotRects();
     });
 
-    final celebrating = _wordCelebrating;
-    final celebrateProgress = _wordCelebrateT.clamp(0.0, 1.0);
+    final celebrating = _sim.wordCelebrating;
+    final celebrateProgress = _sim.wordCelebrateT.clamp(0.0, 1.0);
 
     return Container(
       key: _slotRowKey,
@@ -1153,10 +1130,9 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
 // ─── Star field painter ──────────────────────────────────────────────────────
 
 class _StarFieldPainter extends CustomPainter {
-  final List<_Star> stars;
-  final double totalTime;
+  final _CatLetterTossSim sim;
 
-  _StarFieldPainter({required this.stars, required this.totalTime});
+  _StarFieldPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1174,7 +1150,7 @@ class _StarFieldPainter extends CustomPainter {
     canvas.drawCircle(
         Offset(size.width * 0.2, size.height * 0.6), 100, nebulaPaint2);
 
-    for (final s in stars) {
+    for (final s in sim.stars) {
       final twinkle = (sin(s.twinklePhase) * 0.3 + 0.7).clamp(0.0, 1.0);
       paint.color =
           Colors.white.withValues(alpha: s.brightness * twinkle);
@@ -1198,35 +1174,25 @@ class _StarFieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _StarFieldPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _StarFieldPainter old) => false;
 }
 
 // ─── Cat painter ─────────────────────────────────────────────────────────────
 
 class _CatPainter extends CustomPainter {
-  final double catX; // 0..1 normalized
-  final double pawAngle;
-  final double tailPhase;
-  final double earTwitch;
-  final double glowPhase;
+  final _CatLetterTossSim sim;
 
   static const Color _catPink = Color(0xFFFF69B4);
   static const Color _catMagenta = Color(0xFFEC4899);
   static const Color _catLight = Color(0xFFFFB6D9);
 
-  _CatPainter({
-    required this.catX,
-    required this.pawAngle,
-    required this.tailPhase,
-    required this.earTwitch,
-    required this.glowPhase,
-  });
+  _CatPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = catX * size.width;
-    const cy = 80.0; // cat Y position (near top)
-    final glowPulse = (sin(glowPhase) * 0.3 + 0.7).clamp(0.0, 1.0);
+    final cx = sim.catX * size.width;
+    const cy = 80.0;
+    final glowPulse = (sin(sim.catGlowPhase) * 0.3 + 0.7).clamp(0.0, 1.0);
 
     // ── Glow aura ──
     final auraPaint = Paint()
@@ -1268,8 +1234,8 @@ class _CatPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx - 4, cy - 18), 8, headHighlight);
 
     // ── Ears ──
-    _drawEar(canvas, cx - 14, cy - 30, -0.3 + earTwitch);
-    _drawEar(canvas, cx + 14, cy - 30, 0.3 - earTwitch);
+    _drawEar(canvas, cx - 14, cy - 30, -0.3 + sim.catEarTwitch);
+    _drawEar(canvas, cx + 14, cy - 30, 0.3 - sim.catEarTwitch);
 
     // ── Eyes ──
     final eyePaint = Paint()..color = Colors.white;
@@ -1367,7 +1333,7 @@ class _CatPainter extends CustomPainter {
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
 
-    final tailSwing = sin(tailPhase) * 15;
+    final tailSwing = sin(sim.catTailPhase) * 15;
     final tailPath = Path()
       ..moveTo(cx + 22, cy + 16)
       ..cubicTo(
@@ -1384,7 +1350,7 @@ class _CatPainter extends CustomPainter {
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
     canvas.drawCircle(
-        Offset(cx + 30 + sin(tailPhase) * 15 * 0.8, cy - 25), 3, tipPaint);
+        Offset(cx + 30 + sin(sim.catTailPhase) * 15 * 0.8, cy - 25), 3, tipPaint);
   }
 
   void _drawPaws(Canvas canvas, double cx, double cy) {
@@ -1400,7 +1366,7 @@ class _CatPainter extends CustomPainter {
     // Right paw (tossing arm)
     canvas.save();
     canvas.translate(cx + 14, cy + 18);
-    canvas.rotate(pawAngle);
+    canvas.rotate(sim.catPawAngle);
     canvas.drawOval(
       Rect.fromCenter(center: const Offset(0, 8), width: 14, height: 10),
       pawPaint,
@@ -1409,24 +1375,23 @@ class _CatPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CatPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _CatPainter old) => false;
 }
 
 // ─── Letters painter ─────────────────────────────────────────────────────────
 
 class _LettersPainter extends CustomPainter {
-  final List<_TossedLetter> letters;
-  final List<_Sparkle> sparkles;
+  final _CatLetterTossSim sim;
   final bool hintsEnabled;
 
-  _LettersPainter({required this.letters, required this.sparkles, required this.hintsEnabled});
+  _LettersPainter({required this.sim, required this.hintsEnabled}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
     final letterPaint = Paint();
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
-    for (final l in letters) {
+    for (final l in sim.letters) {
       if (l.missed) continue;
 
       double x = l.x;
@@ -1459,8 +1424,8 @@ class _LettersPainter extends CustomPainter {
       final blockRect = RRect.fromRectAndRadius(
         Rect.fromCenter(
             center: Offset.zero,
-            width: _CatLetterTossGameState._letterSize,
-            height: _CatLetterTossGameState._letterSize),
+            width: _CatLetterTossSim.letterSize,
+            height: _CatLetterTossSim.letterSize),
         const Radius.circular(8),
       );
       canvas.drawRRect(blockRect, letterPaint);
@@ -1501,8 +1466,7 @@ class _LettersPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Sparkles
-    for (final s in sparkles) {
+    for (final s in sim.sparkles) {
       final alpha = (s.life / s.maxLife).clamp(0.0, 1.0);
       final sparkPaint = Paint()
         ..color = s.color.withValues(alpha: alpha)
@@ -1512,24 +1476,21 @@ class _LettersPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _LettersPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _LettersPainter old) => false;
 }
 
 // ─── Basket painter ──────────────────────────────────────────────────────────
 
 class _BasketPainter extends CustomPainter {
-  final double basketX; // 0..1 normalized
-  final double basketWidth;
-  final double basketHeight;
+  final _CatLetterTossSim sim;
 
-  _BasketPainter({
-    required this.basketX,
-    required this.basketWidth,
-    required this.basketHeight,
-  });
+  _BasketPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final basketX = sim.basketX;
+    final basketWidth = _CatLetterTossSim.basketWidth;
+    final basketHeight = _CatLetterTossSim.basketHeight;
     final cx = basketX * size.width;
     final top = size.height - basketHeight - 40;
 
@@ -1609,5 +1570,5 @@ class _BasketPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _BasketPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _BasketPainter old) => false;
 }

@@ -12,6 +12,79 @@ import '../../utils/haptics.dart';
 // Word Rocket -- tap letters in order to spell words and boost the rocket
 // ---------------------------------------------------------------------------
 
+class _RocketSim extends ChangeNotifier {
+  double rocketY = 0.7;
+  double rocketBoost = 0.0;
+  double turbulence = 0.0;
+  double time = 0.0;
+
+  final List<_ExhaustParticle> exhaustParticles = [];
+  final List<_StarParticle> bgStars = [];
+  List<_LetterTile> tiles = [];
+
+  final _rng = Random();
+
+  void tick(double animValue) {
+    time = animValue;
+
+    rocketY += 0.0003;
+    rocketY = rocketY.clamp(0.1, 0.9);
+
+    if (rocketBoost > 0) {
+      rocketY -= rocketBoost * 0.002;
+      rocketBoost *= 0.95;
+      if (rocketBoost < 0.01) rocketBoost = 0;
+    }
+
+    if (turbulence > 0) {
+      rocketY += sin(animValue * pi * 20) * turbulence * 0.003;
+      turbulence *= 0.92;
+      if (turbulence < 0.01) turbulence = 0;
+    }
+
+    rocketY = rocketY.clamp(0.1, 0.9);
+
+    if (rocketBoost > 0.1) {
+      exhaustParticles.add(_ExhaustParticle(
+        x: 0.5 + (_rng.nextDouble() - 0.5) * 0.04,
+        y: rocketY + 0.05,
+        vx: (_rng.nextDouble() - 0.5) * 0.002,
+        vy: 0.002 + _rng.nextDouble() * 0.003,
+        life: 1.0,
+        size: 2 + _rng.nextDouble() * 4,
+        color: _rng.nextBool()
+            ? const Color(0xFFFF8C42)
+            : const Color(0xFFFFD700),
+      ));
+    }
+
+    for (final p in exhaustParticles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.02;
+    }
+    exhaustParticles.removeWhere((p) => p.life <= 0);
+
+    for (final s in bgStars) {
+      s.y += s.speed * 0.0005 * (1 + rocketBoost * 2);
+      if (s.y > 1.1) {
+        s.y = -0.1;
+        s.x = _rng.nextDouble();
+      }
+    }
+
+    notifyListeners();
+  }
+
+  void reset() {
+    rocketY = 0.7;
+    rocketBoost = 0;
+    turbulence = 0;
+    exhaustParticles.clear();
+    tiles = [];
+  }
+}
+
 class WordRocketGame extends StatefulWidget {
   final ProgressService progressService;
   final AudioService audioService;
@@ -37,26 +110,17 @@ class _WordRocketGameState extends State<WordRocketGame>
   static const _lives = 3;
 
   final _rng = Random();
+  final _sim = _RocketSim();
 
   // Game state
   List<String> _wordPool = [];
   String _currentWord = '';
   int _letterIndex = 0;
-  List<_LetterTile> _tiles = [];
   int _score = 0;
   int _wordsCompleted = 0;
   int _livesLeft = _lives;
   bool _gameOver = false;
   bool _isNewBest = false;
-
-  // Rocket state
-  double _rocketY = 0.7; // 0 = top, 1 = bottom (fraction of screen)
-  double _rocketBoost = 0.0;
-  double _turbulence = 0.0;
-
-  // Particles
-  final List<_ExhaustParticle> _exhaustParticles = [];
-  final List<_StarParticle> _bgStars = [];
 
   // Animation
   late AnimationController _gameLoop;
@@ -94,9 +158,8 @@ class _WordRocketGameState extends State<WordRocketGame>
       duration: const Duration(milliseconds: 800),
     );
 
-    // Generate background stars
     for (int i = 0; i < 60; i++) {
-      _bgStars.add(_StarParticle.random(_rng));
+      _sim.bgStars.add(_StarParticle.random(_rng));
     }
 
     _initWordPool();
@@ -135,7 +198,6 @@ class _WordRocketGameState extends State<WordRocketGame>
     _wordTimer.reset();
     _wordTimer.start();
 
-    // Create letter tiles: correct letters + distractors, shuffled
     final letters = word.split('');
     final distractors = <String>[];
     const alphabet = 'abcdefghijklmnopqrstuvwxyz';
@@ -149,7 +211,7 @@ class _WordRocketGameState extends State<WordRocketGame>
     final all = [...letters, ...distractors];
     all.shuffle(_rng);
 
-    _tiles = all.asMap().entries.map((e) {
+    _sim.tiles = all.asMap().entries.map((e) {
       return _LetterTile(
         letter: e.value,
         x: _rng.nextDouble() * 0.8 + 0.1,
@@ -165,92 +227,37 @@ class _WordRocketGameState extends State<WordRocketGame>
 
   void _updateGame() {
     if (_gameOver || !mounted) return;
-
-    setState(() {
-      // Rocket gravity -- slowly drifts down
-      _rocketY += 0.0003;
-      _rocketY = _rocketY.clamp(0.1, 0.9);
-
-      // Apply boost
-      if (_rocketBoost > 0) {
-        _rocketY -= _rocketBoost * 0.002;
-        _rocketBoost *= 0.95;
-        if (_rocketBoost < 0.01) _rocketBoost = 0;
-      }
-
-      // Apply turbulence
-      if (_turbulence > 0) {
-        _rocketY += sin(_gameLoop.value * pi * 20) * _turbulence * 0.003;
-        _turbulence *= 0.92;
-        if (_turbulence < 0.01) _turbulence = 0;
-      }
-
-      _rocketY = _rocketY.clamp(0.1, 0.9);
-
-      // Update exhaust particles
-      if (_rocketBoost > 0.1) {
-        _exhaustParticles.add(_ExhaustParticle(
-          x: 0.5 + (_rng.nextDouble() - 0.5) * 0.04,
-          y: _rocketY + 0.05,
-          vx: (_rng.nextDouble() - 0.5) * 0.002,
-          vy: 0.002 + _rng.nextDouble() * 0.003,
-          life: 1.0,
-          size: 2 + _rng.nextDouble() * 4,
-          color: _rng.nextBool()
-              ? const Color(0xFFFF8C42)
-              : const Color(0xFFFFD700),
-        ));
-      }
-
-      for (final p in _exhaustParticles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.02;
-      }
-      _exhaustParticles.removeWhere((p) => p.life <= 0);
-
-      // Float stars downward to simulate upward motion
-      for (final s in _bgStars) {
-        s.y += s.speed * 0.0005 * (1 + _rocketBoost * 2);
-        if (s.y > 1.1) {
-          s.y = -0.1;
-          s.x = _rng.nextDouble();
-        }
-      }
-    });
+    _sim.tick(_gameLoop.value);
   }
 
   void _onTileTap(int index) {
     if (_gameOver) return;
-    final tile = _tiles[index];
+    final tile = _sim.tiles[index];
     if (tile.used) return;
 
     final expected = _currentWord[_letterIndex];
     if (tile.letter == expected) {
-      // Correct
       Haptics.correct();
       widget.audioService.playLetter(tile.letter);
-      setState(() {
-        tile.used = true;
-        tile.correct = true;
-        _letterIndex++;
-        _rocketBoost = 1.0;
-      });
+      tile.used = true;
+      tile.correct = true;
+      _letterIndex++;
+      _sim.rocketBoost = 1.0;
       _boostController.forward(from: 0.0);
+      setState(() {});
 
       if (_letterIndex >= _currentWord.length) {
         _onWordComplete();
       }
     } else {
-      // Wrong
       Haptics.wrong();
       widget.audioService.playError();
+      _sim.turbulence = 1.0;
+      _turbulenceController.forward(from: 0.0);
       setState(() {
-        _turbulence = 1.0;
         _livesLeft--;
         _combo = 0;
       });
-      _turbulenceController.forward(from: 0.0);
 
       if (_livesLeft <= 0) {
         _endGame();
@@ -268,10 +275,10 @@ class _WordRocketGameState extends State<WordRocketGame>
     widget.audioService.playSuccess();
     Haptics.success();
 
+    _sim.rocketBoost = 3.0;
     setState(() {
       _score += wordScore;
       _wordsCompleted++;
-      _rocketBoost = 3.0;
     });
 
     Future.delayed(const Duration(milliseconds: 800), () {
@@ -304,17 +311,14 @@ class _WordRocketGameState extends State<WordRocketGame>
   void _restart() {
     _gameLoop.repeat();
     _completionController.reset();
+    _sim.reset();
     setState(() {
       _score = 0;
       _wordsCompleted = 0;
       _livesLeft = _lives;
       _gameOver = false;
       _isNewBest = false;
-      _rocketY = 0.7;
-      _rocketBoost = 0;
-      _turbulence = 0;
       _combo = 0;
-      _exhaustParticles.clear();
     });
     _initWordPool();
     _nextWord();
@@ -327,6 +331,7 @@ class _WordRocketGameState extends State<WordRocketGame>
     _boostController.dispose();
     _turbulenceController.dispose();
     _completionController.dispose();
+    _sim.dispose();
     super.dispose();
   }
 
@@ -346,42 +351,25 @@ class _WordRocketGameState extends State<WordRocketGame>
         child: SafeArea(
           child: Stack(
             children: [
-              // Background stars
-              AnimatedBuilder(
-                animation: _gameLoop,
-                builder: (context, _) {
-                  return CustomPaint(
-                    painter: _StarFieldPainter(stars: _bgStars),
-                    size: Size.infinite,
-                  );
-                },
+              RepaintBoundary(
+                child: CustomPaint(
+                  painter: _StarFieldPainter(sim: _sim),
+                  size: Size.infinite,
+                ),
               ),
 
-              // Exhaust particles
-              AnimatedBuilder(
-                animation: _gameLoop,
-                builder: (context, _) {
-                  return CustomPaint(
-                    painter: _ExhaustPainter(particles: _exhaustParticles),
-                    size: Size.infinite,
-                  );
-                },
+              RepaintBoundary(
+                child: CustomPaint(
+                  painter: _ExhaustPainter(sim: _sim),
+                  size: Size.infinite,
+                ),
               ),
 
-              // Rocket
-              AnimatedBuilder(
-                animation: _gameLoop,
-                builder: (context, _) {
-                  return CustomPaint(
-                    painter: _RocketPainter(
-                      rocketY: _rocketY,
-                      boost: _rocketBoost,
-                      turbulence: _turbulence,
-                      time: _gameLoop.value,
-                    ),
-                    size: Size.infinite,
-                  );
-                },
+              RepaintBoundary(
+                child: CustomPaint(
+                  painter: _RocketPainter(sim: _sim),
+                  size: Size.infinite,
+                ),
               ),
 
               // UI overlay
@@ -420,7 +408,6 @@ class _WordRocketGameState extends State<WordRocketGame>
               ),
             ),
           ),
-          // Lives
           Row(
             mainAxisSize: MainAxisSize.min,
             children: List.generate(_lives, (i) {
@@ -531,13 +518,12 @@ class _WordRocketGameState extends State<WordRocketGame>
       builder: (context, constraints) {
         return GestureDetector(
           onTapUp: (details) {
-            // Check if a tile was hit
             final dx = details.localPosition.dx / constraints.maxWidth;
             final dy = details.localPosition.dy / constraints.maxHeight;
-            for (int i = 0; i < _tiles.length; i++) {
-              final t = _tiles[i];
+            for (int i = 0; i < _sim.tiles.length; i++) {
+              final t = _sim.tiles[i];
               if (t.used) continue;
-              final time = _gameLoop.value;
+              final time = _sim.time;
               final floatX =
                   t.x + sin(time * 2 * pi * t.speed + t.phase) * 0.03;
               final floatY =
@@ -548,19 +534,15 @@ class _WordRocketGameState extends State<WordRocketGame>
               }
             }
           },
-          child: AnimatedBuilder(
-            animation: _gameLoop,
-            builder: (context, _) {
-              return CustomPaint(
-                painter: _TilesPainter(
-                  tiles: _tiles,
-                  time: _gameLoop.value,
-                  currentWord: _currentWord,
-                  letterIndex: _letterIndex,
-                ),
-                size: Size(constraints.maxWidth, constraints.maxHeight),
-              );
-            },
+          child: RepaintBoundary(
+            child: CustomPaint(
+              painter: _TilesPainter(
+                sim: _sim,
+                currentWord: _currentWord,
+                letterIndex: _letterIndex,
+              ),
+              size: Size(constraints.maxWidth, constraints.maxHeight),
+            ),
           ),
         );
       },
@@ -690,8 +672,8 @@ class _WordRocketGameState extends State<WordRocketGame>
 
 class _LetterTile {
   final String letter;
-  final double x; // 0..1
-  final double y; // 0..1
+  final double x;
+  final double y;
   final double phase;
   final double speed;
   bool used = false;
@@ -749,12 +731,12 @@ class _StarParticle {
 // ---- Painters ----
 
 class _StarFieldPainter extends CustomPainter {
-  final List<_StarParticle> stars;
-  _StarFieldPainter({required this.stars});
+  final _RocketSim sim;
+  _StarFieldPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final s in stars) {
+    for (final s in sim.bgStars) {
       final paint = Paint()
         ..color = Colors.white.withValues(alpha: s.opacity)
         ..maskFilter =
@@ -768,16 +750,16 @@ class _StarFieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _StarFieldPainter old) => true;
+  bool shouldRepaint(covariant _StarFieldPainter old) => false;
 }
 
 class _ExhaustPainter extends CustomPainter {
-  final List<_ExhaustParticle> particles;
-  _ExhaustPainter({required this.particles});
+  final _RocketSim sim;
+  _ExhaustPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final p in particles) {
+    for (final p in sim.exhaustParticles) {
       final paint = Paint()
         ..color = p.color.withValues(alpha: (p.life * 0.8).clamp(0.0, 1.0))
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size);
@@ -790,32 +772,23 @@ class _ExhaustPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ExhaustPainter old) => true;
+  bool shouldRepaint(covariant _ExhaustPainter old) => false;
 }
 
 class _RocketPainter extends CustomPainter {
-  final double rocketY;
-  final double boost;
-  final double turbulence;
-  final double time;
+  final _RocketSim sim;
 
-  _RocketPainter({
-    required this.rocketY,
-    required this.boost,
-    required this.turbulence,
-    required this.time,
-  });
+  _RocketPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
-    final cy = rocketY * size.height;
-    final wobble = sin(time * 2 * pi * 8) * turbulence * 3;
+    final cy = sim.rocketY * size.height;
+    final wobble = sin(sim.time * 2 * pi * 8) * sim.turbulence * 3;
 
     canvas.save();
     canvas.translate(cx + wobble, cy);
 
-    // Rocket body
     final bodyPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topCenter,
@@ -823,13 +796,12 @@ class _RocketPainter extends CustomPainter {
         colors: [Color(0xFFE0E0FF), Color(0xFF8888CC)],
       ).createShader(const Rect.fromLTWH(-12, -30, 24, 60));
     final body = Path()
-      ..moveTo(0, -30) // nose
-      ..quadraticBezierTo(14, -10, 12, 20) // right side
-      ..lineTo(-12, 20) // bottom
-      ..quadraticBezierTo(-14, -10, 0, -30); // left side
+      ..moveTo(0, -30)
+      ..quadraticBezierTo(14, -10, 12, 20)
+      ..lineTo(-12, 20)
+      ..quadraticBezierTo(-14, -10, 0, -30);
     canvas.drawPath(body, bodyPaint);
 
-    // Window
     canvas.drawCircle(
       const Offset(0, -5),
       6,
@@ -841,7 +813,6 @@ class _RocketPainter extends CustomPainter {
       Paint()..color = Colors.white.withValues(alpha: 0.5),
     );
 
-    // Fins
     final finPaint = Paint()..color = const Color(0xFFFF4757);
     final leftFin = Path()
       ..moveTo(-12, 14)
@@ -856,17 +827,15 @@ class _RocketPainter extends CustomPainter {
     canvas.drawPath(leftFin, finPaint);
     canvas.drawPath(rightFin, finPaint);
 
-    // Nose cone accent
     canvas.drawCircle(
       const Offset(0, -28),
       3,
       Paint()..color = const Color(0xFFFFD700),
     );
 
-    // Flame if boosting
-    if (boost > 0.05) {
-      final flameLen = 15.0 + boost * 20;
-      final flameWidth = 8.0 + sin(time * 2 * pi * 12) * 3;
+    if (sim.rocketBoost > 0.05) {
+      final flameLen = 15.0 + sim.rocketBoost * 20;
+      final flameWidth = 8.0 + sin(sim.time * 2 * pi * 12) * 3;
       final flamePaint = Paint()
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
@@ -888,38 +857,34 @@ class _RocketPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RocketPainter old) => true;
+  bool shouldRepaint(covariant _RocketPainter old) => false;
 }
 
 class _TilesPainter extends CustomPainter {
-  final List<_LetterTile> tiles;
-  final double time;
+  final _RocketSim sim;
   final String currentWord;
   final int letterIndex;
 
   _TilesPainter({
-    required this.tiles,
-    required this.time,
+    required this.sim,
     required this.currentWord,
     required this.letterIndex,
-  });
+  }) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final t in tiles) {
+    for (final t in sim.tiles) {
       if (t.used) continue;
 
       final floatX =
-          (t.x + sin(time * 2 * pi * t.speed + t.phase) * 0.03) * size.width;
+          (t.x + sin(sim.time * 2 * pi * t.speed + t.phase) * 0.03) * size.width;
       final floatY =
-          (t.y + cos(time * 2 * pi * t.speed * 0.7 + t.phase) * 0.02) *
+          (t.y + cos(sim.time * 2 * pi * t.speed * 0.7 + t.phase) * 0.02) *
               size.height;
 
-      // Determine if this is a next-expected letter
       final isNext = letterIndex < currentWord.length &&
           t.letter == currentWord[letterIndex];
 
-      // Glow
       if (isNext) {
         canvas.drawCircle(
           Offset(floatX, floatY),
@@ -930,7 +895,6 @@ class _TilesPainter extends CustomPainter {
         );
       }
 
-      // Tile background
       final tileRect = RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(floatX, floatY), width: 44, height: 44),
         const Radius.circular(12),
@@ -952,7 +916,6 @@ class _TilesPainter extends CustomPainter {
           ..strokeWidth = isNext ? 2 : 1,
       );
 
-      // Letter text
       final tp = TextPainter(
         text: TextSpan(
           text: t.letter,
@@ -973,5 +936,6 @@ class _TilesPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _TilesPainter old) => true;
+  bool shouldRepaint(covariant _TilesPainter old) =>
+      old.currentWord != currentWord || old.letterIndex != letterIndex;
 }

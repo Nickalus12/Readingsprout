@@ -201,91 +201,282 @@ class _DisintegrationParticle {
   });
 }
 
+// ── Simulation ──────────────────────────────────────────────────────────────
+
+class _FallingLettersSimulation extends ChangeNotifier {
+  final Random rng;
+
+  final List<_Star> stars = [];
+  _ShootingStar? shootingStar;
+  double shootingStarTimer = 0;
+
+  final List<_ShatterFragment> fragments = [];
+  final List<_DustParticle> dustParticles = [];
+  final List<_SparkleParticle> sparkles = [];
+  final List<_DisintegrationParticle> disintegrationParticles = [];
+  final List<_Shockwave> shockwaves = [];
+  final List<_FallingItem> items = [];
+
+  Offset screenShakeOffset = Offset.zero;
+  double screenShakeTimer = 0;
+
+  Color? flashColor;
+  double flashOpacity = 0;
+
+  bool warningFlash = false;
+  double warningFlashT = 0;
+
+  bool wordCelebrating = false;
+  double wordCelebrateT = 0;
+
+  bool slowActive = false;
+  double slowTimer = 0;
+  bool revealActive = false;
+  double revealTimer = 0;
+
+  int nextItemId = 0;
+  double spawnAccumulator = 0;
+
+  _FallingLettersSimulation({required this.rng});
+
+  void tick(double dt, _FallingLettersTickContext ctx) {
+    _updateStars(dt);
+    _updateShootingStar(dt);
+    ctx.updateSpawning(dt);
+    ctx.updateFallingItems(dt);
+    ctx.updateShockwaves(dt);
+    _updateFragments(dt);
+    _updateDust(dt);
+    _updateSparkles(dt);
+    _updateDisintegrationParticles(dt);
+    _updateFlash(dt);
+    _updateScreenShake(dt);
+    _updatePowerUpTimers(dt);
+    _updateWordCelebration(dt, ctx);
+    _updateWarningFlash(dt);
+    notifyListeners();
+  }
+
+  void _updateStars(double dt) {
+    for (final s in stars) {
+      s.y += s.speed;
+      if (s.y > 1.0) {
+        s.y = 0;
+        s.x = rng.nextDouble();
+      }
+      s.twinklePhase += dt * s.twinkleSpeed;
+    }
+    shootingStarTimer += dt;
+    if (shootingStar == null && shootingStarTimer > 4 + rng.nextDouble() * 8) {
+      shootingStarTimer = 0;
+      shootingStar = _ShootingStar(
+        x: rng.nextDouble() * 0.6 + 0.2,
+        y: rng.nextDouble() * 0.3,
+        vx: (rng.nextBool() ? 1 : -1) * (0.3 + rng.nextDouble() * 0.4),
+        vy: 0.15 + rng.nextDouble() * 0.2,
+        length: 0.06 + rng.nextDouble() * 0.04,
+      );
+    }
+  }
+
+  void _updateShootingStar(double dt) {
+    if (shootingStar == null) return;
+    final s = shootingStar!;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.life += dt;
+    s.opacity = (1.0 - s.life / 1.5).clamp(0.0, 1.0);
+    if (s.opacity <= 0 || s.x < -0.1 || s.x > 1.1 || s.y > 1.1) {
+      shootingStar = null;
+    }
+  }
+
+  void _updateFragments(double dt) {
+    for (final f in fragments) {
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.vy += 600 * dt;
+      f.rotation += f.rotationSpeed * dt;
+      f.opacity -= dt * 1.8;
+    }
+    fragments.removeWhere((f) => f.opacity <= 0);
+    if (fragments.length > 30) {
+      fragments.removeRange(0, fragments.length - 30);
+    }
+  }
+
+  void _updateDust(double dt) {
+    for (final d in dustParticles) {
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.vy -= 30 * dt;
+      d.opacity -= dt * 2.5;
+    }
+    dustParticles.removeWhere((d) => d.opacity <= 0);
+    if (dustParticles.length > 20) {
+      dustParticles.removeRange(0, dustParticles.length - 20);
+    }
+  }
+
+  void _updateSparkles(double dt) {
+    for (final s in sparkles) {
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.opacity -= dt * 2.0;
+      s.size *= (1.0 - dt * 1.5).clamp(0.5, 1.0);
+    }
+    sparkles.removeWhere((s) => s.opacity <= 0);
+    if (sparkles.length > 20) {
+      sparkles.removeRange(0, sparkles.length - 20);
+    }
+  }
+
+  void _updateDisintegrationParticles(double dt) {
+    for (final p in disintegrationParticles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 200 * dt;
+      p.rotation += p.rotationSpeed * dt;
+      p.opacity -= dt * 2.0;
+    }
+    disintegrationParticles.removeWhere((p) => p.opacity <= 0);
+    if (disintegrationParticles.length > 30) {
+      disintegrationParticles.removeRange(0, disintegrationParticles.length - 30);
+    }
+  }
+
+  void _updateFlash(double dt) {
+    if (flashOpacity > 0) {
+      flashOpacity -= dt * 4.0;
+      if (flashOpacity <= 0) {
+        flashOpacity = 0;
+        flashColor = null;
+      }
+    }
+  }
+
+  void _updateScreenShake(double dt) {
+    if (screenShakeTimer > 0) {
+      screenShakeTimer -= dt;
+      if (screenShakeTimer <= 0) {
+        screenShakeTimer = 0;
+        screenShakeOffset = Offset.zero;
+      } else {
+        screenShakeOffset = Offset(
+          (rng.nextDouble() - 0.5) * 4.0,
+          (rng.nextDouble() - 0.5) * 4.0,
+        );
+      }
+    }
+  }
+
+  void _updatePowerUpTimers(double dt) {
+    if (slowActive) {
+      slowTimer -= dt;
+      if (slowTimer <= 0) {
+        slowActive = false;
+        for (final item in items) {
+          if (!item.captured && !item.shattered) {
+            item.speed /= 0.4;
+          }
+        }
+      }
+    }
+    if (revealActive) {
+      revealTimer -= dt;
+      if (revealTimer <= 0) {
+        revealActive = false;
+      }
+    }
+  }
+
+  void _updateWordCelebration(double dt, _FallingLettersTickContext ctx) {
+    if (wordCelebrating) {
+      wordCelebrateT += dt;
+      if (wordCelebrateT > 1.2) {
+        ctx.nextWord();
+      }
+    }
+  }
+
+  void _updateWarningFlash(double dt) {
+    if (warningFlash) {
+      warningFlashT += dt;
+      if (warningFlashT > 0.5) {
+        warningFlash = false;
+        warningFlashT = 0;
+      }
+    }
+  }
+
+  void reset(int maxLives) {
+    items.clear();
+    fragments.clear();
+    dustParticles.clear();
+    sparkles.clear();
+    disintegrationParticles.clear();
+    shockwaves.clear();
+    slowActive = false;
+    revealActive = false;
+    spawnAccumulator = 0;
+    nextItemId = 0;
+    screenShakeTimer = 0;
+    screenShakeOffset = Offset.zero;
+    flashColor = null;
+    flashOpacity = 0;
+    warningFlash = false;
+    warningFlashT = 0;
+    wordCelebrating = false;
+    wordCelebrateT = 0;
+  }
+}
+
+abstract class _FallingLettersTickContext {
+  void updateSpawning(double dt);
+  void updateFallingItems(double dt);
+  void updateShockwaves(double dt);
+  void nextWord();
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 class _FallingLettersGameState extends State<FallingLettersGame>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin
+    implements _FallingLettersTickContext {
   final _rng = Random();
+  late final _FallingLettersSimulation _sim;
 
-  // Game config
   static const int _columns = 6;
   late final int _maxLives;
   static const double _baseSpeed = 0.0025;
-  static const double _speedIncrease = 0.00008; // per word completed
-  static const double _letterSpawnInterval = 0.8; // seconds base
+  static const double _speedIncrease = 0.00008;
+  static const double _letterSpawnInterval = 0.8;
   static const double _neededLetterRatio = 0.42;
   static const double _powerUpChance = 0.06;
 
-  // Shockwave config
-  static const double _shockwaveSpeed = 600.0; // px/s
-  static const double _shockwaveRadiusFraction = 0.12; // 12% of screen width
-  static const double _itemHitRadius = 16.0; // tighter capture radius
-  static const double _pushMagnitude = 0.35; // normalised push strength
+  static const double _shockwaveSpeed = 600.0;
+  static const double _shockwaveRadiusFraction = 0.12;
+  static const double _itemHitRadius = 16.0;
+  static const double _pushMagnitude = 0.35;
 
-  // Game state
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
   late int _lives;
   int _wordsCompleted = 0;
 
-  // Word state
   List<String> _wordPool = [];
   int _wordPoolIndex = 0;
   String _currentWord = '';
-  int _nextLetterIndex = 0; // index into _currentWord
+  int _nextLetterIndex = 0;
   List<bool> _slotsFilled = [];
 
-  // Falling items
-  final List<_FallingItem> _items = [];
-  int _nextItemId = 0;
-  double _spawnAccumulator = 0;
-
-  // Shockwaves
-  final List<_Shockwave> _shockwaves = [];
-
-  // Effects
-  final List<_ShatterFragment> _fragments = [];
-  final List<_DustParticle> _dustParticles = [];
-  final List<_SparkleParticle> _sparkles = [];
-  final List<_DisintegrationParticle> _disintegrationParticles = [];
-
-  // Background
-  final List<_Star> _stars = [];
-  _ShootingStar? _shootingStar;
-  double _shootingStarTimer = 0;
-
-  // Power-up state
-  bool _slowActive = false;
-  double _slowTimer = 0;
-  bool _revealActive = false;
-  double _revealTimer = 0;
-
-  // Screen flash
-  Color? _flashColor;
-  double _flashOpacity = 0;
-
-  // Screen shake
-  Offset _screenShakeOffset = Offset.zero;
-  double _screenShakeTimer = 0;
-
-  // Word complete celebration
-  bool _wordCelebrating = false;
-  double _wordCelebrateT = 0;
-
-  // Animation
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
 
-  // Slot positions (calculated in layout)
   List<Rect> _slotRects = [];
   final GlobalKey _slotRowKey = GlobalKey();
 
-  // Warning flash for missed needed letter
-  bool _warningFlash = false;
-  double _warningFlashT = 0;
-
-  // Screen size cache (set each frame from LayoutBuilder)
   Size _screenSize = Size.zero;
 
   late final Stopwatch _sessionTimer;
@@ -296,6 +487,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _maxLives = widget.difficultyParams?.lives ?? 3;
     _lives = _maxLives;
     _sessionTimer = Stopwatch()..start();
+    _sim = _FallingLettersSimulation(rng: _rng);
     _buildWordPool();
     _initStars();
     _ticker = createTicker(_onTick);
@@ -312,6 +504,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   @override
   void dispose() {
     _ticker.dispose();
+    _sim.dispose();
     _sessionTimer.stop();
     super.dispose();
   }
@@ -336,6 +529,11 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _wordPoolIndex = 0;
   }
 
+  @override
+  void nextWord() {
+    _nextWord();
+  }
+
   void _nextWord() {
     if (_gameOver) return;
     if (_wordPoolIndex >= _wordPool.length) {
@@ -345,21 +543,18 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _currentWord = _wordPool[_wordPoolIndex++];
     _nextLetterIndex = 0;
     _slotsFilled = List.filled(_currentWord.length, false);
-    _wordCelebrating = false;
-    _wordCelebrateT = 0;
+    _sim.wordCelebrating = false;
+    _sim.wordCelebrateT = 0;
 
-    // Ensure a needed letter spawns soon
     _ensureNeededLetterExists();
   }
 
   // ── Stars ──────────────────────────────────────────────────────────────
 
   void _initStars() {
-    // Layer 0: far stars (tiny, slow, many)
     for (int i = 0; i < 40; i++) {
-      _stars.add(_Star(
-        x: _rng.nextDouble(),
-        y: _rng.nextDouble(),
+      _sim.stars.add(_Star(
+        x: _rng.nextDouble(), y: _rng.nextDouble(),
         size: 0.5 + _rng.nextDouble() * 0.7,
         opacity: 0.2 + _rng.nextDouble() * 0.3,
         speed: 0.00005 + _rng.nextDouble() * 0.0001,
@@ -368,11 +563,9 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         layer: 0,
       ));
     }
-    // Layer 1: mid stars (medium, moderate speed)
     for (int i = 0; i < 25; i++) {
-      _stars.add(_Star(
-        x: _rng.nextDouble(),
-        y: _rng.nextDouble(),
+      _sim.stars.add(_Star(
+        x: _rng.nextDouble(), y: _rng.nextDouble(),
         size: 1.0 + _rng.nextDouble() * 1.0,
         opacity: 0.3 + _rng.nextDouble() * 0.4,
         speed: 0.0002 + _rng.nextDouble() * 0.0003,
@@ -381,11 +574,9 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         layer: 1,
       ));
     }
-    // Layer 2: near stars (larger, faster, brighter)
     for (int i = 0; i < 15; i++) {
-      _stars.add(_Star(
-        x: _rng.nextDouble(),
-        y: _rng.nextDouble(),
+      _sim.stars.add(_Star(
+        x: _rng.nextDouble(), y: _rng.nextDouble(),
         size: 1.5 + _rng.nextDouble() * 1.5,
         opacity: 0.4 + _rng.nextDouble() * 0.5,
         speed: 0.0005 + _rng.nextDouble() * 0.0005,
@@ -405,99 +596,54 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         ? 0.016
         : (elapsed - _lastTick).inMicroseconds / 1000000.0;
     _lastTick = elapsed;
-
-    // Clamp dt to avoid jumps
     final cdt = dt.clamp(0.0, 0.05);
 
-    setState(() {
-      _updateStars(cdt);
-      _updateShootingStar(cdt);
-      _updateSpawning(cdt);
-      _updateFallingItems(cdt);
-      _updateShockwaves(cdt);
-      _updateFragments(cdt);
-      _updateDust(cdt);
-      _updateSparkles(cdt);
-      _updateDisintegrationParticles(cdt);
-      _updateFlash(cdt);
-      _updateScreenShake(cdt);
-      _updatePowerUpTimers(cdt);
-      _updateWordCelebration(cdt);
-      _updateWarningFlash(cdt);
-    });
+    _sim.tick(cdt, this);
   }
 
-  void _updateStars(double dt) {
-    for (final s in _stars) {
-      s.y += s.speed;
-      if (s.y > 1.0) {
-        s.y = 0;
-        s.x = _rng.nextDouble();
-      }
-      s.twinklePhase += dt * s.twinkleSpeed;
-    }
-    // Shooting star timer
-    _shootingStarTimer += dt;
-    if (_shootingStar == null &&
-        _shootingStarTimer > 4 + _rng.nextDouble() * 8) {
-      _shootingStarTimer = 0;
-      _spawnShootingStar();
-    }
+  @override
+  void updateSpawning(double dt) {
+    _updateSpawning(dt);
   }
 
-  void _spawnShootingStar() {
-    _shootingStar = _ShootingStar(
-      x: _rng.nextDouble() * 0.6 + 0.2,
-      y: _rng.nextDouble() * 0.3,
-      vx: (_rng.nextBool() ? 1 : -1) * (0.3 + _rng.nextDouble() * 0.4),
-      vy: 0.15 + _rng.nextDouble() * 0.2,
-      length: 0.06 + _rng.nextDouble() * 0.04,
-    );
+  @override
+  void updateFallingItems(double dt) {
+    _updateFallingItems(dt);
   }
 
-  void _updateShootingStar(double dt) {
-    if (_shootingStar == null) return;
-    final s = _shootingStar!;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.life += dt;
-    s.opacity = (1.0 - s.life / 1.5).clamp(0.0, 1.0);
-    if (s.opacity <= 0 || s.x < -0.1 || s.x > 1.1 || s.y > 1.1) {
-      _shootingStar = null;
-    }
+  @override
+  void updateShockwaves(double dt) {
+    _updateShockwaves(dt);
   }
 
   void _updateSpawning(double dt) {
     final interval = _letterSpawnInterval *
         (1.0 - (_wordsCompleted * 0.02).clamp(0.0, 0.4));
-    _spawnAccumulator += dt;
-    if (_spawnAccumulator >= interval) {
-      _spawnAccumulator -= interval;
+    _sim.spawnAccumulator += dt;
+    if (_sim.spawnAccumulator >= interval) {
+      _sim.spawnAccumulator -= interval;
       _spawnItem();
     }
   }
 
   void _spawnItem() {
-    if (_gameOver || _wordCelebrating) return;
+    if (_gameOver || _sim.wordCelebrating) return;
 
     final neededLetter = _nextLetterIndex < _currentWord.length
         ? _currentWord[_nextLetterIndex]
         : null;
 
-    // Decide if this should be a power-up
     if (_rng.nextDouble() < _powerUpChance) {
       _spawnPowerUp();
       return;
     }
 
-    // Decide if needed or decoy
     bool makeNeeded = false;
     if (neededLetter != null) {
-      // Check if a needed letter is already on screen
-      final hasNeeded = _items
+      final hasNeeded = _sim.items
           .any((i) => i.isNeeded && !i.captured && !i.shattered && !i.missed);
       if (!hasNeeded) {
-        makeNeeded = true; // Force spawn needed
+        makeNeeded = true;
       } else {
         makeNeeded = _rng.nextDouble() < _neededLetterRatio;
       }
@@ -507,7 +653,6 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     if (makeNeeded && neededLetter != null) {
       letter = neededLetter;
     } else {
-      // Decoy: random a-z
       letter = String.fromCharCode(97 + _rng.nextInt(26));
     }
 
@@ -516,15 +661,15 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     final x = col * colWidth + colWidth * 0.5;
     final speed = _currentSpeed * (0.8 + _rng.nextDouble() * 0.4);
 
-    _items.add(_FallingItem(
+    _sim.items.add(_FallingItem(
       letter: letter,
       x: x,
       y: -0.08,
-      speed: _slowActive ? speed * 0.4 : speed,
+      speed: _sim.slowActive ? speed * 0.4 : speed,
       rotation: (_rng.nextDouble() - 0.5) * 0.4,
       rotationSpeed: (_rng.nextDouble() - 0.5) * 1.5,
       isNeeded: makeNeeded,
-      id: _nextItemId++,
+      id: _sim.nextItemId++,
       pulsePhase: _rng.nextDouble() * pi * 2,
     ));
   }
@@ -536,7 +681,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     const colWidth = 1.0 / _columns;
     final x = col * colWidth + colWidth * 0.5;
 
-    _items.add(_FallingItem(
+    _sim.items.add(_FallingItem(
       letter: '',
       x: x,
       y: -0.08,
@@ -544,23 +689,22 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       rotation: 0,
       rotationSpeed: 0.5,
       powerUp: type,
-      id: _nextItemId++,
+      id: _sim.nextItemId++,
       pulsePhase: _rng.nextDouble() * pi * 2,
     ));
   }
 
   void _ensureNeededLetterExists() {
     if (_nextLetterIndex >= _currentWord.length) return;
-    final hasNeeded = _items
+    final hasNeeded = _sim.items
         .any((i) => i.isNeeded && !i.captured && !i.shattered && !i.missed);
     if (!hasNeeded) {
-      // Force spawn one
       final neededLetter = _currentWord[_nextLetterIndex];
       final col = _rng.nextInt(_columns);
       const colWidth = 1.0 / _columns;
       final x = col * colWidth + colWidth * 0.5;
 
-      _items.add(_FallingItem(
+      _sim.items.add(_FallingItem(
         letter: neededLetter,
         x: x,
         y: -0.05,
@@ -568,7 +712,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         rotation: (_rng.nextDouble() - 0.5) * 0.4,
         rotationSpeed: (_rng.nextDouble() - 0.5) * 1.5,
         isNeeded: true,
-        id: _nextItemId++,
+        id: _sim.nextItemId++,
         pulsePhase: _rng.nextDouble() * pi * 2,
       ));
     }
@@ -579,9 +723,8 @@ class _FallingLettersGameState extends State<FallingLettersGame>
   void _updateFallingItems(double dt) {
     final toRemove = <int>[];
 
-    for (final item in _items) {
+    for (final item in _sim.items) {
       if (item.captured) {
-        // Fly to slot
         item.captureAnimT += dt * 3.5;
         if (item.captureAnimT >= 1.0) {
           toRemove.add(item.id);
@@ -600,27 +743,20 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         continue;
       }
 
-      // Fall + apply push velocities
       item.y += item.speed * (dt / 0.016) + item.extraVy * dt;
       item.x += item.vx * dt;
       item.rotation += item.rotationSpeed * dt;
       item.pulsePhase += dt * 3.0;
-
-      // Dampen push velocities
       item.vx *= (1.0 - dt * 3.0).clamp(0.0, 1.0);
       item.extraVy *= (1.0 - dt * 3.0).clamp(0.0, 1.0);
-
-      // Clamp x to stay on screen
       item.x = item.x.clamp(0.05, 0.95);
 
-      // Hit bottom?
       if (item.y > 1.05) {
         if (item.powerUp != null) {
           toRemove.add(item.id);
           continue;
         }
         if (item.isNeeded) {
-          // Missed a needed letter!
           item.missed = true;
           _onNeededLetterMissed(item);
         } else {
@@ -629,10 +765,9 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       }
     }
 
-    _items.removeWhere((i) => toRemove.contains(i.id));
+    _sim.items.removeWhere((i) => toRemove.contains(i.id));
 
-    // Keep ensuring a needed letter exists
-    if (!_wordCelebrating && _nextLetterIndex < _currentWord.length) {
+    if (!_sim.wordCelebrating && _nextLetterIndex < _currentWord.length) {
       _ensureNeededLetterExists();
     }
   }
@@ -648,12 +783,11 @@ class _FallingLettersGameState extends State<FallingLettersGame>
         ? _currentWord[_nextLetterIndex]
         : null;
 
-    for (final wave in _shockwaves) {
+    for (final wave in _sim.shockwaves) {
       wave.radius += _shockwaveSpeed * dt;
       wave.opacity = (1.0 - wave.radius / wave.maxRadius).clamp(0.0, 1.0);
 
-      // Check collisions with items
-      for (final item in _items) {
+      for (final item in _sim.items) {
         if (item.captured || item.shattered || item.missed) continue;
         if (wave.hitIds.contains(item.id)) continue;
 
@@ -677,7 +811,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       }
     }
 
-    _shockwaves.removeWhere(
+    _sim.shockwaves.removeWhere(
         (w) => w.opacity <= 0 || w.radius >= w.maxRadius);
   }
 
@@ -687,16 +821,15 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     final itemPx = item.x * sw;
     final itemPy = item.y * sh;
 
-    // Spawn disintegration particles (8-12)
     final particleCount = 8 + _rng.nextInt(5);
     for (int i = 0; i < particleCount; i++) {
       final angle = _rng.nextDouble() * pi * 2;
       final speed = 80.0 + _rng.nextDouble() * 180.0;
-      _disintegrationParticles.add(_DisintegrationParticle(
+      _sim.disintegrationParticles.add(_DisintegrationParticle(
         x: itemPx + (_rng.nextDouble() - 0.5) * 20,
         y: itemPy + (_rng.nextDouble() - 0.5) * 20,
         vx: cos(angle) * speed,
-        vy: sin(angle) * speed - 40, // slight upward bias
+        vy: sin(angle) * speed - 40,
         size: 3.0 + _rng.nextDouble() * 5.0,
         color: AppColors.electricBlue
             .withValues(alpha: 0.7 + _rng.nextDouble() * 0.3),
@@ -705,7 +838,6 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       ));
     }
 
-    // Calculate slot target
     Offset target = Offset(sw / 2, 80);
     if (_slotRects.isNotEmpty && _nextLetterIndex < _slotRects.length) {
       final rect = _slotRects[_nextLetterIndex];
@@ -717,8 +849,7 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     item.captureAnimT = 0;
     item.captureTarget = target;
 
-    // Un-need all other copies of this letter
-    for (final other in _items) {
+    for (final other in _sim.items) {
       if (other.id != item.id &&
           other.isNeeded &&
           !other.captured &&
@@ -727,9 +858,8 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       }
     }
 
-    // Sparkle trail
     for (int i = 0; i < 8; i++) {
-      _sparkles.add(_SparkleParticle(
+      _sim.sparkles.add(_SparkleParticle(
         x: itemPx + (_rng.nextDouble() - 0.5) * 20,
         y: itemPy + (_rng.nextDouble() - 0.5) * 20,
         vx: (_rng.nextDouble() - 0.5) * 60,
@@ -743,16 +873,15 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _slotsFilled[_nextLetterIndex] = true;
     _nextLetterIndex++;
 
-    // Blue flash
-    _flashColor = AppColors.electricBlue;
-    _flashOpacity = 0.15;
+    _sim.flashColor = AppColors.electricBlue;
+    _sim.flashOpacity = 0.15;
 
     widget.audioService.playLetter(item.letter);
 
-    // Word complete?
     if (_nextLetterIndex >= _currentWord.length) {
       _onWordComplete();
     }
+    setState(() {});
   }
 
   void _onShockwaveHitWrong(
@@ -777,161 +906,37 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     item.rotationSpeed += (_rng.nextDouble() - 0.5) * 4.0; // spin it
   }
 
-  void _updateDisintegrationParticles(double dt) {
-    for (final p in _disintegrationParticles) {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 200 * dt; // gravity
-      p.rotation += p.rotationSpeed * dt;
-      p.opacity -= dt * 2.0; // fade over ~0.5s
-    }
-    _disintegrationParticles.removeWhere((p) => p.opacity <= 0);
-    if (_disintegrationParticles.length > 30) {
-      _disintegrationParticles.removeRange(
-          0, _disintegrationParticles.length - 30);
-    }
-  }
-
-  void _updateScreenShake(double dt) {
-    if (_screenShakeTimer > 0) {
-      _screenShakeTimer -= dt;
-      if (_screenShakeTimer <= 0) {
-        _screenShakeTimer = 0;
-        _screenShakeOffset = Offset.zero;
-      } else {
-        _screenShakeOffset = Offset(
-          (_rng.nextDouble() - 0.5) * 4.0,
-          (_rng.nextDouble() - 0.5) * 4.0,
-        );
-      }
-    }
-  }
 
   // ── Screen tap ──────────────────────────────────────────────────────────
 
   void _onScreenTap(Offset position) {
-    if (_gameOver || !_gameStarted || _wordCelebrating) return;
-    // Limit concurrent shockwaves to prevent performance issues
-    if (_shockwaves.length >= 3) return;
+    if (_gameOver || !_gameStarted || _sim.wordCelebrating) return;
+    if (_sim.shockwaves.length >= 3) return;
 
     final maxRadius = _screenSize.width * _shockwaveRadiusFraction;
 
-    _shockwaves.add(_Shockwave(
+    _sim.shockwaves.add(_Shockwave(
       cx: position.dx,
       cy: position.dy,
       maxRadius: maxRadius,
     ));
 
-    // Screen shake
-    _screenShakeTimer = 0.1;
+    _sim.screenShakeTimer = 0.1;
 
     Haptics.correct();
   }
 
-  // ── Existing update methods ─────────────────────────────────────────────
-
-  void _updateFragments(double dt) {
-    for (final f in _fragments) {
-      f.x += f.vx * dt;
-      f.y += f.vy * dt;
-      f.vy += 600 * dt; // gravity
-      f.rotation += f.rotationSpeed * dt;
-      f.opacity -= dt * 1.8;
-    }
-    _fragments.removeWhere((f) => f.opacity <= 0);
-    // Hard cap to prevent performance issues
-    if (_fragments.length > 30) {
-      _fragments.removeRange(0, _fragments.length - 30);
-    }
-  }
-
-  void _updateDust(double dt) {
-    for (final d in _dustParticles) {
-      d.x += d.vx * dt;
-      d.y += d.vy * dt;
-      d.vy -= 30 * dt; // float up
-      d.opacity -= dt * 2.5;
-    }
-    _dustParticles.removeWhere((d) => d.opacity <= 0);
-    if (_dustParticles.length > 20) {
-      _dustParticles.removeRange(0, _dustParticles.length - 20);
-    }
-  }
-
-  void _updateSparkles(double dt) {
-    for (final s in _sparkles) {
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      s.opacity -= dt * 2.0;
-      s.size *= (1.0 - dt * 1.5).clamp(0.5, 1.0);
-    }
-    _sparkles.removeWhere((s) => s.opacity <= 0);
-    if (_sparkles.length > 20) {
-      _sparkles.removeRange(0, _sparkles.length - 20);
-    }
-  }
-
-  void _updateFlash(double dt) {
-    if (_flashOpacity > 0) {
-      _flashOpacity -= dt * 4.0;
-      if (_flashOpacity <= 0) {
-        _flashOpacity = 0;
-        _flashColor = null;
-      }
-    }
-  }
-
-  void _updatePowerUpTimers(double dt) {
-    if (_slowActive) {
-      _slowTimer -= dt;
-      if (_slowTimer <= 0) {
-        _slowActive = false;
-        // Restore speeds
-        for (final item in _items) {
-          if (!item.captured && !item.shattered) {
-            item.speed /= 0.4;
-          }
-        }
-      }
-    }
-    if (_revealActive) {
-      _revealTimer -= dt;
-      if (_revealTimer <= 0) {
-        _revealActive = false;
-      }
-    }
-  }
-
-  void _updateWordCelebration(double dt) {
-    if (_wordCelebrating) {
-      _wordCelebrateT += dt;
-      if (_wordCelebrateT > 1.2) {
-        _nextWord();
-      }
-    }
-  }
-
-  void _updateWarningFlash(double dt) {
-    if (_warningFlash) {
-      _warningFlashT += dt;
-      if (_warningFlashT > 0.5) {
-        _warningFlash = false;
-        _warningFlashT = 0;
-      }
-    }
-  }
 
   // ── Event handlers ──────────────────────────────────────────────────────
 
   void _onNeededLetterMissed(_FallingItem item) {
     _lives--;
-    _warningFlash = true;
-    _warningFlashT = 0;
+    _sim.warningFlash = true;
+    _sim.warningFlashT = 0;
 
-    // Dust puff at bottom
     final px = item.x * (_slotRowKey.currentContext?.size?.width ?? 400);
     for (int i = 0; i < 6; i++) {
-      _dustParticles.add(_DustParticle(
+      _sim.dustParticles.add(_DustParticle(
         x: px + (_rng.nextDouble() - 0.5) * 30,
         y: (_slotRowKey.currentContext?.size?.height ?? 600) - 20,
         vx: (_rng.nextDouble() - 0.5) * 40,
@@ -940,8 +945,8 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       ));
     }
 
-    _flashColor = AppColors.error;
-    _flashOpacity = 0.3;
+    _sim.flashColor = AppColors.error;
+    _sim.flashOpacity = 0.3;
 
     widget.audioService.playError();
     Haptics.wrong();
@@ -951,11 +956,12 @@ class _FallingLettersGameState extends State<FallingLettersGame>
       _awardMiniGameStickers();
       widget.audioService.playError();
     }
+    setState(() {});
   }
 
   void _onWordComplete() {
-    _wordCelebrating = true;
-    _wordCelebrateT = 0;
+    _sim.wordCelebrating = true;
+    _sim.wordCelebrateT = 0;
     _wordsCompleted++;
     _score += _currentWord.length * 10;
 
@@ -963,12 +969,11 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     widget.audioService.playSuccess();
     Haptics.success();
 
-    // Golden flash
-    _flashColor = AppColors.starGold;
-    _flashOpacity = 0.25;
+    _sim.flashColor = AppColors.starGold;
+    _sim.flashOpacity = 0.25;
 
-    // Clear remaining items
-    _items.removeWhere((i) => !i.captured);
+    _sim.items.removeWhere((i) => !i.captured);
+    setState(() {});
   }
 
   void _activatePowerUp(_FallingItem item) {

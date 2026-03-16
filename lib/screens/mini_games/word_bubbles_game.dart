@@ -37,19 +37,352 @@ class WordBubblesGame extends StatefulWidget {
   State<WordBubblesGame> createState() => _WordBubblesGameState();
 }
 
+class _WordBubblesSimulation extends ChangeNotifier {
+  final Random rng;
+  final List<_Bubble> bubbles = [];
+  int nextBubbleId = 0;
+  final List<_PopEffect> popEffects = [];
+  final List<_Particle> bgParticles = [];
+  final List<_LightRay> lightRays = [];
+  final List<_Fish> fishList = [];
+  final List<_AmbientBubble> ambientBubbles = [];
+  double waterCurrentTime = 0.0;
+  double waterCurrentPhase = 0.0;
+  double spawnAccumulator = 0.0;
+  double spawnInterval = 1.8;
+
+  String targetWord = '';
+  List<String> wordPool = [];
+
+  VoidCallback? onLifeLost;
+  VoidCallback? onGameEnd;
+  void Function(int score)? onScoreChanged;
+
+  int score = 0;
+  int lives = 3;
+  int combo = 0;
+  int comboMultiplier = 1;
+  int bestCombo = 0;
+  bool gameOver = false;
+  bool gameStarted = false;
+
+  _WordBubblesSimulation({required this.rng});
+
+  void tick(double dt) {
+    if (gameOver || !gameStarted) return;
+    _updateBubbles(dt);
+    _updatePopEffects(dt);
+    _updateBackgroundParticles(dt);
+    _updateFish(dt);
+    _updateAmbientBubbles(dt);
+    _updateWaterCurrent(dt);
+    _maybeSpawnBubble(dt);
+    notifyListeners();
+  }
+
+  void _maybeSpawnBubble(double dt) {
+    spawnAccumulator += dt;
+    final currentCount = bubbles.length;
+    if (spawnAccumulator >= spawnInterval && currentCount < 5) {
+      spawnAccumulator = 0.0;
+      _spawnBubble();
+      if (currentCount < 3) {
+        spawnInterval = 0.6 + rng.nextDouble() * 0.5;
+      } else {
+        spawnInterval = 1.4 + rng.nextDouble() * 1.0;
+      }
+    }
+  }
+
+  void _spawnBubble() {
+    final isCorrect = rng.nextDouble() < 0.35;
+    String word;
+    if (isCorrect) {
+      word = targetWord;
+    } else {
+      int tries = 0;
+      do {
+        word = wordPool[rng.nextInt(wordPool.length)];
+        tries++;
+      } while (word == targetWord && tries < 20);
+    }
+
+    final radius = 36.0 + rng.nextDouble() * 20.0;
+    final speed = 0.12 - (radius - 36) / 20 * 0.05;
+
+    double x = 0.15 + rng.nextDouble() * 0.7;
+    for (int attempt = 0; attempt < 10; attempt++) {
+      bool overlaps = false;
+      for (final b in bubbles) {
+        final dist = (b.x - x).abs();
+        if (dist < (b.radius + radius) / 400) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) break;
+      x = 0.15 + rng.nextDouble() * 0.7;
+    }
+
+    final wobbleSpeed = 0.5 + rng.nextDouble() * 1.0;
+    final wobbleAmount = 0.01 + rng.nextDouble() * 0.02;
+    final wobblePhase = rng.nextDouble() * pi * 2;
+    final hueOffset = rng.nextDouble() * 360;
+
+    bubbles.add(_Bubble(
+      id: nextBubbleId++,
+      word: word,
+      isTarget: word == targetWord,
+      x: x,
+      y: 1.15,
+      radius: radius,
+      speed: speed,
+      wobbleSpeed: wobbleSpeed,
+      wobbleAmount: wobbleAmount,
+      wobblePhase: wobblePhase,
+      hueOffset: hueOffset,
+      age: 0,
+    ));
+  }
+
+  void _updateBubbles(double dt) {
+    final toRemove = <int>[];
+    final currentDrift = sin(waterCurrentPhase) * 0.015 * dt;
+
+    for (final bubble in bubbles) {
+      bubble.age += dt;
+      bubble.y -= bubble.speed * dt;
+      bubble.x += sin(bubble.age * bubble.wobbleSpeed * pi * 2 +
+              bubble.wobblePhase) *
+          bubble.wobbleAmount *
+          dt *
+          5;
+      bubble.x += currentDrift;
+      bubble.displayRadius = bubble.radius +
+          sin(bubble.age * 3 + bubble.hueOffset) * 1.5;
+      bubble.x = bubble.x.clamp(0.05, 0.95);
+
+      if (bubble.y < -0.15) {
+        if (bubble.isTarget) {
+          lives--;
+          if (lives <= 0) {
+            onGameEnd?.call();
+            return;
+          }
+          onLifeLost?.call();
+          combo = 0;
+          comboMultiplier = 1;
+        }
+        toRemove.add(bubble.id);
+      }
+    }
+
+    for (int i = 0; i < bubbles.length; i++) {
+      for (int j = i + 1; j < bubbles.length; j++) {
+        final a = bubbles[i];
+        final b = bubbles[j];
+        final dx = a.x - b.x;
+        final dy = a.y - b.y;
+        final dist = sqrt(dx * dx + dy * dy);
+        final minDist = (a.radius + b.radius) / 400 * 1.5;
+        if (dist < minDist && dist > 0.001) {
+          final pushStrength = (minDist - dist) * 0.3 * dt;
+          final nx = dx / dist;
+          final ny = dy / dist;
+          a.x += nx * pushStrength;
+          a.y += ny * pushStrength;
+          b.x -= nx * pushStrength;
+          b.y -= ny * pushStrength;
+        }
+      }
+    }
+
+    bubbles.removeWhere((b) => toRemove.contains(b.id));
+
+    final hasTarget = bubbles.any((b) => b.isTarget);
+    if (!hasTarget && spawnAccumulator < spawnInterval - 0.3) {
+      spawnAccumulator = spawnInterval - 0.3;
+    }
+  }
+
+  void _updatePopEffects(double dt) {
+    for (final effect in popEffects) {
+      effect.age += dt;
+      for (final droplet in effect.droplets) {
+        droplet.x += droplet.vx * dt;
+        droplet.y += droplet.vy * dt;
+        droplet.vy += 200 * dt;
+      }
+    }
+    popEffects.removeWhere((e) => e.age > 0.6);
+  }
+
+  void _updateBackgroundParticles(double dt) {
+    for (final p in bgParticles) {
+      p.x += p.speedX;
+      p.y += p.speedY;
+      if (p.y < -0.05) {
+        p.y = 1.05;
+        p.x = rng.nextDouble();
+      }
+      if (p.x < 0) p.x = 1.0;
+      if (p.x > 1) p.x = 0.0;
+    }
+  }
+
+  void _updateFish(double dt) {
+    for (final fish in fishList) {
+      fish.age += dt;
+      fish.tailPhase += dt * 8;
+
+      if (fish.scatterTimer > 0) {
+        fish.scatterTimer -= dt;
+        fish.x += fish.direction * fish.speed * 4 * dt;
+        fish.y += sin(fish.age * 5) * 0.08 * dt;
+      } else {
+        fish.turnTimer -= dt;
+        if (fish.turnTimer <= 0) {
+          if (rng.nextDouble() < 0.4) {
+            fish.direction = -fish.direction;
+          }
+          fish.turnTimer = 3.0 + rng.nextDouble() * 5.0;
+        }
+
+        fish.x += fish.direction * fish.speed * dt;
+        fish.verticalOffset = sin(fish.age * 1.2 + fish.tailPhase * 0.1) * 0.02;
+        fish.y += fish.verticalOffset * dt * 2;
+
+        for (final bubble in bubbles) {
+          final dx = fish.x - bubble.x;
+          final dy = fish.y - bubble.y;
+          final dist = sqrt(dx * dx + dy * dy);
+          if (dist < 0.12 && dist > 0.001) {
+            fish.x += (dx / dist) * 0.05 * dt;
+            fish.y += (dy / dist) * 0.05 * dt;
+          }
+        }
+      }
+
+      if (fish.x < -0.05) {
+        fish.x = 1.05;
+      } else if (fish.x > 1.05) {
+        fish.x = -0.05;
+      }
+      fish.y = fish.y.clamp(0.15, 0.92);
+    }
+
+    for (int i = 0; i < fishList.length; i++) {
+      for (int j = i + 1; j < fishList.length; j++) {
+        final a = fishList[i];
+        final b = fishList[j];
+        final dist = sqrt(
+            (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+        if (dist < 0.15 && a.scatterTimer <= 0 && b.scatterTimer <= 0) {
+          if (a.direction != b.direction && rng.nextDouble() < 0.01) {
+            b.direction = a.direction;
+          }
+        }
+      }
+    }
+  }
+
+  void _updateAmbientBubbles(double dt) {
+    for (final ab in ambientBubbles) {
+      ab.y -= ab.speed * dt;
+      ab.x += sin(ab.wobblePhase + ab.y * 10) * 0.003 * dt;
+      if (ab.y < -0.05) {
+        ab.y = 1.05;
+        ab.x = 0.05 + rng.nextDouble() * 0.9;
+        ab.size = 1.5 + rng.nextDouble() * 3.5;
+      }
+    }
+  }
+
+  void _updateWaterCurrent(double dt) {
+    waterCurrentTime += dt;
+    waterCurrentPhase = waterCurrentTime * 0.6;
+  }
+
+  void applyPopPressureWave(_Bubble popped) {
+    for (final b in bubbles) {
+      if (b.id == popped.id) continue;
+      final dx = b.x - popped.x;
+      final dy = b.y - popped.y;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist < 0.25 && dist > 0.001) {
+        final force = (0.25 - dist) * 0.08;
+        b.x += (dx / dist) * force;
+        b.y += (dy / dist) * force;
+      }
+    }
+    for (final fish in fishList) {
+      final dx = fish.x - popped.x;
+      final dy = fish.y - popped.y;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist < 0.3) {
+        fish.scatterTimer = 0.5 + rng.nextDouble() * 0.5;
+        fish.direction = dx >= 0 ? 1.0 : -1.0;
+      }
+    }
+  }
+
+  void spawnPopEffect(_Bubble bubble, bool isCorrect, bool hintsEnabled) {
+    final droplets = <_Droplet>[];
+    final count = (isCorrect && hintsEnabled) ? 16 : 10;
+    for (int i = 0; i < count; i++) {
+      final angle = (i / count) * pi * 2 + rng.nextDouble() * 0.3;
+      final speed = 80 + rng.nextDouble() * 150;
+      droplets.add(_Droplet(
+        x: 0,
+        y: 0,
+        vx: cos(angle) * speed,
+        vy: sin(angle) * speed - 40,
+        size: 1.5 + rng.nextDouble() * 3.5,
+      ));
+    }
+    for (int i = 0; i < 5; i++) {
+      droplets.add(_Droplet(
+        x: (rng.nextDouble() - 0.5) * 20,
+        y: 0,
+        vx: (rng.nextDouble() - 0.5) * 30,
+        vy: -(60 + rng.nextDouble() * 80),
+        size: 1.0 + rng.nextDouble() * 2.0,
+      ));
+    }
+    popEffects.add(_PopEffect(
+      x: bubble.x,
+      y: bubble.y,
+      isCorrect: isCorrect,
+      droplets: droplets,
+      age: 0,
+      rippleCount: (isCorrect && hintsEnabled) ? 3 : 2,
+    ));
+  }
+
+  void reset(int newLives) {
+    score = 0;
+    lives = newLives;
+    combo = 0;
+    comboMultiplier = 1;
+    bestCombo = 0;
+    bubbles.clear();
+    popEffects.clear();
+    spawnAccumulator = 0;
+    waterCurrentTime = 0;
+    waterCurrentPhase = 0;
+    gameOver = false;
+    for (final fish in fishList) {
+      fish.scatterTimer = 0;
+    }
+  }
+}
+
 class _WordBubblesGameState extends State<WordBubblesGame>
     with TickerProviderStateMixin {
   final _rng = Random();
+  late final _WordBubblesSimulation _sim;
 
-  // -- Word pool -----------------------------------------------------------
-  List<String> _wordPool = [];
-  String _targetWord = '';
-
-  // -- Bubbles on screen ---------------------------------------------------
-  final List<_Bubble> _bubbles = [];
-  int _nextBubbleId = 0;
-
-  // -- Score / lives / combo -----------------------------------------------
+  // -- Score / lives / combo (widget-level for HUD) -----------------------
   int _score = 0;
   late int _lives;
   int _combo = 0;
@@ -60,30 +393,11 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   late int _secondsLeft;
   Timer? _countdownTimer;
 
-  // -- Pop effects ---------------------------------------------------------
-  final List<_PopEffect> _popEffects = [];
-
   // -- Game loop -----------------------------------------------------------
   late AnimationController _loopController;
 
-  // -- Background particles ------------------------------------------------
-  final List<_Particle> _bgParticles = [];
-
-  // -- Light rays ----------------------------------------------------------
-  final List<_LightRay> _lightRays = [];
-
   // -- Seaweed -------------------------------------------------------------
   late AnimationController _seaweedController;
-
-  // -- Fish ----------------------------------------------------------------
-  final List<_Fish> _fishList = [];
-
-  // -- Ambient bubble streams ----------------------------------------------
-  final List<_AmbientBubble> _ambientBubbles = [];
-
-  // -- Water current -------------------------------------------------------
-  double _waterCurrentTime = 0.0;
-  double _waterCurrentPhase = 0.0; // sinusoidal shift direction
 
   // -- Game state ----------------------------------------------------------
   bool _gameStarted = false;
@@ -92,9 +406,8 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   // -- Best combo ----------------------------------------------------------
   int _bestCombo = 0;
 
-  // -- Spawn timing --------------------------------------------------------
-  double _spawnAccumulator = 0.0;
-  double _spawnInterval = 1.8; // seconds between spawns
+  // -- Target word (for HUD) -----------------------------------------------
+  String _targetWord = '';
 
   late final Stopwatch _sessionTimer;
 
@@ -105,10 +418,25 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     _secondsLeft = _gameDuration;
     _lives = widget.difficultyParams?.lives ?? 3;
     _sessionTimer = Stopwatch()..start();
+
+    _sim = _WordBubblesSimulation(rng: _rng);
+    _sim.lives = _lives;
+
     _buildWordPool();
     _initBackgroundElements();
     _initFish();
     _initAmbientBubbles();
+
+    _sim.onLifeLost = () {
+      if (mounted) setState(() {
+        _lives = _sim.lives;
+        _combo = _sim.combo;
+        _comboMultiplier = _sim.comboMultiplier;
+      });
+    };
+    _sim.onGameEnd = () {
+      _endGame();
+    };
 
     _seaweedController = AnimationController(
       vsync: this,
@@ -117,13 +445,13 @@ class _WordBubblesGameState extends State<WordBubblesGame>
 
     _loopController = AnimationController(
       vsync: this,
-      duration: const Duration(days: 1), // runs forever
+      duration: const Duration(days: 1),
     );
     _loopController.addListener(_gameLoop);
 
-    // Start after a brief intro
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
+        _sim.gameStarted = true;
         setState(() => _gameStarted = true);
         _pickNewTarget();
         _startCountdown();
@@ -147,21 +475,21 @@ class _WordBubblesGameState extends State<WordBubblesGame>
           .addAll(DolchWords.wordsForLevel(1).map((w) => w.text.toLowerCase()));
     }
     unlocked.shuffle(_rng);
-    _wordPool = unlocked;
+    _sim.wordPool = unlocked;
   }
 
   void _pickNewTarget() {
-    if (_wordPool.isEmpty) _buildWordPool();
-    _targetWord = _wordPool[_rng.nextInt(_wordPool.length)];
+    if (_sim.wordPool.isEmpty) _buildWordPool();
+    _targetWord = _sim.wordPool[_rng.nextInt(_sim.wordPool.length)];
+    _sim.targetWord = _targetWord;
     widget.audioService.playWord(_targetWord);
   }
 
   // ── Background elements ────────────────────────────────────────────────
 
   void _initBackgroundElements() {
-    // Floating particles (plankton / underwater dust)
     for (int i = 0; i < 40; i++) {
-      _bgParticles.add(_Particle(
+      _sim.bgParticles.add(_Particle(
         x: _rng.nextDouble(),
         y: _rng.nextDouble(),
         size: 1.0 + _rng.nextDouble() * 2.5,
@@ -170,9 +498,8 @@ class _WordBubblesGameState extends State<WordBubblesGame>
         opacity: 0.15 + _rng.nextDouble() * 0.25,
       ));
     }
-    // Light rays from above
     for (int i = 0; i < 5; i++) {
-      _lightRays.add(_LightRay(
+      _sim.lightRays.add(_LightRay(
         x: 0.1 + _rng.nextDouble() * 0.8,
         width: 0.04 + _rng.nextDouble() * 0.06,
         opacity: 0.03 + _rng.nextDouble() * 0.04,
@@ -184,9 +511,9 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   // ── Fish initialization ────────────────────────────────────────────────
 
   void _initFish() {
-    const fishTypes = [0, 1, 2, 3]; // orange, blue, yellow, green
+    const fishTypes = [0, 1, 2, 3];
     for (int i = 0; i < 6; i++) {
-      _fishList.add(_Fish(
+      _sim.fishList.add(_Fish(
         x: 0.1 + _rng.nextDouble() * 0.8,
         y: 0.3 + _rng.nextDouble() * 0.55,
         direction: _rng.nextBool() ? 1.0 : -1.0,
@@ -205,7 +532,7 @@ class _WordBubblesGameState extends State<WordBubblesGame>
 
   void _initAmbientBubbles() {
     for (int i = 0; i < 12; i++) {
-      _ambientBubbles.add(_AmbientBubble(
+      _sim.ambientBubbles.add(_AmbientBubble(
         x: 0.05 + _rng.nextDouble() * 0.9,
         y: 0.5 + _rng.nextDouble() * 0.6,
         size: 1.5 + _rng.nextDouble() * 3.5,
@@ -233,7 +560,11 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   void _endGame() {
     _countdownTimer?.cancel();
     _loopController.stop();
-    setState(() => _gameOver = true);
+    _sim.gameOver = true;
+    setState(() {
+      _gameOver = true;
+      _lives = _sim.lives;
+    });
     _awardMiniGameStickers();
     if (_score > 0) {
       widget.audioService.playSuccess();
@@ -258,8 +589,6 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     }
   }
 
-  // ── Game loop (called every frame via AnimationController) ─────────────
-
   DateTime _lastFrameTime = DateTime.now();
 
   void _gameLoop() {
@@ -268,396 +597,52 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     final now = DateTime.now();
     final dt = (now.difference(_lastFrameTime).inMicroseconds) / 1000000.0;
     _lastFrameTime = now;
-
-    // Clamp dt to avoid huge jumps if app was suspended
     final clampedDt = dt.clamp(0.0, 0.05);
 
-    _updateBubbles(clampedDt);
-    _updatePopEffects(clampedDt);
-    _updateBackgroundParticles(clampedDt);
-    _updateFish(clampedDt);
-    _updateAmbientBubbles(clampedDt);
-    _updateWaterCurrent(clampedDt);
-    _maybeSpawnBubble(clampedDt);
-
-    if (mounted) setState(() {});
+    _sim.tick(clampedDt);
   }
-
-  // ── Bubble spawning ────────────────────────────────────────────────────
-
-  void _maybeSpawnBubble(double dt) {
-    _spawnAccumulator += dt;
-
-    // 3-5 bubbles on screen at once
-    final currentCount = _bubbles.length;
-
-    if (_spawnAccumulator >= _spawnInterval && currentCount < 5) {
-      _spawnAccumulator = 0.0;
-      _spawnBubble();
-
-      // Speed up spawning if we have fewer bubbles than minimum
-      if (currentCount < 3) {
-        _spawnInterval = 0.6 + _rng.nextDouble() * 0.5;
-      } else {
-        _spawnInterval = 1.4 + _rng.nextDouble() * 1.0;
-      }
-    }
-  }
-
-  void _spawnBubble() {
-    // Decide if this bubble is the correct word (~35%) or a distractor (~65%)
-    final isCorrect = _rng.nextDouble() < 0.35;
-    String word;
-    if (isCorrect) {
-      word = _targetWord;
-    } else {
-      // Pick a distractor that is NOT the target
-      int tries = 0;
-      do {
-        word = _wordPool[_rng.nextInt(_wordPool.length)];
-        tries++;
-      } while (word == _targetWord && tries < 20);
-    }
-
-    // Random size
-    final radius = 36.0 + _rng.nextDouble() * 20.0; // 36-56
-    final speed = 0.12 - (radius - 36) / 20 * 0.05; // larger = slower
-
-    // Pick an x position that avoids overlapping existing bubbles
-    double x = 0.15 + _rng.nextDouble() * 0.7;
-    for (int attempt = 0; attempt < 10; attempt++) {
-      bool overlaps = false;
-      for (final b in _bubbles) {
-        final dist = (b.x - x).abs();
-        if (dist < (b.radius + radius) / 400) {
-          overlaps = true;
-          break;
-        }
-      }
-      if (!overlaps) break;
-      x = 0.15 + _rng.nextDouble() * 0.7;
-    }
-
-    // Horizontal wobble parameters
-    final wobbleSpeed = 0.5 + _rng.nextDouble() * 1.0;
-    final wobbleAmount = 0.01 + _rng.nextDouble() * 0.02;
-    final wobblePhase = _rng.nextDouble() * pi * 2;
-
-    // Iridescent hue offset
-    final hueOffset = _rng.nextDouble() * 360;
-
-    _bubbles.add(_Bubble(
-      id: _nextBubbleId++,
-      word: word,
-      isTarget: word == _targetWord,
-      x: x,
-      y: 1.15, // start below screen
-      radius: radius,
-      speed: speed,
-      wobbleSpeed: wobbleSpeed,
-      wobbleAmount: wobbleAmount,
-      wobblePhase: wobblePhase,
-      hueOffset: hueOffset,
-      age: 0,
-    ));
-  }
-
-  // ── Bubble update ──────────────────────────────────────────────────────
-
-  void _updateBubbles(double dt) {
-    final toRemove = <int>[];
-
-    // Water current: sinusoidal horizontal drift
-    final currentDrift = sin(_waterCurrentPhase) * 0.015 * dt;
-
-    for (final bubble in _bubbles) {
-      bubble.age += dt;
-      bubble.y -= bubble.speed * dt;
-      bubble.x += sin(bubble.age * bubble.wobbleSpeed * pi * 2 +
-              bubble.wobblePhase) *
-          bubble.wobbleAmount *
-          dt *
-          5;
-
-      // Apply water current
-      bubble.x += currentDrift;
-
-      // Size oscillation: subtle radius pulsing
-      bubble.displayRadius = bubble.radius +
-          sin(bubble.age * 3 + bubble.hueOffset) * 1.5;
-
-      // Clamp x
-      bubble.x = bubble.x.clamp(0.05, 0.95);
-
-      // If bubble floated off the top
-      if (bubble.y < -0.15) {
-        if (bubble.isTarget) {
-          // Lose a life for missing the correct bubble
-          _lives--;
-          if (_lives <= 0) {
-            _endGame();
-            return;
-          }
-          // Reset combo
-          _combo = 0;
-          _comboMultiplier = 1;
-        }
-        toRemove.add(bubble.id);
-      }
-    }
-
-    // Soft repulsion between bubble pairs
-    for (int i = 0; i < _bubbles.length; i++) {
-      for (int j = i + 1; j < _bubbles.length; j++) {
-        final a = _bubbles[i];
-        final b = _bubbles[j];
-        final dx = a.x - b.x;
-        final dy = a.y - b.y;
-        final dist = sqrt(dx * dx + dy * dy);
-        final minDist = (a.radius + b.radius) / 400 * 1.5;
-        if (dist < minDist && dist > 0.001) {
-          final pushStrength = (minDist - dist) * 0.3 * dt;
-          final nx = dx / dist;
-          final ny = dy / dist;
-          a.x += nx * pushStrength;
-          a.y += ny * pushStrength;
-          b.x -= nx * pushStrength;
-          b.y -= ny * pushStrength;
-        }
-      }
-    }
-
-    _bubbles.removeWhere((b) => toRemove.contains(b.id));
-
-    // If no target bubble exists on screen, ensure next spawn is soon
-    final hasTarget = _bubbles.any((b) => b.isTarget);
-    if (!hasTarget && _spawnAccumulator < _spawnInterval - 0.3) {
-      _spawnAccumulator = _spawnInterval - 0.3;
-    }
-  }
-
-  // ── Pop effects update ─────────────────────────────────────────────────
-
-  void _updatePopEffects(double dt) {
-    for (final effect in _popEffects) {
-      effect.age += dt;
-      for (final droplet in effect.droplets) {
-        droplet.x += droplet.vx * dt;
-        droplet.y += droplet.vy * dt;
-        droplet.vy += 200 * dt; // gravity
-      }
-    }
-    _popEffects.removeWhere((e) => e.age > 0.6);
-  }
-
-  // ── Background particles update ────────────────────────────────────────
-
-  void _updateBackgroundParticles(double dt) {
-    for (final p in _bgParticles) {
-      p.x += p.speedX;
-      p.y += p.speedY;
-      if (p.y < -0.05) {
-        p.y = 1.05;
-        p.x = _rng.nextDouble();
-      }
-      if (p.x < 0) p.x = 1.0;
-      if (p.x > 1) p.x = 0.0;
-    }
-  }
-
-  // ── Fish update ────────────────────────────────────────────────────────
-
-  void _updateFish(double dt) {
-    for (final fish in _fishList) {
-      fish.age += dt;
-      fish.tailPhase += dt * 8; // tail flapping speed
-
-      // Scatter behavior (when a bubble pops nearby)
-      if (fish.scatterTimer > 0) {
-        fish.scatterTimer -= dt;
-        // Move fast in current direction during scatter
-        fish.x += fish.direction * fish.speed * 4 * dt;
-        fish.y += sin(fish.age * 5) * 0.08 * dt;
-      } else {
-        // Normal swimming: sine-wave vertical + steady horizontal
-        fish.turnTimer -= dt;
-        if (fish.turnTimer <= 0) {
-          // Occasionally change direction
-          if (_rng.nextDouble() < 0.4) {
-            fish.direction = -fish.direction;
-          }
-          fish.turnTimer = 3.0 + _rng.nextDouble() * 5.0;
-        }
-
-        fish.x += fish.direction * fish.speed * dt;
-        fish.verticalOffset = sin(fish.age * 1.2 + fish.tailPhase * 0.1) * 0.02;
-        fish.y += fish.verticalOffset * dt * 2;
-
-        // Bubble avoidance: steer away from nearby game bubbles
-        for (final bubble in _bubbles) {
-          final dx = fish.x - bubble.x;
-          final dy = fish.y - bubble.y;
-          final dist = sqrt(dx * dx + dy * dy);
-          if (dist < 0.12 && dist > 0.001) {
-            fish.x += (dx / dist) * 0.05 * dt;
-            fish.y += (dy / dist) * 0.05 * dt;
-          }
-        }
-      }
-
-      // Wrap around screen edges
-      if (fish.x < -0.05) {
-        fish.x = 1.05;
-      } else if (fish.x > 1.05) {
-        fish.x = -0.05;
-      }
-      fish.y = fish.y.clamp(0.15, 0.92);
-    }
-
-    // Simple schooling: nearby fish tend to align direction
-    for (int i = 0; i < _fishList.length; i++) {
-      for (int j = i + 1; j < _fishList.length; j++) {
-        final a = _fishList[i];
-        final b = _fishList[j];
-        final dist = sqrt(
-            (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
-        if (dist < 0.15 && a.scatterTimer <= 0 && b.scatterTimer <= 0) {
-          // Gently align directions
-          if (a.direction != b.direction && _rng.nextDouble() < 0.01) {
-            b.direction = a.direction;
-          }
-        }
-      }
-    }
-  }
-
-  // ── Ambient bubbles update ────────────────────────────────────────────
-
-  void _updateAmbientBubbles(double dt) {
-    for (final ab in _ambientBubbles) {
-      ab.y -= ab.speed * dt;
-      ab.x += sin(ab.wobblePhase + ab.y * 10) * 0.003 * dt;
-
-      if (ab.y < -0.05) {
-        ab.y = 1.05;
-        ab.x = 0.05 + _rng.nextDouble() * 0.9;
-        ab.size = 1.5 + _rng.nextDouble() * 3.5;
-      }
-    }
-  }
-
-  // ── Water current update ──────────────────────────────────────────────
-
-  void _updateWaterCurrent(double dt) {
-    _waterCurrentTime += dt;
-    // Change direction every ~10 seconds with smooth sine
-    _waterCurrentPhase = _waterCurrentTime * 0.6;
-  }
-
-  // ── Bubble tap handler ─────────────────────────────────────────────────
 
   void _onBubbleTap(_Bubble bubble) {
     if (_gameOver) return;
 
     if (bubble.isTarget) {
-      // Correct!
       widget.audioService.playSuccess();
       Haptics.success();
-      _combo++;
+      _sim.combo++;
+      _combo = _sim.combo;
       if (_combo > _bestCombo) _bestCombo = _combo;
       if (_combo >= 6) {
-        _comboMultiplier = 3;
+        _sim.comboMultiplier = 3;
       } else if (_combo >= 3) {
-        _comboMultiplier = 2;
+        _sim.comboMultiplier = 2;
       }
-      _score += 1 * _comboMultiplier;
+      _comboMultiplier = _sim.comboMultiplier;
+      _sim.score += 1 * _comboMultiplier;
+      _score = _sim.score;
 
-      _spawnPopEffect(bubble, true);
-      _applyPopPressureWave(bubble);
-      _bubbles.removeWhere((b) => b.id == bubble.id);
+      _sim.spawnPopEffect(bubble, true, widget.hintsEnabled);
+      _sim.applyPopPressureWave(bubble);
+      _sim.bubbles.removeWhere((b) => b.id == bubble.id);
 
-      // Pick a new target word
       _pickNewTarget();
 
-      // Update existing bubbles' isTarget status
-      for (final b in _bubbles) {
+      for (final b in _sim.bubbles) {
         b.isTarget = (b.word == _targetWord);
       }
+      setState(() {});
     } else {
-      // Wrong!
       widget.audioService.playError();
       Haptics.wrong();
+      _sim.combo = 0;
+      _sim.comboMultiplier = 1;
       _combo = 0;
       _comboMultiplier = 1;
 
-      _spawnPopEffect(bubble, false);
-      _applyPopPressureWave(bubble);
-      _bubbles.removeWhere((b) => b.id == bubble.id);
+      _sim.spawnPopEffect(bubble, false, widget.hintsEnabled);
+      _sim.applyPopPressureWave(bubble);
+      _sim.bubbles.removeWhere((b) => b.id == bubble.id);
+      setState(() {});
     }
-  }
-
-  /// Push nearby bubbles outward and scatter nearby fish
-  void _applyPopPressureWave(_Bubble popped) {
-    // Push nearby bubbles
-    for (final b in _bubbles) {
-      if (b.id == popped.id) continue;
-      final dx = b.x - popped.x;
-      final dy = b.y - popped.y;
-      final dist = sqrt(dx * dx + dy * dy);
-      if (dist < 0.25 && dist > 0.001) {
-        final force = (0.25 - dist) * 0.08;
-        b.x += (dx / dist) * force;
-        b.y += (dy / dist) * force;
-      }
-    }
-
-    // Scatter nearby fish
-    for (final fish in _fishList) {
-      final dx = fish.x - popped.x;
-      final dy = fish.y - popped.y;
-      final dist = sqrt(dx * dx + dy * dy);
-      if (dist < 0.3) {
-        fish.scatterTimer = 0.5 + _rng.nextDouble() * 0.5;
-        // Dart away from pop
-        fish.direction = dx >= 0 ? 1.0 : -1.0;
-      }
-    }
-  }
-
-  void _spawnPopEffect(_Bubble bubble, bool isCorrect) {
-    final droplets = <_Droplet>[];
-    final count = (isCorrect && widget.hintsEnabled) ? 16 : 10;
-    for (int i = 0; i < count; i++) {
-      final angle = (i / count) * pi * 2 + _rng.nextDouble() * 0.3;
-      final speed = 80 + _rng.nextDouble() * 150;
-      droplets.add(_Droplet(
-        x: 0,
-        y: 0,
-        vx: cos(angle) * speed,
-        vy: sin(angle) * speed - 40,
-        size: 1.5 + _rng.nextDouble() * 3.5,
-      ));
-    }
-
-    // Add small rising air bubbles from the pop
-    for (int i = 0; i < 5; i++) {
-      droplets.add(_Droplet(
-        x: (_rng.nextDouble() - 0.5) * 20,
-        y: 0,
-        vx: (_rng.nextDouble() - 0.5) * 30,
-        vy: -(60 + _rng.nextDouble() * 80), // rise upward
-        size: 1.0 + _rng.nextDouble() * 2.0,
-      ));
-    }
-
-    _popEffects.add(_PopEffect(
-      x: bubble.x,
-      y: bubble.y,
-      isCorrect: isCorrect,
-      droplets: droplets,
-      age: 0,
-      rippleCount: (isCorrect && widget.hintsEnabled) ? 3 : 2,
-    ));
   }
 
   void _replayTarget() {
@@ -672,6 +657,7 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     _loopController.dispose();
     _seaweedController.stop();
     _seaweedController.dispose();
+    _sim.dispose();
     _sessionTimer.stop();
     super.dispose();
   }
@@ -680,35 +666,69 @@ class _WordBubblesGameState extends State<WordBubblesGame>
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
     return Scaffold(
       backgroundColor: const Color(0xFF040820),
       body: Stack(
         children: [
-          // Underwater background
           _buildBackground(context),
-          // Sandy bottom
           RepaintBoundary(child: _buildSandyBottom(context)),
-          // Light rays
-          RepaintBoundary(child: _buildLightRays(context)),
-          // Background particles
-          RepaintBoundary(child: _buildBackgroundParticles(context)),
-          // Ambient bubble streams
-          RepaintBoundary(child: _buildAmbientBubbles(context)),
-          // Seaweed
+          RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _LightRayPainter(rays: _sim.lightRays),
+            ),
+          ),
+          RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _ParticlePainter(particles: _sim.bgParticles, repaintSignal: _sim),
+            ),
+          ),
+          RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _AmbientBubblePainter(bubbles: _sim.ambientBubbles, repaintSignal: _sim),
+            ),
+          ),
           _buildSeaweed(context),
-          // Fish (decorative, behind game bubbles)
-          RepaintBoundary(child: IgnorePointer(child: _buildFish(context))),
-          // Bubbles
-          ..._buildBubbles(context),
-          // Pop effects (IgnorePointer so it doesn't block bubble taps)
-          RepaintBoundary(child: IgnorePointer(child: _buildPopEffects(context))),
-          // Caustics overlay
-          RepaintBoundary(child: IgnorePointer(child: _buildCaustics(context))),
-          // HUD
+          RepaintBoundary(
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: size,
+                painter: _FishPainter(fish: _sim.fishList, repaintSignal: _sim),
+              ),
+            ),
+          ),
+          ListenableBuilder(
+            listenable: _sim,
+            builder: (context, _) => Stack(
+              children: _buildBubbles(context),
+            ),
+          ),
+          RepaintBoundary(
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: size,
+                painter: _PopEffectPainter(
+                  effects: _sim.popEffects,
+                  screenSize: size,
+                  hintsEnabled: widget.hintsEnabled,
+                  repaintSignal: _sim,
+                ),
+              ),
+            ),
+          ),
+          RepaintBoundary(
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: size,
+                painter: _CausticsPainter(sim: _sim),
+              ),
+            ),
+          ),
           SafeArea(child: _buildHUD(context)),
-          // Game over overlay
           if (_gameOver) _buildGameOver(context),
-          // Pre-game overlay
           if (!_gameStarted) _buildGetReady(context),
         ],
       ),
@@ -732,22 +752,6 @@ class _WordBubblesGameState extends State<WordBubblesGame>
           stops: [0.0, 0.3, 0.7, 1.0],
         ),
       ),
-    );
-  }
-
-  Widget _buildLightRays(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _LightRayPainter(rays: _lightRays),
-    );
-  }
-
-  Widget _buildBackgroundParticles(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _ParticlePainter(particles: _bgParticles),
     );
   }
 
@@ -776,41 +780,9 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     );
   }
 
-  // ── Fish ───────────────────────────────────────────────────────────────
-
-  Widget _buildFish(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _FishPainter(fish: _fishList),
-    );
-  }
-
-  // ── Ambient bubbles ───────────────────────────────────────────────────
-
-  Widget _buildAmbientBubbles(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _AmbientBubblePainter(bubbles: _ambientBubbles),
-    );
-  }
-
-  // ── Caustics overlay ──────────────────────────────────────────────────
-
-  Widget _buildCaustics(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _CausticsPainter(time: _waterCurrentTime),
-    );
-  }
-
-  // ── Bubbles ────────────────────────────────────────────────────────────
-
   List<Widget> _buildBubbles(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return _bubbles.map((bubble) {
+    return _sim.bubbles.map((bubble) {
       final r = bubble.displayRadius;
       final left = bubble.x * size.width - r;
       final top = bubble.y * size.height - r;
@@ -851,16 +823,6 @@ class _WordBubblesGameState extends State<WordBubblesGame>
         ),
       );
     }).toList();
-  }
-
-  // ── Pop effects ────────────────────────────────────────────────────────
-
-  Widget _buildPopEffects(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return CustomPaint(
-      size: size,
-      painter: _PopEffectPainter(effects: _popEffects, screenSize: size, hintsEnabled: widget.hintsEnabled),
-    );
   }
 
   // ── HUD ────────────────────────────────────────────────────────────────
@@ -1227,24 +1189,18 @@ class _WordBubblesGameState extends State<WordBubblesGame>
   }
 
   void _restartGame() {
+    final newLives = widget.difficultyParams?.lives ?? 3;
+    _sim.reset(newLives);
+    _sim.gameStarted = true;
     setState(() {
       _score = 0;
-      _lives = widget.difficultyParams?.lives ?? 3;
+      _lives = newLives;
       _combo = 0;
       _comboMultiplier = 1;
       _bestCombo = 0;
       _secondsLeft = _gameDuration;
-      _bubbles.clear();
-      _popEffects.clear();
-      _spawnAccumulator = 0;
-      _waterCurrentTime = 0;
-      _waterCurrentPhase = 0;
       _gameOver = false;
       _lastFrameTime = DateTime.now();
-      // Reset fish to calm state
-      for (final fish in _fishList) {
-        fish.scatterTimer = 0;
-      }
     });
     _pickNewTarget();
     _startCountdown();
@@ -1513,7 +1469,12 @@ class _PopEffectPainter extends CustomPainter {
   final Size screenSize;
   final bool hintsEnabled;
 
-  _PopEffectPainter({required this.effects, required this.screenSize, this.hintsEnabled = true});
+  _PopEffectPainter({
+    required this.effects,
+    required this.screenSize,
+    this.hintsEnabled = true,
+    Listenable? repaintSignal,
+  }) : super(repaint: repaintSignal);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1600,7 +1561,7 @@ class _PopEffectPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PopEffectPainter old) => true;
+  bool shouldRepaint(covariant _PopEffectPainter old) => false;
 }
 
 // ===========================================================================
@@ -1657,7 +1618,8 @@ class _LightRayPainter extends CustomPainter {
 class _ParticlePainter extends CustomPainter {
   final List<_Particle> particles;
 
-  _ParticlePainter({required this.particles});
+  _ParticlePainter({required this.particles, Listenable? repaintSignal})
+      : super(repaint: repaintSignal);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1673,7 +1635,7 @@ class _ParticlePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ParticlePainter old) => true;
+  bool shouldRepaint(covariant _ParticlePainter old) => false;
 }
 
 // ===========================================================================
@@ -1763,7 +1725,8 @@ class _SeaweedPainter extends CustomPainter {
 class _FishPainter extends CustomPainter {
   final List<_Fish> fish;
 
-  _FishPainter({required this.fish});
+  _FishPainter({required this.fish, Listenable? repaintSignal})
+      : super(repaint: repaintSignal);
 
   static const _fishColors = [
     // type 0: orange clownfish
@@ -1862,7 +1825,7 @@ class _FishPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _FishPainter old) => true;
+  bool shouldRepaint(covariant _FishPainter old) => false;
 }
 
 // ===========================================================================
@@ -1950,7 +1913,8 @@ class _SandyBottomPainter extends CustomPainter {
 class _AmbientBubblePainter extends CustomPainter {
   final List<_AmbientBubble> bubbles;
 
-  _AmbientBubblePainter({required this.bubbles});
+  _AmbientBubblePainter({required this.bubbles, Listenable? repaintSignal})
+      : super(repaint: repaintSignal);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1975,7 +1939,7 @@ class _AmbientBubblePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _AmbientBubblePainter old) => true;
+  bool shouldRepaint(covariant _AmbientBubblePainter old) => false;
 }
 
 // ===========================================================================
@@ -1983,9 +1947,11 @@ class _AmbientBubblePainter extends CustomPainter {
 // ===========================================================================
 
 class _CausticsPainter extends CustomPainter {
-  final double time;
+  final _WordBubblesSimulation sim;
 
-  _CausticsPainter({required this.time});
+  _CausticsPainter({required this.sim}) : super(repaint: sim);
+
+  double get time => sim.waterCurrentTime;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2031,6 +1997,5 @@ class _CausticsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CausticsPainter old) =>
-      (old.time - time).abs() > 0.05;
+  bool shouldRepaint(covariant _CausticsPainter old) => false;
 }

@@ -12,6 +12,95 @@ import '../../utils/haptics.dart';
 // Ladybug Letters — feed correct sight words to a growing ladybug
 // ---------------------------------------------------------------------------
 
+class _LadybugSim extends ChangeNotifier {
+  double ladybugX = 0.5;
+  double ladybugY = 0.7;
+  double ladybugScale = 0.6;
+  double ladybugAngle = 0.0;
+  double legPhase = 0.0;
+  int spotsCount = 3;
+  bool shieldActive = false;
+  bool doubleGrowthActive = false;
+  double speedMultiplier = 1.0;
+
+  double pulsePhase = 0.0;
+  bool isPulsing = false;
+  double pulseTimer = 0.0;
+
+  final List<_FloatingLeaf> leaves = [];
+  final List<_PollenParticle> pollen = [];
+  final List<_SparkleEffect> sparkles = [];
+
+  late List<_GardenFlower> flowers;
+  late List<_GrassBlade> grassBlades;
+
+  final _rng = Random();
+
+  void tick(double dt) {
+    legPhase += dt * 6.0 * speedMultiplier;
+    ladybugAngle = sin(legPhase * 0.3) * 0.1;
+
+    if (isPulsing) {
+      pulseTimer += dt;
+      pulsePhase = sin(pulseTimer * 10) * 0.05;
+      if (pulseTimer > 0.5) {
+        isPulsing = false;
+        pulsePhase = 0.0;
+      }
+    }
+
+    for (final leaf in leaves) {
+      leaf.x += leaf.driftX * speedMultiplier;
+      leaf.y += leaf.driftY * speedMultiplier;
+      leaf.wobblePhase += dt * 1.5;
+
+      if (leaf.x < -0.05) leaf.x = 1.05;
+      if (leaf.x > 1.05) leaf.x = -0.05;
+      if (leaf.y < -0.05) leaf.y = 0.55;
+      if (leaf.y > 0.55) leaf.y = -0.05;
+    }
+
+    for (final p in pollen) {
+      p.x += p.speedX + sin(p.phase) * 0.001;
+      p.y += p.speedY;
+      p.phase += dt * 2;
+      if (p.y < -0.05) {
+        p.y = 1.05;
+        p.x = _rng.nextDouble();
+      }
+      if (p.x < -0.05 || p.x > 1.05) {
+        p.x = _rng.nextDouble();
+      }
+    }
+
+    for (final s in sparkles) {
+      s.x += s.vx;
+      s.y += s.vy;
+      s.life -= dt * 2.0;
+    }
+    sparkles.removeWhere((s) => s.life <= 0);
+
+    notifyListeners();
+  }
+
+  void reset() {
+    ladybugX = 0.5;
+    ladybugY = 0.7;
+    ladybugScale = 0.6;
+    ladybugAngle = 0.0;
+    legPhase = 0.0;
+    spotsCount = 3;
+    shieldActive = false;
+    doubleGrowthActive = false;
+    speedMultiplier = 1.0;
+    isPulsing = false;
+    pulsePhase = 0.0;
+    pulseTimer = 0.0;
+    leaves.clear();
+    sparkles.clear();
+  }
+}
+
 class LadybugGame extends StatefulWidget {
   final ProgressService progressService;
   final AudioService audioService;
@@ -33,7 +122,7 @@ class LadybugGame extends StatefulWidget {
 class _LadybugGameState extends State<LadybugGame>
     with TickerProviderStateMixin {
   static const _gameId = 'ladybug_letters';
-  static const _gameDuration = 60; // seconds
+  static const _gameDuration = 60;
   static const _maxLives = 3;
   static const _maxLeaves = 6;
   static const _baseGrowth = 0.12;
@@ -43,23 +132,13 @@ class _LadybugGameState extends State<LadybugGame>
   static const _powerupChance = 0.15;
 
   final _rng = Random();
+  final _sim = _LadybugSim();
 
-  // -- Word pool -------------------------------------------------------------
+  // -- Word pool
   List<String> _wordPool = [];
   String _targetWord = '';
 
-  // -- Leaves (word items) on screen -----------------------------------------
-  final List<_FloatingLeaf> _leaves = [];
-
-  // -- Ladybug state ---------------------------------------------------------
-  double _ladybugX = 0.5; // 0..1
-  double _ladybugY = 0.7; // 0..1
-  double _ladybugScale = 0.6;
-  double _ladybugAngle = 0.0;
-  double _legPhase = 0.0;
-  int _spotsCount = 3;
-
-  // -- Game state ------------------------------------------------------------
+  // -- Game state
   bool _gameStarted = false;
   bool _gameOver = false;
   int _lives = _maxLives;
@@ -67,27 +146,11 @@ class _LadybugGameState extends State<LadybugGame>
   int _wordsCompleted = 0;
   int _secondsLeft = _gameDuration;
   Timer? _countdownTimer;
-
-  // -- Powerups --------------------------------------------------------------
-  bool _shieldActive = false;
-  bool _doubleGrowthActive = false;
-  double _speedMultiplier = 1.0;
   Timer? _speedBoostTimer;
 
-  // -- Visual effects --------------------------------------------------------
-  final List<_PollenParticle> _pollen = [];
-  final List<_SparkleEffect> _sparkles = [];
-  double _pulsePhase = 0.0;
-  bool _isPulsing = false;
-  double _pulseTimer = 0.0;
-
-  // -- Animation -------------------------------------------------------------
+  // -- Animation
   late AnimationController _loopController;
   DateTime _lastFrameTime = DateTime.now();
-
-  // -- Garden background elements -------------------------------------------
-  late List<_GardenFlower> _flowers;
-  late List<_GrassBlade> _grassBlades;
 
   @override
   void initState() {
@@ -109,7 +172,7 @@ class _LadybugGameState extends State<LadybugGame>
   }
 
   void _initGarden() {
-    _flowers = List.generate(8, (_) {
+    _sim.flowers = List.generate(8, (_) {
       return _GardenFlower(
         x: _rng.nextDouble(),
         y: 0.8 + _rng.nextDouble() * 0.18,
@@ -126,7 +189,7 @@ class _LadybugGameState extends State<LadybugGame>
       );
     });
 
-    _grassBlades = List.generate(30, (_) {
+    _sim.grassBlades = List.generate(30, (_) {
       return _GrassBlade(
         x: _rng.nextDouble(),
         height: 20 + _rng.nextDouble() * 30,
@@ -137,8 +200,9 @@ class _LadybugGameState extends State<LadybugGame>
   }
 
   void _initPollen() {
+    _sim.pollen.clear();
     for (int i = 0; i < 15; i++) {
-      _pollen.add(_PollenParticle(
+      _sim.pollen.add(_PollenParticle(
         x: _rng.nextDouble(),
         y: _rng.nextDouble(),
         size: 1.5 + _rng.nextDouble() * 2.5,
@@ -156,12 +220,12 @@ class _LadybugGameState extends State<LadybugGame>
     _speedBoostTimer?.cancel();
     _loopController.stop();
     _loopController.dispose();
+    _sim.dispose();
     super.dispose();
   }
 
-  // ── Game flow ─────────────────────────────────────────────────────────────
-
   void _startGame() {
+    _sim.reset();
     setState(() {
       _gameStarted = true;
       _gameOver = false;
@@ -169,16 +233,6 @@ class _LadybugGameState extends State<LadybugGame>
       _score = 0;
       _wordsCompleted = 0;
       _secondsLeft = _gameDuration;
-      _ladybugScale = 0.6;
-      _spotsCount = 3;
-      _ladybugX = 0.5;
-      _ladybugY = 0.7;
-      _shieldActive = false;
-      _doubleGrowthActive = false;
-      _speedMultiplier = 1.0;
-      _leaves.clear();
-      _sparkles.clear();
-      _isPulsing = false;
     });
     _pickNewTarget();
     _spawnLeaves();
@@ -188,12 +242,14 @@ class _LadybugGameState extends State<LadybugGame>
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _gameOver) return;
-      setState(() {
-        _secondsLeft--;
-        if (_secondsLeft <= 0) {
-          _endGame();
-        }
-      });
+      final newTime = _secondsLeft - 1;
+      if (newTime <= 0) {
+        _secondsLeft = 0;
+        _endGame();
+        setState(() {});
+      } else {
+        setState(() => _secondsLeft = newTime);
+      }
     });
   }
 
@@ -210,7 +266,7 @@ class _LadybugGameState extends State<LadybugGame>
     _speedBoostTimer?.cancel();
     _loopController.stop();
 
-    final finalScore = (_wordsCompleted * _ladybugScale * 10).round();
+    final finalScore = (_wordsCompleted * _sim.ladybugScale * 10).round();
     widget.highScoreService.saveScore(_gameId, finalScore, widget.playerName);
 
     setState(() {
@@ -233,10 +289,9 @@ class _LadybugGameState extends State<LadybugGame>
   }
 
   void _spawnLeaves() {
-    _leaves.clear();
+    _sim.leaves.clear();
 
-    // Add correct word leaf
-    _leaves.add(_FloatingLeaf(
+    _sim.leaves.add(_FloatingLeaf(
       word: _targetWord,
       isCorrect: true,
       x: 0.1 + _rng.nextDouble() * 0.8,
@@ -247,12 +302,11 @@ class _LadybugGameState extends State<LadybugGame>
       leafType: _rng.nextInt(3),
     ));
 
-    // Add distractor leaves
     final distractors = _wordPool.toList()..shuffle(_rng);
     final count = min(_maxLeaves - 1, distractors.length);
     for (int i = 0; i < count; i++) {
       if (distractors[i] == _targetWord) continue;
-      _leaves.add(_FloatingLeaf(
+      _sim.leaves.add(_FloatingLeaf(
         word: distractors[i],
         isCorrect: false,
         x: 0.05 + _rng.nextDouble() * 0.9,
@@ -264,7 +318,6 @@ class _LadybugGameState extends State<LadybugGame>
       ));
     }
 
-    // Maybe spawn a powerup
     if (_rng.nextDouble() < _powerupChance) {
       _spawnPowerup();
     }
@@ -272,7 +325,7 @@ class _LadybugGameState extends State<LadybugGame>
 
   void _spawnPowerup() {
     final type = _PowerupType.values[_rng.nextInt(_PowerupType.values.length)];
-    _leaves.add(_FloatingLeaf(
+    _sim.leaves.add(_FloatingLeaf(
       word: '',
       isCorrect: false,
       x: 0.1 + _rng.nextDouble() * 0.8,
@@ -285,66 +338,60 @@ class _LadybugGameState extends State<LadybugGame>
     ));
   }
 
-  // ── Tap handling ──────────────────────────────────────────────────────────
-
   void _onLeafTapped(_FloatingLeaf leaf) {
     if (_gameOver || !_gameStarted) return;
 
-    // Handle powerup
     if (leaf.powerupType != null) {
       _activatePowerup(leaf.powerupType!);
-      setState(() => _leaves.remove(leaf));
+      _sim.leaves.remove(leaf);
+      setState(() {});
       return;
     }
 
     if (leaf.isCorrect) {
-      // Correct word!
       _wordsCompleted++;
-      final growth = _doubleGrowthActive ? _baseGrowth * 2 : _baseGrowth;
-      _ladybugScale = min(_maxScale, _ladybugScale + growth);
-      _spotsCount = (3 + (_ladybugScale - 0.6) * 5).round().clamp(3, 12);
-      _doubleGrowthActive = false;
+      final growth = _sim.doubleGrowthActive ? _baseGrowth * 2 : _baseGrowth;
+      _sim.ladybugScale = min(_maxScale, _sim.ladybugScale + growth);
+      _sim.spotsCount = (3 + (_sim.ladybugScale - 0.6) * 5).round().clamp(3, 12);
+      _sim.doubleGrowthActive = false;
 
-      // Sparkle effect at leaf position
       _addSparkles(leaf.x, leaf.y);
-      _isPulsing = true;
-      _pulseTimer = 0.0;
+      _sim.isPulsing = true;
+      _sim.pulseTimer = 0.0;
 
       widget.audioService.playSuccess();
       Haptics.correct();
 
-      // Move ladybug toward the leaf
-      _ladybugX += (leaf.x - _ladybugX) * 0.5;
-      _ladybugY += (leaf.y - _ladybugY) * 0.3;
+      _sim.ladybugX += (leaf.x - _sim.ladybugX) * 0.5;
+      _sim.ladybugY += (leaf.y - _sim.ladybugY) * 0.3;
 
-      setState(() {
-        _leaves.remove(leaf);
-      });
+      _sim.leaves.remove(leaf);
+      setState(() {});
 
-      // Pick new word after short delay
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted || _gameOver) return;
         _pickNewTarget();
         _spawnLeaves();
+        setState(() {});
       });
     } else {
-      // Wrong word
-      if (_shieldActive) {
-        _shieldActive = false;
+      if (_sim.shieldActive) {
+        _sim.shieldActive = false;
         Haptics.tap();
-        setState(() => _leaves.remove(leaf));
+        _sim.leaves.remove(leaf);
+        setState(() {});
         return;
       }
 
-      _lives--;
-      _ladybugScale = max(_minScale, _ladybugScale - _shrinkAmount);
-      _spotsCount = (3 + (_ladybugScale - 0.6) * 5).round().clamp(3, 12);
+      _sim.ladybugScale = max(_minScale, _sim.ladybugScale - _shrinkAmount);
+      _sim.spotsCount = (3 + (_sim.ladybugScale - 0.6) * 5).round().clamp(3, 12);
 
       widget.audioService.playError();
       Haptics.wrong();
 
+      leaf.isWrong = true;
       setState(() {
-        leaf.isWrong = true;
+        _lives--;
       });
 
       if (_lives <= 0) {
@@ -361,22 +408,22 @@ class _LadybugGameState extends State<LadybugGame>
     Haptics.correct();
     switch (type) {
       case _PowerupType.shield:
-        _shieldActive = true;
+        _sim.shieldActive = true;
         break;
       case _PowerupType.speedBoost:
-        _speedMultiplier = 1.5;
+        _sim.speedMultiplier = 1.5;
         _secondsLeft = min(_secondsLeft + 5, _gameDuration);
         _speedBoostTimer?.cancel();
         _speedBoostTimer = Timer(const Duration(seconds: 8), () {
-          if (mounted) setState(() => _speedMultiplier = 1.0);
+          if (mounted) _sim.speedMultiplier = 1.0;
         });
+        setState(() {});
         break;
       case _PowerupType.doubleGrowth:
-        _doubleGrowthActive = true;
+        _sim.doubleGrowthActive = true;
         break;
       case _PowerupType.gardenRain:
-        // Remove wrong leaves, keep correct ones, spawn fresh
-        _leaves.removeWhere((l) => !l.isCorrect && l.powerupType == null);
+        _sim.leaves.removeWhere((l) => !l.isCorrect && l.powerupType == null);
         break;
     }
   }
@@ -385,7 +432,7 @@ class _LadybugGameState extends State<LadybugGame>
     for (int i = 0; i < 8; i++) {
       final angle = _rng.nextDouble() * pi * 2;
       final speed = 0.02 + _rng.nextDouble() * 0.04;
-      _sparkles.add(_SparkleEffect(
+      _sim.sparkles.add(_SparkleEffect(
         x: x,
         y: y,
         vx: cos(angle) * speed,
@@ -402,8 +449,6 @@ class _LadybugGameState extends State<LadybugGame>
     }
   }
 
-  // ── Game loop ─────────────────────────────────────────────────────────────
-
   void _gameLoop() {
     if (_gameOver || !_gameStarted) return;
 
@@ -412,61 +457,8 @@ class _LadybugGameState extends State<LadybugGame>
     _lastFrameTime = now;
     if (dt <= 0 || dt > 0.1) return;
 
-    setState(() {
-      // Update leg animation
-      _legPhase += dt * 6.0 * _speedMultiplier;
-
-      // Ladybug gentle idle movement
-      _ladybugAngle = sin(_legPhase * 0.3) * 0.1;
-
-      // Pulse effect
-      if (_isPulsing) {
-        _pulseTimer += dt;
-        _pulsePhase = sin(_pulseTimer * 10) * 0.05;
-        if (_pulseTimer > 0.5) {
-          _isPulsing = false;
-          _pulsePhase = 0.0;
-        }
-      }
-
-      // Update floating leaves
-      for (final leaf in _leaves) {
-        leaf.x += leaf.driftX * _speedMultiplier;
-        leaf.y += leaf.driftY * _speedMultiplier;
-        leaf.wobblePhase += dt * 1.5;
-
-        // Wrap around
-        if (leaf.x < -0.05) leaf.x = 1.05;
-        if (leaf.x > 1.05) leaf.x = -0.05;
-        if (leaf.y < -0.05) leaf.y = 0.55;
-        if (leaf.y > 0.55) leaf.y = -0.05;
-      }
-
-      // Update pollen
-      for (final p in _pollen) {
-        p.x += p.speedX + sin(p.phase) * 0.001;
-        p.y += p.speedY;
-        p.phase += dt * 2;
-        if (p.y < -0.05) {
-          p.y = 1.05;
-          p.x = _rng.nextDouble();
-        }
-        if (p.x < -0.05 || p.x > 1.05) {
-          p.x = _rng.nextDouble();
-        }
-      }
-
-      // Update sparkles
-      for (final s in _sparkles) {
-        s.x += s.vx;
-        s.y += s.vy;
-        s.life -= dt * 2.0;
-      }
-      _sparkles.removeWhere((s) => s.life <= 0);
-    });
+    _sim.tick(dt);
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -474,67 +466,54 @@ class _LadybugGameState extends State<LadybugGame>
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Garden background
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _GardenBackgroundPainter(
-                  flowers: _flowers,
-                  grassBlades: _grassBlades,
-                  time: _legPhase,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _GardenBackgroundPainter(sim: _sim),
                 ),
               ),
             ),
           ),
 
-          // Pollen particles
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _PollenPainter(pollen: _pollen),
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _PollenPainter(sim: _sim),
+                ),
               ),
             ),
           ),
 
-          // Ladybug (rendered below leaves so it doesn't block taps)
           if (_gameStarted && !_gameOver)
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _LadybugPainter(
-                    x: _ladybugX,
-                    y: _ladybugY,
-                    scale: _ladybugScale + _pulsePhase,
-                    angle: _ladybugAngle,
-                    legPhase: _legPhase,
-                    spotsCount: _spotsCount,
-                    shieldActive: _shieldActive,
-                    doubleGrowthActive: _doubleGrowthActive,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _LadybugPainter(sim: _sim),
                   ),
                 ),
               ),
             ),
 
-          // Floating leaves (word items) — on top so taps register
-          ..._leaves.map((leaf) => _buildLeafWidget(leaf)),
+          ..._sim.leaves.map((leaf) => _buildLeafWidget(leaf)),
 
-          // Sparkle effects
-          if (_sparkles.isNotEmpty)
+          if (_sim.sparkles.isNotEmpty)
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _SparklePainter(sparkles: _sparkles),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _SparklePainter(sim: _sim),
+                  ),
                 ),
               ),
             ),
 
-          // HUD
           if (_gameStarted) SafeArea(child: _buildHUD(context)),
 
-          // Game over overlay
           if (_gameOver) _buildGameOver(context),
 
-          // Pre-game overlay
           if (!_gameStarted) _buildGetReady(context),
         ],
       ),
@@ -609,8 +588,6 @@ class _LadybugGameState extends State<LadybugGame>
     );
   }
 
-  // ── HUD ───────────────────────────────────────────────────────────────────
-
   Widget _buildHUD(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -618,7 +595,6 @@ class _LadybugGameState extends State<LadybugGame>
         children: [
           Row(
             children: [
-              // Back button
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.arrow_back_rounded),
@@ -626,7 +602,6 @@ class _LadybugGameState extends State<LadybugGame>
                 iconSize: 28,
               ),
 
-              // Lives
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(_maxLives, (i) {
@@ -646,8 +621,7 @@ class _LadybugGameState extends State<LadybugGame>
 
               const Spacer(),
 
-              // Shield indicator
-              if (_shieldActive)
+              if (_sim.shieldActive)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -659,7 +633,7 @@ class _LadybugGameState extends State<LadybugGame>
                       color: AppColors.emerald, size: 18),
                 ),
 
-              if (_doubleGrowthActive)
+              if (_sim.doubleGrowthActive)
                 Container(
                   margin: const EdgeInsets.only(left: 4),
                   padding:
@@ -677,7 +651,6 @@ class _LadybugGameState extends State<LadybugGame>
 
               const Spacer(),
 
-              // Timer
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -706,7 +679,6 @@ class _LadybugGameState extends State<LadybugGame>
 
           const SizedBox(height: 4),
 
-          // Target word bar
           GestureDetector(
             onTap: _onReplayWord,
             child: Container(
@@ -743,7 +715,6 @@ class _LadybugGameState extends State<LadybugGame>
             ),
           ),
 
-          // Ladybug size indicator
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -761,13 +732,13 @@ class _LadybugGameState extends State<LadybugGame>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(3),
                   child: LinearProgressIndicator(
-                    value: ((_ladybugScale - _minScale) /
+                    value: ((_sim.ladybugScale - _minScale) /
                             (_maxScale - _minScale))
                         .clamp(0.0, 1.0),
                     backgroundColor: AppColors.border,
                     valueColor: AlwaysStoppedAnimation(
                       Color.lerp(AppColors.error, AppColors.success,
-                          ((_ladybugScale - _minScale) /
+                          ((_sim.ladybugScale - _minScale) /
                                   (_maxScale - _minScale))
                               .clamp(0.0, 1.0))!,
                     ),
@@ -791,8 +762,6 @@ class _LadybugGameState extends State<LadybugGame>
       ),
     );
   }
-
-  // ── Game Over overlay ────────────────────────────────────────────────────
 
   Widget _buildGameOver(BuildContext context) {
     final highScore = widget.highScoreService.getPersonalBest(_gameId);
@@ -830,26 +799,18 @@ class _LadybugGameState extends State<LadybugGame>
               ),
               const SizedBox(height: 8),
 
-              // Ladybug mini display
               SizedBox(
                 width: 80,
                 height: 80,
                 child: CustomPaint(
-                  painter: _LadybugPainter(
-                    x: 0.5,
-                    y: 0.5,
-                    scale: _ladybugScale.clamp(0.5, 1.2),
-                    angle: 0,
-                    legPhase: 0,
-                    spotsCount: _spotsCount,
-                    shieldActive: false,
-                    doubleGrowthActive: false,
+                  painter: _LadybugStaticPainter(
+                    scale: _sim.ladybugScale.clamp(0.5, 1.2),
+                    spotsCount: _sim.spotsCount,
                   ),
                 ),
               ),
               const SizedBox(height: 12),
 
-              // Score
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -953,15 +914,12 @@ class _LadybugGameState extends State<LadybugGame>
     );
   }
 
-  // ── Pre-game overlay ─────────────────────────────────────────────────────
-
   Widget _buildGetReady(BuildContext context) {
     return Container(
       color: Colors.black.withValues(alpha: 0.6),
       child: SafeArea(
         child: Stack(
           children: [
-            // Back button
             Positioned(
               top: 4,
               left: 4,
@@ -976,20 +934,13 @@ class _LadybugGameState extends State<LadybugGame>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Ladybug preview
                   SizedBox(
                     width: 120,
                     height: 120,
                     child: CustomPaint(
-                      painter: _LadybugPainter(
-                        x: 0.5,
-                        y: 0.5,
+                      painter: _LadybugStaticPainter(
                         scale: 0.8,
-                        angle: 0,
-                        legPhase: 0,
                         spotsCount: 3,
-                        shieldActive: false,
-                        doubleGrowthActive: false,
                       ),
                     ),
                   ),
@@ -1146,257 +1097,261 @@ class _GrassBlade {
 // Custom Painters
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Ladybug CustomPainter ──────────────────────────────────────────────────
-
 class _LadybugPainter extends CustomPainter {
-  final double x;
-  final double y;
-  final double scale;
-  final double angle;
-  final double legPhase;
-  final int spotsCount;
-  final bool shieldActive;
-  final bool doubleGrowthActive;
+  final _LadybugSim sim;
 
-  _LadybugPainter({
-    required this.x,
-    required this.y,
-    required this.scale,
-    required this.angle,
-    required this.legPhase,
-    required this.spotsCount,
-    required this.shieldActive,
-    required this.doubleGrowthActive,
-  });
+  _LadybugPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = x * size.width;
-    final cy = y * size.height;
-    final s = scale * 28; // base body radius
-
-    canvas.save();
-    canvas.translate(cx, cy);
-    canvas.rotate(angle);
-
-    // Shield glow
-    if (shieldActive) {
-      canvas.drawCircle(
-        Offset.zero,
-        s + 12,
-        Paint()
-          ..color = const Color(0xFF10B981).withValues(alpha: 0.2)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-      );
-      canvas.drawCircle(
-        Offset.zero,
-        s + 10,
-        Paint()
-          ..color = const Color(0xFF10B981).withValues(alpha: 0.15)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
-      );
-    }
-
-    // Double growth glow
-    if (doubleGrowthActive) {
-      canvas.drawCircle(
-        Offset.zero,
-        s + 8,
-        Paint()
-          ..color = const Color(0xFFFF4757).withValues(alpha: 0.15)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-    }
-
-    // Legs (3 pairs with animation)
-    final legPaint = Paint()
-      ..color = const Color(0xFF1A1A1A)
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
-
-    for (int i = 0; i < 3; i++) {
-      final yOff = -s * 0.5 + i * s * 0.5;
-      final legAnim = sin(legPhase + i * 1.2) * 3;
-      // Left leg
-      canvas.drawLine(
-        Offset(-s * 0.7, yOff),
-        Offset(-s * 1.2 - legAnim, yOff + 4 + legAnim.abs()),
-        legPaint,
-      );
-      // Right leg
-      canvas.drawLine(
-        Offset(s * 0.7, yOff),
-        Offset(s * 1.2 + legAnim, yOff + 4 + legAnim.abs()),
-        legPaint,
-      );
-    }
-
-    // Body shadow
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(2, 3), width: s * 2, height: s * 2.2),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    _paintLadybug(
+      canvas, size,
+      x: sim.ladybugX,
+      y: sim.ladybugY,
+      scale: sim.ladybugScale + sim.pulsePhase,
+      angle: sim.ladybugAngle,
+      legPhase: sim.legPhase,
+      spotsCount: sim.spotsCount,
+      shieldActive: sim.shieldActive,
+      doubleGrowthActive: sim.doubleGrowthActive,
     );
-
-    // Shell (red oval)
-    final shellRect =
-        Rect.fromCenter(center: Offset.zero, width: s * 2, height: s * 2.2);
-    final shellPaint = Paint()
-      ..shader = const RadialGradient(
-        center: Alignment(-0.3, -0.3),
-        colors: [Color(0xFFFF3333), Color(0xFFCC1111)],
-      ).createShader(shellRect);
-    canvas.drawOval(shellRect, shellPaint);
-
-    // Shell highlight
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: Offset(-s * 0.25, -s * 0.35),
-          width: s * 0.6,
-          height: s * 0.4),
-      Paint()..color = Colors.white.withValues(alpha: 0.2),
-    );
-
-    // Center line (wing divide)
-    canvas.drawLine(
-      Offset(0, -s * 0.9),
-      Offset(0, s * 0.9),
-      Paint()
-        ..color = const Color(0xFF1A1A1A)
-        ..strokeWidth = 1.5,
-    );
-
-    // Spots
-    final spotPaint = Paint()..color = const Color(0xFF1A1A1A);
-    final spotPositions = _getSpotPositions(spotsCount, s);
-    for (final pos in spotPositions) {
-      canvas.drawCircle(pos, s * 0.15, spotPaint);
-    }
-
-    // Head (black circle at top)
-    final headY = -s * 1.0;
-    canvas.drawCircle(
-      Offset(0, headY),
-      s * 0.5,
-      Paint()..color = const Color(0xFF1A1A1A),
-    );
-
-    // Eyes (white with pupils)
-    final eyeR = s * 0.14;
-    canvas.drawCircle(
-      Offset(-s * 0.2, headY - s * 0.05),
-      eyeR,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(s * 0.2, headY - s * 0.05),
-      eyeR,
-      Paint()..color = Colors.white,
-    );
-    // Pupils
-    canvas.drawCircle(
-      Offset(-s * 0.18, headY - s * 0.03),
-      eyeR * 0.55,
-      Paint()..color = const Color(0xFF1A1A1A),
-    );
-    canvas.drawCircle(
-      Offset(s * 0.22, headY - s * 0.03),
-      eyeR * 0.55,
-      Paint()..color = const Color(0xFF1A1A1A),
-    );
-
-    // Antennae
-    final antennaePaint = Paint()
-      ..color = const Color(0xFF1A1A1A)
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    // Left antenna
-    final leftAntenna = Path()
-      ..moveTo(-s * 0.15, headY - s * 0.4)
-      ..quadraticBezierTo(
-          -s * 0.5, headY - s * 1.0, -s * 0.4, headY - s * 1.2);
-    canvas.drawPath(leftAntenna, antennaePaint);
-    canvas.drawCircle(
-      Offset(-s * 0.4, headY - s * 1.2),
-      2.5,
-      Paint()..color = const Color(0xFF1A1A1A),
-    );
-
-    // Right antenna
-    final rightAntenna = Path()
-      ..moveTo(s * 0.15, headY - s * 0.4)
-      ..quadraticBezierTo(
-          s * 0.5, headY - s * 1.0, s * 0.4, headY - s * 1.2);
-    canvas.drawPath(rightAntenna, antennaePaint);
-    canvas.drawCircle(
-      Offset(s * 0.4, headY - s * 1.2),
-      2.5,
-      Paint()..color = const Color(0xFF1A1A1A),
-    );
-
-    // Cute smile
-    final smilePath = Path()
-      ..moveTo(-s * 0.15, headY + s * 0.15)
-      ..quadraticBezierTo(0, headY + s * 0.3, s * 0.15, headY + s * 0.15);
-    canvas.drawPath(
-      smilePath,
-      Paint()
-        ..color = const Color(0xFF666666)
-        ..strokeWidth = 1.2
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
-    );
-
-    canvas.restore();
-  }
-
-  List<Offset> _getSpotPositions(int count, double s) {
-    final positions = <Offset>[];
-    // Predefined spot positions for up to 12 spots
-    final allPositions = [
-      Offset(-s * 0.35, -s * 0.35),
-      Offset(s * 0.35, -s * 0.35),
-      Offset(-s * 0.4, s * 0.15),
-      Offset(s * 0.4, s * 0.15),
-      Offset(-s * 0.2, s * 0.5),
-      Offset(s * 0.2, s * 0.5),
-      Offset(-s * 0.55, -s * 0.05),
-      Offset(s * 0.55, -s * 0.05),
-      Offset(-s * 0.15, -s * 0.6),
-      Offset(s * 0.15, -s * 0.6),
-      Offset(-s * 0.5, s * 0.4),
-      Offset(s * 0.5, s * 0.4),
-    ];
-    for (int i = 0; i < min(count, allPositions.length); i++) {
-      positions.add(allPositions[i]);
-    }
-    return positions;
   }
 
   @override
-  bool shouldRepaint(covariant _LadybugPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _LadybugPainter old) => false;
 }
 
-// ── Garden Background Painter ──────────────────────────────────────────────
+class _LadybugStaticPainter extends CustomPainter {
+  final double scale;
+  final int spotsCount;
 
-class _GardenBackgroundPainter extends CustomPainter {
-  final List<_GardenFlower> flowers;
-  final List<_GrassBlade> grassBlades;
-  final double time;
-
-  _GardenBackgroundPainter({
-    required this.flowers,
-    required this.grassBlades,
-    required this.time,
-  });
+  _LadybugStaticPainter({required this.scale, required this.spotsCount});
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Sky gradient (dark garden night theme)
+    _paintLadybug(
+      canvas, size,
+      x: 0.5, y: 0.5,
+      scale: scale,
+      angle: 0, legPhase: 0,
+      spotsCount: spotsCount,
+      shieldActive: false, doubleGrowthActive: false,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LadybugStaticPainter old) =>
+      old.scale != scale || old.spotsCount != spotsCount;
+}
+
+void _paintLadybug(
+  Canvas canvas, Size size, {
+  required double x,
+  required double y,
+  required double scale,
+  required double angle,
+  required double legPhase,
+  required int spotsCount,
+  required bool shieldActive,
+  required bool doubleGrowthActive,
+}) {
+  final cx = x * size.width;
+  final cy = y * size.height;
+  final s = scale * 28;
+
+  canvas.save();
+  canvas.translate(cx, cy);
+  canvas.rotate(angle);
+
+  if (shieldActive) {
+    canvas.drawCircle(
+      Offset.zero,
+      s + 12,
+      Paint()
+        ..color = const Color(0xFF10B981).withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawCircle(
+      Offset.zero,
+      s + 10,
+      Paint()
+        ..color = const Color(0xFF10B981).withValues(alpha: 0.15)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+  }
+
+  if (doubleGrowthActive) {
+    canvas.drawCircle(
+      Offset.zero,
+      s + 8,
+      Paint()
+        ..color = const Color(0xFFFF4757).withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+  }
+
+  final legPaint = Paint()
+    ..color = const Color(0xFF1A1A1A)
+    ..strokeWidth = 2.0
+    ..strokeCap = StrokeCap.round;
+
+  for (int i = 0; i < 3; i++) {
+    final yOff = -s * 0.5 + i * s * 0.5;
+    final legAnim = sin(legPhase + i * 1.2) * 3;
+    canvas.drawLine(
+      Offset(-s * 0.7, yOff),
+      Offset(-s * 1.2 - legAnim, yOff + 4 + legAnim.abs()),
+      legPaint,
+    );
+    canvas.drawLine(
+      Offset(s * 0.7, yOff),
+      Offset(s * 1.2 + legAnim, yOff + 4 + legAnim.abs()),
+      legPaint,
+    );
+  }
+
+  canvas.drawOval(
+    Rect.fromCenter(center: const Offset(2, 3), width: s * 2, height: s * 2.2),
+    Paint()
+      ..color = Colors.black.withValues(alpha: 0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+  );
+
+  final shellRect =
+      Rect.fromCenter(center: Offset.zero, width: s * 2, height: s * 2.2);
+  final shellPaint = Paint()
+    ..shader = const RadialGradient(
+      center: Alignment(-0.3, -0.3),
+      colors: [Color(0xFFFF3333), Color(0xFFCC1111)],
+    ).createShader(shellRect);
+  canvas.drawOval(shellRect, shellPaint);
+
+  canvas.drawOval(
+    Rect.fromCenter(
+        center: Offset(-s * 0.25, -s * 0.35),
+        width: s * 0.6,
+        height: s * 0.4),
+    Paint()..color = Colors.white.withValues(alpha: 0.2),
+  );
+
+  canvas.drawLine(
+    Offset(0, -s * 0.9),
+    Offset(0, s * 0.9),
+    Paint()
+      ..color = const Color(0xFF1A1A1A)
+      ..strokeWidth = 1.5,
+  );
+
+  final spotPaint = Paint()..color = const Color(0xFF1A1A1A);
+  final spotPositions = _getSpotPositions(spotsCount, s);
+  for (final pos in spotPositions) {
+    canvas.drawCircle(pos, s * 0.15, spotPaint);
+  }
+
+  final headY = -s * 1.0;
+  canvas.drawCircle(
+    Offset(0, headY),
+    s * 0.5,
+    Paint()..color = const Color(0xFF1A1A1A),
+  );
+
+  final eyeR = s * 0.14;
+  canvas.drawCircle(
+    Offset(-s * 0.2, headY - s * 0.05),
+    eyeR,
+    Paint()..color = Colors.white,
+  );
+  canvas.drawCircle(
+    Offset(s * 0.2, headY - s * 0.05),
+    eyeR,
+    Paint()..color = Colors.white,
+  );
+  canvas.drawCircle(
+    Offset(-s * 0.18, headY - s * 0.03),
+    eyeR * 0.55,
+    Paint()..color = const Color(0xFF1A1A1A),
+  );
+  canvas.drawCircle(
+    Offset(s * 0.22, headY - s * 0.03),
+    eyeR * 0.55,
+    Paint()..color = const Color(0xFF1A1A1A),
+  );
+
+  final antennaePaint = Paint()
+    ..color = const Color(0xFF1A1A1A)
+    ..strokeWidth = 1.5
+    ..strokeCap = StrokeCap.round
+    ..style = PaintingStyle.stroke;
+
+  final leftAntenna = Path()
+    ..moveTo(-s * 0.15, headY - s * 0.4)
+    ..quadraticBezierTo(
+        -s * 0.5, headY - s * 1.0, -s * 0.4, headY - s * 1.2);
+  canvas.drawPath(leftAntenna, antennaePaint);
+  canvas.drawCircle(
+    Offset(-s * 0.4, headY - s * 1.2),
+    2.5,
+    Paint()..color = const Color(0xFF1A1A1A),
+  );
+
+  final rightAntenna = Path()
+    ..moveTo(s * 0.15, headY - s * 0.4)
+    ..quadraticBezierTo(
+        s * 0.5, headY - s * 1.0, s * 0.4, headY - s * 1.2);
+  canvas.drawPath(rightAntenna, antennaePaint);
+  canvas.drawCircle(
+    Offset(s * 0.4, headY - s * 1.2),
+    2.5,
+    Paint()..color = const Color(0xFF1A1A1A),
+  );
+
+  final smilePath = Path()
+    ..moveTo(-s * 0.15, headY + s * 0.15)
+    ..quadraticBezierTo(0, headY + s * 0.3, s * 0.15, headY + s * 0.15);
+  canvas.drawPath(
+    smilePath,
+    Paint()
+      ..color = const Color(0xFF666666)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round,
+  );
+
+  canvas.restore();
+}
+
+List<Offset> _getSpotPositions(int count, double s) {
+  final positions = <Offset>[];
+  final allPositions = [
+    Offset(-s * 0.35, -s * 0.35),
+    Offset(s * 0.35, -s * 0.35),
+    Offset(-s * 0.4, s * 0.15),
+    Offset(s * 0.4, s * 0.15),
+    Offset(-s * 0.2, s * 0.5),
+    Offset(s * 0.2, s * 0.5),
+    Offset(-s * 0.55, -s * 0.05),
+    Offset(s * 0.55, -s * 0.05),
+    Offset(-s * 0.15, -s * 0.6),
+    Offset(s * 0.15, -s * 0.6),
+    Offset(-s * 0.5, s * 0.4),
+    Offset(s * 0.5, s * 0.4),
+  ];
+  for (int i = 0; i < min(count, allPositions.length); i++) {
+    positions.add(allPositions[i]);
+  }
+  return positions;
+}
+
+class _GardenBackgroundPainter extends CustomPainter {
+  final _LadybugSim sim;
+
+  _GardenBackgroundPainter({required this.sim}) : super(repaint: sim);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final time = sim.legPhase;
+
     final skyRect = Rect.fromLTWH(0, 0, size.width, size.height);
     canvas.drawRect(
       skyRect,
@@ -1405,14 +1360,13 @@ class _GardenBackgroundPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF0A1628), // dark night sky
-            Color(0xFF0D2818), // dark forest green
-            Color(0xFF1A3A2A), // garden dark
+            Color(0xFF0A1628),
+            Color(0xFF0D2818),
+            Color(0xFF1A3A2A),
           ],
         ).createShader(skyRect),
     );
 
-    // Moon
     canvas.drawCircle(
       Offset(size.width * 0.8, size.height * 0.08),
       18,
@@ -1426,7 +1380,6 @@ class _GardenBackgroundPainter extends CustomPainter {
       Paint()..color = const Color(0xFFFFF8DC),
     );
 
-    // Stars
     final starPaint = Paint()..color = Colors.white.withValues(alpha: 0.5);
     final rng = Random(42);
     for (int i = 0; i < 20; i++) {
@@ -1440,7 +1393,6 @@ class _GardenBackgroundPainter extends CustomPainter {
       );
     }
 
-    // Ground
     final groundPath = Path()
       ..moveTo(0, size.height * 0.75)
       ..quadraticBezierTo(
@@ -1463,8 +1415,7 @@ class _GardenBackgroundPainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, size.height * 0.7, size.width, size.height * 0.3)),
     );
 
-    // Grass blades
-    for (final blade in grassBlades) {
+    for (final blade in sim.grassBlades) {
       final bx = blade.x * size.width;
       final baseY = size.height * 0.78;
       final sway = sin(time * 0.8 + blade.swayPhase) * 4;
@@ -1483,13 +1434,11 @@ class _GardenBackgroundPainter extends CustomPainter {
       canvas.drawPath(grassPath, Paint()..color = green);
     }
 
-    // Flowers
-    for (final flower in flowers) {
+    for (final flower in sim.flowers) {
       final fx = flower.x * size.width;
       final fy = flower.y * size.height;
       final sway = sin(time * 0.5 + flower.swayPhase) * 2;
 
-      // Stem
       canvas.drawLine(
         Offset(fx, fy),
         Offset(fx + sway, fy - flower.size * 1.5),
@@ -1499,7 +1448,6 @@ class _GardenBackgroundPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round,
       );
 
-      // Petals
       final petalCenter = Offset(fx + sway, fy - flower.size * 1.5);
       for (int i = 0; i < flower.petalCount; i++) {
         final pAngle = (i / flower.petalCount) * pi * 2;
@@ -1511,7 +1459,6 @@ class _GardenBackgroundPainter extends CustomPainter {
           Paint()..color = flower.color.withValues(alpha: 0.7),
         );
       }
-      // Center
       canvas.drawCircle(
         petalCenter,
         flower.size * 0.15,
@@ -1521,19 +1468,17 @@ class _GardenBackgroundPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _GardenBackgroundPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _GardenBackgroundPainter old) => false;
 }
 
-// ── Pollen Painter ─────────────────────────────────────────────────────────
-
 class _PollenPainter extends CustomPainter {
-  final List<_PollenParticle> pollen;
+  final _LadybugSim sim;
 
-  _PollenPainter({required this.pollen});
+  _PollenPainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final p in pollen) {
+    for (final p in sim.pollen) {
       canvas.drawCircle(
         Offset(p.x * size.width, p.y * size.height),
         p.size,
@@ -1545,19 +1490,17 @@ class _PollenPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PollenPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _PollenPainter old) => false;
 }
 
-// ── Sparkle Painter ────────────────────────────────────────────────────────
-
 class _SparklePainter extends CustomPainter {
-  final List<_SparkleEffect> sparkles;
+  final _LadybugSim sim;
 
-  _SparklePainter({required this.sparkles});
+  _SparklePainter({required this.sim}) : super(repaint: sim);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final s in sparkles) {
+    for (final s in sim.sparkles) {
       final alpha = s.life.clamp(0.0, 1.0);
       final paint = Paint()
         ..color = s.color.withValues(alpha: alpha)
@@ -1567,7 +1510,6 @@ class _SparklePainter extends CustomPainter {
         s.size * alpha,
         paint,
       );
-      // Cross sparkle
       final linePaint = Paint()
         ..color = s.color.withValues(alpha: alpha * 0.6)
         ..strokeWidth = 1
@@ -1581,10 +1523,8 @@ class _SparklePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SparklePainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SparklePainter old) => false;
 }
-
-// ── Powerup Painter ────────────────────────────────────────────────────────
 
 class _PowerupPainter extends CustomPainter {
   final _PowerupType type;
@@ -1600,7 +1540,6 @@ class _PowerupPainter extends CustomPainter {
 
     switch (type) {
       case _PowerupType.shield:
-        // Green glowing leaf shield
         canvas.drawCircle(
           Offset(cx, cy),
           18,
@@ -1616,7 +1555,6 @@ class _PowerupPainter extends CustomPainter {
           leafPath,
           Paint()..color = const Color(0xFF10B981).withValues(alpha: 0.8),
         );
-        // Vein
         canvas.drawLine(
           Offset(cx, cy - 10),
           Offset(cx, cy + 10),
@@ -1627,7 +1565,6 @@ class _PowerupPainter extends CustomPainter {
         break;
 
       case _PowerupType.speedBoost:
-        // Yellow wings
         canvas.drawCircle(
           Offset(cx, cy),
           16,
@@ -1635,7 +1572,6 @@ class _PowerupPainter extends CustomPainter {
             ..color = const Color(0xFFFFD93D).withValues(alpha: 0.3 * glow)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
         );
-        // Left wing
         final lWing = Path()
           ..moveTo(cx, cy)
           ..quadraticBezierTo(cx - 18, cy - 14, cx - 6, cy - 4);
@@ -1645,7 +1581,6 @@ class _PowerupPainter extends CustomPainter {
             ..color = const Color(0xFFFFD93D).withValues(alpha: 0.8)
             ..style = PaintingStyle.fill,
         );
-        // Right wing
         final rWing = Path()
           ..moveTo(cx, cy)
           ..quadraticBezierTo(cx + 18, cy - 14, cx + 6, cy - 4);
@@ -1658,7 +1593,6 @@ class _PowerupPainter extends CustomPainter {
         break;
 
       case _PowerupType.doubleGrowth:
-        // Big red spot
         canvas.drawCircle(
           Offset(cx, cy),
           16,
@@ -1671,7 +1605,6 @@ class _PowerupPainter extends CustomPainter {
           12,
           Paint()..color = const Color(0xFFFF3333).withValues(alpha: 0.8),
         );
-        // 2x text
         final tp = TextPainter(
           text: TextSpan(
             text: '2x',
@@ -1687,7 +1620,6 @@ class _PowerupPainter extends CustomPainter {
         break;
 
       case _PowerupType.gardenRain:
-        // Blue droplet
         canvas.drawCircle(
           Offset(cx, cy),
           16,
@@ -1703,7 +1635,6 @@ class _PowerupPainter extends CustomPainter {
           dropPath,
           Paint()..color = const Color(0xFF00D4FF).withValues(alpha: 0.8),
         );
-        // Highlight
         canvas.drawCircle(
           Offset(cx - 3, cy - 2),
           3,

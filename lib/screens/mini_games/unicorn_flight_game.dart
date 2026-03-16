@@ -113,55 +113,281 @@ class UnicornFlightGame extends StatefulWidget {
   State<UnicornFlightGame> createState() => _UnicornFlightGameState();
 }
 
+class _UnicornFlightSimulation extends ChangeNotifier {
+  final Random rng;
+
+  double unicornY = 0.5;
+  double unicornTargetY = 0.5;
+  double unicornVelocityY = 0.0;
+
+  double wingAngle = 0.0;
+  double hornGlow = 0.0;
+  double stumbleTimer = 0.0;
+  double flashTimer = 0.0;
+  double totalTime = 0.0;
+  double gameSpeed = 1.0;
+
+  final List<_WordBubble> bubbles = [];
+  final List<_Sparkle> sparkles = [];
+  final List<_Sparkle> trailSparkles = [];
+  final List<_Star> stars = [];
+  final List<_Cloud> clouds = [];
+
+  double bubbleSpawnTimer = 0.0;
+  double trailSpawnTimer = 0.0;
+
+  bool gameOver = false;
+
+  int score = 0;
+  int hearts = 3;
+  String feedbackText = '';
+  double feedbackTimer = 0.0;
+  Color feedbackColor = AppColors.success;
+
+  static const double unicornX = 0.15;
+
+  VoidCallback? onScoreChanged;
+  VoidCallback? onHeartsChanged;
+  VoidCallback? onGameOver;
+  VoidCallback? onFeedbackChanged;
+
+  _UnicornFlightSimulation({required this.rng});
+
+  void tick(double dt, double bubbleSpawnInterval, List<String> wordPool, String targetWord,
+      void Function(_WordBubble) onCorrectHit, void Function(_WordBubble) onWrongHit) {
+    totalTime += dt;
+    gameSpeed = 1.0 + (score * 0.03).clamp(0.0, 1.5);
+    wingAngle = sin(totalTime * 6) * 0.4;
+    hornGlow = (sin(totalTime * 3) + 1) / 2;
+
+    final diff = unicornTargetY - unicornY;
+    unicornVelocityY += diff * 8.0 * dt;
+    unicornVelocityY *= 0.9;
+    unicornY += unicornVelocityY;
+    unicornY = unicornY.clamp(0.05, 0.95);
+
+    if (stumbleTimer > 0) stumbleTimer -= dt;
+    if (flashTimer > 0) flashTimer -= dt;
+    if (feedbackTimer > 0) feedbackTimer -= dt;
+
+    bubbleSpawnTimer += dt;
+    if (bubbleSpawnTimer >= bubbleSpawnInterval / gameSpeed) {
+      bubbleSpawnTimer = 0;
+      _spawnBubble(wordPool, targetWord);
+    }
+
+    _updateBubbles(dt);
+    _checkCollisions(onCorrectHit, onWrongHit);
+    _updateSparkles(dt);
+
+    trailSpawnTimer += dt;
+    if (trailSpawnTimer >= 0.05) {
+      trailSpawnTimer = 0;
+      _spawnTrailSparkle();
+    }
+
+    _updateBackground(dt);
+    notifyListeners();
+  }
+
+  void _spawnBubble(List<String> wordPool, String targetWord) {
+    final roll = rng.nextDouble();
+    String text;
+    bool isCorrect;
+
+    if (roll < 0.4) {
+      text = targetWord;
+      isCorrect = true;
+    } else if (roll < 0.7) {
+      text = _generateMisspelling(targetWord);
+      isCorrect = false;
+    } else {
+      String other;
+      do {
+        other = wordPool[rng.nextInt(wordPool.length)];
+      } while (other == targetWord && wordPool.length > 1);
+      text = other;
+      isCorrect = false;
+    }
+
+    bubbles.add(_WordBubble(
+      text: text,
+      isCorrect: isCorrect,
+      x: 1.1,
+      y: rng.nextDouble() * 0.7 + 0.15,
+      speed: (80 + rng.nextDouble() * 40) * gameSpeed,
+      wobblePhase: rng.nextDouble() * pi * 2,
+    ));
+  }
+
+  String _generateMisspelling(String word) {
+    if (word.length < 2) return '${word}z';
+    final methods = <String Function()>[
+      () {
+        if (word.length < 2) return word;
+        final i = rng.nextInt(word.length - 1);
+        final chars = word.split('');
+        final tmp = chars[i];
+        chars[i] = chars[i + 1];
+        chars[i + 1] = tmp;
+        final result = chars.join();
+        return result == word ? '${word}e' : result;
+      },
+      () {
+        final i = rng.nextInt(word.length);
+        return word.substring(0, i) + word[i] + word.substring(i);
+      },
+      () {
+        if (word.length <= 2) return '${word}s';
+        final i = rng.nextInt(word.length);
+        return word.substring(0, i) + word.substring(i + 1);
+      },
+      () {
+        const swaps = {
+          'b': 'd', 'd': 'b', 'm': 'n', 'n': 'm',
+          'p': 'q', 'q': 'p', 'a': 'e', 'e': 'a',
+          'i': 'y', 'y': 'i', 'u': 'o', 'o': 'u',
+        };
+        for (int i = 0; i < word.length; i++) {
+          final swap = swaps[word[i]];
+          if (swap != null) {
+            return word.substring(0, i) + swap + word.substring(i + 1);
+          }
+        }
+        return '${word}r';
+      },
+    ];
+    final result = methods[rng.nextInt(methods.length)]();
+    return result == word ? '${word}e' : result;
+  }
+
+  void _updateBubbles(double dt) {
+    for (final bubble in bubbles) {
+      if (bubble.collected) {
+        bubble.collectAnimProgress += dt * 3;
+        bubble.opacity = (1.0 - bubble.collectAnimProgress).clamp(0.0, 1.0);
+        bubble.y -= dt * 100;
+      } else {
+        bubble.x -= (bubble.speed * dt) / 800;
+        bubble.y += sin(totalTime * 2 + bubble.wobblePhase) * dt * 0.02;
+      }
+    }
+    bubbles.removeWhere((b) => b.x < -0.2 || b.collectAnimProgress > 1.0);
+  }
+
+  void _checkCollisions(
+      void Function(_WordBubble) onCorrectHit,
+      void Function(_WordBubble) onWrongHit) {
+    final unicornCenterY = unicornY;
+    const collisionRadius = 0.07;
+
+    for (final bubble in bubbles) {
+      if (bubble.collected) continue;
+      final dx = bubble.x - unicornX;
+      final dy = bubble.y - unicornCenterY;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist < collisionRadius) {
+        bubble.collected = true;
+        if (bubble.isCorrect) {
+          onCorrectHit(bubble);
+        } else {
+          onWrongHit(bubble);
+        }
+      }
+    }
+  }
+
+  void _spawnTrailSparkle() {
+    if (gameOver) return;
+    final colors = [
+      const Color(0xFFFFB6C1),
+      const Color(0xFFE6E6FA),
+      const Color(0xFFADD8E6),
+      AppColors.starGold.withValues(alpha: 0.7),
+      const Color(0xFFDDA0DD),
+    ];
+    trailSparkles.add(_Sparkle(
+      x: unicornX - 0.02,
+      y: unicornY + (rng.nextDouble() - 0.5) * 0.03,
+      vx: -(rng.nextDouble() * 30 + 10),
+      vy: (rng.nextDouble() - 0.5) * 20,
+      life: rng.nextDouble() * 0.6 + 0.3,
+      color: colors[rng.nextInt(colors.length)],
+      size: rng.nextDouble() * 3 + 1.5,
+    ));
+  }
+
+  void _updateSparkles(double dt) {
+    for (final s in sparkles) {
+      s.x += s.vx * dt / 800;
+      s.y += s.vy * dt / 600;
+      s.vy += 100 * dt / 600;
+      s.life -= dt;
+    }
+    sparkles.removeWhere((s) => s.life <= 0);
+
+    for (final s in trailSparkles) {
+      s.x += s.vx * dt / 800;
+      s.y += s.vy * dt / 600;
+      s.life -= dt;
+    }
+    trailSparkles.removeWhere((s) => s.life <= 0);
+  }
+
+  void _updateBackground(double dt) {
+    for (final star in stars) {
+      star.x -= dt * 0.005 * gameSpeed;
+      if (star.x < -0.01) {
+        star.x = 1.01;
+        star.y = rng.nextDouble();
+      }
+    }
+    for (final cloud in clouds) {
+      cloud.x -= dt * cloud.speed / 800 * gameSpeed;
+      if (cloud.x < -0.3) {
+        cloud.x = 1.2;
+        cloud.y = rng.nextDouble() * 0.8 + 0.1;
+      }
+    }
+  }
+
+  void reset(int newHearts) {
+    gameOver = false;
+    score = 0;
+    hearts = newHearts;
+    gameSpeed = 1.0;
+    bubbles.clear();
+    sparkles.clear();
+    trailSparkles.clear();
+    unicornY = 0.5;
+    unicornTargetY = 0.5;
+    stumbleTimer = 0.0;
+    flashTimer = 0.0;
+    bubbleSpawnTimer = 0.0;
+    feedbackText = '';
+    feedbackTimer = 0.0;
+  }
+}
+
 class _UnicornFlightGameState extends State<UnicornFlightGame>
     with TickerProviderStateMixin {
-  // Game state
   bool _gameStarted = false;
   bool _gameOver = false;
   int _score = 0;
   late int _hearts;
   String _targetWord = '';
-  double _gameSpeed = 1.0;
-
-  // Unicorn position
-  double _unicornY = 0.5; // 0..1 normalized
-  double _unicornTargetY = 0.5;
-  double _unicornVelocityY = 0.0;
-
-  // Animation state
-  double _wingAngle = 0.0;
-  double _hornGlow = 0.0;
-  double _stumbleTimer = 0.0;
-  double _flashTimer = 0.0;
-  double _totalTime = 0.0;
-
-  // Game objects
-  final List<_WordBubble> _bubbles = [];
-  final List<_Sparkle> _sparkles = [];
-  final List<_Sparkle> _trailSparkles = [];
-  final List<_Star> _stars = [];
-  final List<_Cloud> _clouds = [];
-
-  // Word pool
-  late List<String> _wordPool;
-  final _rng = Random();
-
-  // Timing
-  double _bubbleSpawnTimer = 0.0;
-  late final double _bubbleSpawnInterval;
-  double _trailSpawnTimer = 0.0;
-
-  // Ticker
-  Ticker? _ticker;
-  Duration _lastTickTime = Duration.zero;
-
-  // Layout
-  static const double _unicornX = 0.15; // Fraction of screen width
-
-  // Feedback text
   String _feedbackText = '';
   double _feedbackTimer = 0.0;
   Color _feedbackColor = AppColors.success;
+
+  late List<String> _wordPool;
+  final _rng = Random();
+
+  late final double _bubbleSpawnInterval;
+  late final _UnicornFlightSimulation _sim;
+
+  Ticker? _ticker;
+  Duration _lastTickTime = Duration.zero;
 
   late final Stopwatch _sessionTimer;
 
@@ -171,6 +397,8 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
     _hearts = widget.difficultyParams?.lives ?? 3;
     _bubbleSpawnInterval = widget.difficultyParams?.spawnInterval ?? 2.0;
     _sessionTimer = Stopwatch()..start();
+    _sim = _UnicornFlightSimulation(rng: _rng);
+    _sim.hearts = _hearts;
     _buildWordPool();
     _pickNewTarget();
     _initBackground();
@@ -198,9 +426,8 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
   }
 
   void _initBackground() {
-    // Stars
     for (int i = 0; i < 80; i++) {
-      _stars.add(_Star(
+      _sim.stars.add(_Star(
         x: _rng.nextDouble(),
         y: _rng.nextDouble(),
         size: _rng.nextDouble() * 2.5 + 0.5,
@@ -209,9 +436,8 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
         brightness: _rng.nextDouble() * 0.5 + 0.5,
       ));
     }
-    // Clouds
     for (int i = 0; i < 6; i++) {
-      _clouds.add(_Cloud(
+      _sim.clouds.add(_Cloud(
         x: _rng.nextDouble() * 1.5,
         y: _rng.nextDouble() * 0.8 + 0.1,
         width: _rng.nextDouble() * 120 + 80,
@@ -250,20 +476,13 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
   }
 
   void _startGame() {
+    final newHearts = widget.difficultyParams?.lives ?? 3;
+    _sim.reset(newHearts);
     setState(() {
       _gameStarted = true;
       _gameOver = false;
       _score = 0;
-      _hearts = widget.difficultyParams?.lives ?? 3;
-      _gameSpeed = 1.0;
-      _bubbles.clear();
-      _sparkles.clear();
-      _trailSparkles.clear();
-      _unicornY = 0.5;
-      _unicornTargetY = 0.5;
-      _stumbleTimer = 0.0;
-      _flashTimer = 0.0;
-      _bubbleSpawnTimer = 0.0;
+      _hearts = newHearts;
       _feedbackText = '';
       _feedbackTimer = 0.0;
       _pickNewTarget();
@@ -282,220 +501,38 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
     }
     final dt = (elapsed - _lastTickTime).inMicroseconds / 1000000.0;
     _lastTickTime = elapsed;
-
-    // Cap delta to prevent jumps
     final cappedDt = dt.clamp(0.0, 0.05);
 
     if (!_gameOver) {
-      _updateGame(cappedDt);
-    }
-
-    if (mounted) setState(() {});
-  }
-
-  void _updateGame(double dt) {
-    _totalTime += dt;
-
-    // Increase game speed over time
-    _gameSpeed = 1.0 + (_score * 0.03).clamp(0.0, 1.5);
-
-    // Wing flap animation
-    _wingAngle = sin(_totalTime * 6) * 0.4;
-
-    // Horn glow pulse
-    _hornGlow = (sin(_totalTime * 3) + 1) / 2;
-
-    // Unicorn physics — smooth follow with spring
-    final diff = _unicornTargetY - _unicornY;
-    _unicornVelocityY += diff * 8.0 * dt;
-    _unicornVelocityY *= 0.9; // damping
-    _unicornY += _unicornVelocityY;
-    _unicornY = _unicornY.clamp(0.05, 0.95);
-
-    // Stumble timer
-    if (_stumbleTimer > 0) {
-      _stumbleTimer -= dt;
-    }
-
-    // Flash timer
-    if (_flashTimer > 0) {
-      _flashTimer -= dt;
-    }
-
-    // Feedback timer
-    if (_feedbackTimer > 0) {
-      _feedbackTimer -= dt;
-    }
-
-    // Spawn bubbles
-    _bubbleSpawnTimer += dt;
-    if (_bubbleSpawnTimer >= _bubbleSpawnInterval / _gameSpeed) {
-      _bubbleSpawnTimer = 0;
-      _spawnBubble();
-    }
-
-    // Update bubbles
-    _updateBubbles(dt);
-
-    // Check collisions
-    _checkCollisions();
-
-    // Update sparkles
-    _updateSparkles(dt);
-
-    // Spawn trail sparkles
-    _trailSpawnTimer += dt;
-    if (_trailSpawnTimer >= 0.05) {
-      _trailSpawnTimer = 0;
-      _spawnTrailSparkle();
-    }
-
-    // Update background
-    _updateBackground(dt);
-  }
-
-  void _spawnBubble() {
-    // Decide type: ~40% correct, ~30% misspelled, ~30% random other word
-    final roll = _rng.nextDouble();
-    String text;
-    bool isCorrect;
-
-    if (roll < 0.4) {
-      text = _targetWord;
-      isCorrect = true;
-    } else if (roll < 0.7) {
-      text = _generateMisspelling(_targetWord);
-      isCorrect = false;
-    } else {
-      // Random other word
-      String other;
-      do {
-        other = _wordPool[_rng.nextInt(_wordPool.length)];
-      } while (other == _targetWord && _wordPool.length > 1);
-      text = other;
-      isCorrect = false;
-    }
-
-    _bubbles.add(_WordBubble(
-      text: text,
-      isCorrect: isCorrect,
-      x: 1.1,
-      y: _rng.nextDouble() * 0.7 + 0.15,
-      speed: (80 + _rng.nextDouble() * 40) * _gameSpeed,
-      wobblePhase: _rng.nextDouble() * pi * 2,
-    ));
-  }
-
-  String _generateMisspelling(String word) {
-    if (word.length < 2) return '${word}z';
-
-    final methods = <String Function()>[
-      // Swap two adjacent letters
-      () {
-        if (word.length < 2) return word;
-        final i = _rng.nextInt(word.length - 1);
-        final chars = word.split('');
-        final tmp = chars[i];
-        chars[i] = chars[i + 1];
-        chars[i + 1] = tmp;
-        final result = chars.join();
-        return result == word ? '${word}e' : result;
-      },
-      // Double a letter
-      () {
-        final i = _rng.nextInt(word.length);
-        return word.substring(0, i) + word[i] + word.substring(i);
-      },
-      // Remove a letter (only if word > 2 chars)
-      () {
-        if (word.length <= 2) return '${word}s';
-        final i = _rng.nextInt(word.length);
-        return word.substring(0, i) + word.substring(i + 1);
-      },
-      // Common letter substitution
-      () {
-        const swaps = {
-          'b': 'd',
-          'd': 'b',
-          'm': 'n',
-          'n': 'm',
-          'p': 'q',
-          'q': 'p',
-          'a': 'e',
-          'e': 'a',
-          'i': 'y',
-          'y': 'i',
-          'u': 'o',
-          'o': 'u',
-        };
-        for (int i = 0; i < word.length; i++) {
-          final swap = swaps[word[i]];
-          if (swap != null) {
-            return word.substring(0, i) + swap + word.substring(i + 1);
-          }
-        }
-        // No substitution found, add a letter
-        return '${word}r';
-      },
-    ];
-
-    final result = methods[_rng.nextInt(methods.length)]();
-    // Make sure it's actually different
-    return result == word ? '${word}e' : result;
-  }
-
-  void _updateBubbles(double dt) {
-    for (final bubble in _bubbles) {
-      if (bubble.collected) {
-        bubble.collectAnimProgress += dt * 3;
-        bubble.opacity = (1.0 - bubble.collectAnimProgress).clamp(0.0, 1.0);
-        bubble.y -= dt * 100; // Float up
+      _sim.tick(cappedDt, _bubbleSpawnInterval, _wordPool, _targetWord,
+          _onCorrectHit, _onWrongHit);
+      final simFeedbackTimer = _sim.feedbackTimer;
+      if ((_feedbackTimer > 0) != (simFeedbackTimer > 0)) {
+        setState(() {
+          _feedbackTimer = simFeedbackTimer;
+        });
       } else {
-        bubble.x -= (bubble.speed * dt) / 800; // Normalize by screen width
-        bubble.y += sin(_totalTime * 2 + bubble.wobblePhase) * dt * 0.02;
-      }
-    }
-    _bubbles.removeWhere(
-        (b) => b.x < -0.2 || b.collectAnimProgress > 1.0);
-  }
-
-  void _checkCollisions() {
-    final unicornCenterY = _unicornY;
-    const collisionRadius = 0.07;
-
-    for (final bubble in _bubbles) {
-      if (bubble.collected) continue;
-
-      final dx = bubble.x - _unicornX;
-      final dy = bubble.y - unicornCenterY;
-      final dist = sqrt(dx * dx + dy * dy);
-
-      if (dist < collisionRadius) {
-        bubble.collected = true;
-
-        if (bubble.isCorrect) {
-          _onCorrectHit(bubble);
-        } else {
-          _onWrongHit(bubble);
-        }
+        _feedbackTimer = simFeedbackTimer;
       }
     }
   }
 
   void _onCorrectHit(_WordBubble bubble) {
-    _score++;
+    _sim.score++;
+    _score = _sim.score;
+    _sim.feedbackText = 'Great job!';
+    _sim.feedbackColor = AppColors.starGold;
+    _sim.feedbackTimer = 1.5;
     _feedbackText = 'Great job!';
     _feedbackColor = AppColors.starGold;
     _feedbackTimer = 1.5;
 
-    // Say the word aloud
     widget.audioService.playWord(bubble.text);
 
-    // Spawn golden sparkle burst
     for (int i = 0; i < 20; i++) {
       final angle = _rng.nextDouble() * pi * 2;
       final speed = _rng.nextDouble() * 200 + 50;
-      _sparkles.add(_Sparkle(
+      _sim.sparkles.add(_Sparkle(
         x: bubble.x,
         y: bubble.y,
         vx: cos(angle) * speed,
@@ -514,21 +551,25 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
     widget.audioService.playSuccess();
     Haptics.success();
     _pickNewTarget();
+    setState(() {});
   }
 
   void _onWrongHit(_WordBubble bubble) {
-    _hearts--;
-    _stumbleTimer = 0.6;
-    _flashTimer = 0.3;
+    _sim.hearts--;
+    _hearts = _sim.hearts;
+    _sim.stumbleTimer = 0.6;
+    _sim.flashTimer = 0.3;
+    _sim.feedbackText = 'Oops! Try again!';
+    _sim.feedbackColor = AppColors.error;
+    _sim.feedbackTimer = 1.5;
     _feedbackText = 'Oops! Try again!';
     _feedbackColor = AppColors.error;
     _feedbackTimer = 1.5;
 
-    // Red sparkle burst
     for (int i = 0; i < 12; i++) {
       final angle = _rng.nextDouble() * pi * 2;
       final speed = _rng.nextDouble() * 150 + 30;
-      _sparkles.add(_Sparkle(
+      _sim.sparkles.add(_Sparkle(
         x: bubble.x,
         y: bubble.y,
         vx: cos(angle) * speed,
@@ -548,71 +589,17 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
 
     if (_hearts <= 0) {
       _gameOver = true;
+      _sim.gameOver = true;
       _ticker?.stop();
       _awardMiniGameStickers();
     }
-  }
-
-  void _spawnTrailSparkle() {
-    if (_gameOver) return;
-    final colors = [
-      const Color(0xFFFFB6C1), // Light pink
-      const Color(0xFFE6E6FA), // Lavender
-      const Color(0xFFADD8E6), // Light blue
-      AppColors.starGold.withValues(alpha: 0.7),
-      const Color(0xFFDDA0DD), // Plum
-    ];
-    _trailSparkles.add(_Sparkle(
-      x: _unicornX - 0.02,
-      y: _unicornY + (_rng.nextDouble() - 0.5) * 0.03,
-      vx: -(_rng.nextDouble() * 30 + 10),
-      vy: (_rng.nextDouble() - 0.5) * 20,
-      life: _rng.nextDouble() * 0.6 + 0.3,
-      color: colors[_rng.nextInt(colors.length)],
-      size: _rng.nextDouble() * 3 + 1.5,
-    ));
-  }
-
-  void _updateSparkles(double dt) {
-    for (final s in _sparkles) {
-      s.x += s.vx * dt / 800;
-      s.y += s.vy * dt / 600;
-      s.vy += 100 * dt / 600; // Gravity
-      s.life -= dt;
-    }
-    _sparkles.removeWhere((s) => s.life <= 0);
-
-    for (final s in _trailSparkles) {
-      s.x += s.vx * dt / 800;
-      s.y += s.vy * dt / 600;
-      s.life -= dt;
-    }
-    _trailSparkles.removeWhere((s) => s.life <= 0);
-  }
-
-  void _updateBackground(double dt) {
-    // Move stars slowly
-    for (final star in _stars) {
-      star.x -= dt * 0.005 * _gameSpeed;
-      if (star.x < -0.01) {
-        star.x = 1.01;
-        star.y = _rng.nextDouble();
-      }
-    }
-
-    // Move clouds
-    for (final cloud in _clouds) {
-      cloud.x -= dt * cloud.speed / 800 * _gameSpeed;
-      if (cloud.x < -0.3) {
-        cloud.x = 1.2;
-        cloud.y = _rng.nextDouble() * 0.8 + 0.1;
-      }
-    }
+    setState(() {});
   }
 
   @override
   void dispose() {
     _ticker?.dispose();
+    _sim.dispose();
     _sessionTimer.stop();
     super.dispose();
   }
@@ -720,44 +707,28 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
         return GestureDetector(
           onPanUpdate: (details) {
             if (_gameOver) return;
-            _unicornTargetY =
+            _sim.unicornTargetY =
                 (details.localPosition.dy / screenH).clamp(0.05, 0.95);
           },
           onTapDown: (details) {
             if (_gameOver) return;
-            _unicornTargetY =
+            _sim.unicornTargetY =
                 (details.localPosition.dy / screenH).clamp(0.05, 0.95);
           },
           child: Stack(
             children: [
-              // Game canvas
               RepaintBoundary(
                 child: CustomPaint(
                   size: Size(screenW, screenH),
                   painter: _GamePainter(
-                    stars: _stars,
-                    clouds: _clouds,
-                    bubbles: _bubbles,
-                    sparkles: _sparkles,
-                    trailSparkles: _trailSparkles,
-                    unicornY: _unicornY,
-                    unicornX: _unicornX,
-                    wingAngle: _wingAngle,
-                    hornGlow: _hornGlow,
-                    stumble: _stumbleTimer > 0,
-                    flashTimer: _flashTimer,
-                    totalTime: _totalTime,
+                    sim: _sim,
                     hintsEnabled: widget.hintsEnabled,
                   ),
                 ),
               ),
-              // HUD
               _buildHUD(screenW),
-              // Target word
               _buildTargetWord(screenW),
-              // Feedback text
               if (_feedbackTimer > 0) _buildFeedback(screenW, screenH),
-              // Game over overlay
               if (_gameOver) _buildGameOver(screenW, screenH),
             ],
           ),
@@ -1042,35 +1013,26 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
 // ─── Game Painter ──────────────────────────────────────────────────────────
 
 class _GamePainter extends CustomPainter {
-  final List<_Star> stars;
-  final List<_Cloud> clouds;
-  final List<_WordBubble> bubbles;
-  final List<_Sparkle> sparkles;
-  final List<_Sparkle> trailSparkles;
-  final double unicornY;
-  final double unicornX;
-  final double wingAngle;
-  final double hornGlow;
-  final bool stumble;
-  final double flashTimer;
-  final double totalTime;
+  final _UnicornFlightSimulation sim;
   final bool hintsEnabled;
 
   _GamePainter({
-    required this.stars,
-    required this.clouds,
-    required this.bubbles,
-    required this.sparkles,
-    required this.trailSparkles,
-    required this.unicornY,
-    required this.unicornX,
-    required this.wingAngle,
-    required this.hornGlow,
-    required this.stumble,
-    required this.flashTimer,
-    required this.totalTime,
+    required this.sim,
     required this.hintsEnabled,
-  });
+  }) : super(repaint: sim);
+
+  List<_Star> get stars => sim.stars;
+  List<_Cloud> get clouds => sim.clouds;
+  List<_WordBubble> get bubbles => sim.bubbles;
+  List<_Sparkle> get sparkles => sim.sparkles;
+  List<_Sparkle> get trailSparkles => sim.trailSparkles;
+  double get unicornY => sim.unicornY;
+  double get unicornX => _UnicornFlightSimulation.unicornX;
+  double get wingAngle => sim.wingAngle;
+  double get hornGlow => sim.hornGlow;
+  bool get stumble => sim.stumbleTimer > 0;
+  double get flashTimer => sim.flashTimer;
+  double get totalTime => sim.totalTime;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1346,7 +1308,7 @@ class _GamePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _GamePainter oldDelegate) => false;
 }
 
 // ─── Unicorn Painter ───────────────────────────────────────────────────────
