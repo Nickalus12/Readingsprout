@@ -3,10 +3,8 @@ import 'dart:math';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme/app_theme.dart';
 import '../../data/dolch_words.dart';
-import '../../models/progress.dart';
 import '../../models/word.dart';
 import '../../data/music_layers.dart';
 import '../../data/phrase_templates.dart';
@@ -47,6 +45,10 @@ class GameScreen extends StatefulWidget {
   final String playerName;
   final String profileId;
 
+  /// Optional custom word list for review mode. When provided, these words
+  /// are used instead of loading from DolchWords.wordsForLevel.
+  final List<Word>? reviewWords;
+
   const GameScreen({
     super.key,
     required this.level,
@@ -62,6 +64,7 @@ class GameScreen extends StatefulWidget {
     this.tier = 1,
     this.playerName = '',
     this.profileId = '',
+    this.reviewWords,
   });
 
   @override
@@ -173,7 +176,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Word get _currentWord => _words[_currentWordIndex];
   String get _targetText => _currentWord.text.toLowerCase();
   bool get _isLastWord => _currentWordIndex >= _words.length - 1;
-  WordTier get _wordTier => WordTier.fromValue(widget.tier) ?? WordTier.explorer;
   bool get _isExplorer => widget.tier == 1;
   bool get _isAdventurer => widget.tier == 2;
   bool get _isChampion => widget.tier == 3;
@@ -566,6 +568,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     widget.audioService.playSuccess();
     _avatarController.setExpression(AvatarExpression.excited, duration: const Duration(seconds: 2));
 
+    // Record daily streak on every word completion (not just level/tier finish)
+    widget.streakService?.recordPractice();
+
     // Bump adaptive music intensity on correct answer
     widget.musicService?.onCorrectAnswer();
 
@@ -642,9 +647,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       widget.audioService.playLevelCompleteEffect();
       _avatarController.setExpression(AvatarExpression.excited, duration: const Duration(seconds: 4));
       _playZoneLevelComplete();
-
-      // Record daily streak
-      widget.streakService?.recordPractice();
 
       setState(() {
         _showingCelebration = false;
