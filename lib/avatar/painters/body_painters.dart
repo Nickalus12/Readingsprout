@@ -666,9 +666,9 @@ class ArmPainter extends CustomPainter {
       Color highlight, Color shadow, double boneRotation) {
     // Align arm center with shoulder cap center (0.48)
     final armCx = cx + side * shoulderW * 0.48;
-    // Child proportions: chubbier upper arm, softer taper
-    final shoulderArmW = w * 0.085;
-    final wristArmW = w * 0.052;
+    // Chubby child proportions: wider, rounder arm tubes
+    final shoulderArmW = w * 0.095;
+    final wristArmW = w * 0.065;
 
     // Arm top blends with shoulder cap bottom (shoulderY + h*0.035)
     final upperArmTop = shoulderY + h * 0.033;
@@ -687,25 +687,25 @@ class ArmPainter extends CustomPainter {
     final elbowY = shoulderY + h * 0.125;
     final forearmBottom = shoulderY + h * 0.225;
 
-    // ── Upper arm (soft bezier contours for child character) ──
+    // ── Upper arm — soft rounded tube for cartoon child look ──
     final upperPath = Path();
-    // Outer contour: gentle bicep bulge
-    upperPath.moveTo(armCx - shoulderArmW * 0.5, upperArmTop);
+    // Outer contour: gentle outward curve (no angular bicep)
+    upperPath.moveTo(armCx - shoulderArmW * 0.48, upperArmTop);
     upperPath.cubicTo(
-      armCx - shoulderArmW * 0.6, upperArmTop + (elbowY - upperArmTop) * 0.3,
-      armCx - shoulderArmW * 0.55, elbowY - (elbowY - upperArmTop) * 0.15,
-      armCx - shoulderArmW * 0.46, elbowY,
+      armCx - shoulderArmW * 0.55, upperArmTop + (elbowY - upperArmTop) * 0.25,
+      armCx - shoulderArmW * 0.52, elbowY - (elbowY - upperArmTop) * 0.2,
+      armCx - shoulderArmW * 0.44, elbowY,
     );
-    // Elbow bottom: soft curve instead of hard line
+    // Elbow: smooth rounded curve (no crease)
     upperPath.quadraticBezierTo(
-      armCx, elbowY + 1.5,
-      armCx + shoulderArmW * 0.46, elbowY,
+      armCx, elbowY + 2.5,
+      armCx + shoulderArmW * 0.44, elbowY,
     );
-    // Inner contour: mirror with gentle bulge
+    // Inner contour: gentle mirror curve
     upperPath.cubicTo(
-      armCx + shoulderArmW * 0.55, elbowY - (elbowY - upperArmTop) * 0.15,
-      armCx + shoulderArmW * 0.6, upperArmTop + (elbowY - upperArmTop) * 0.3,
-      armCx + shoulderArmW * 0.5, upperArmTop,
+      armCx + shoulderArmW * 0.52, elbowY - (elbowY - upperArmTop) * 0.2,
+      armCx + shoulderArmW * 0.55, upperArmTop + (elbowY - upperArmTop) * 0.25,
+      armCx + shoulderArmW * 0.48, upperArmTop,
     );
     upperPath.close();
 
@@ -789,27 +789,27 @@ class ArmPainter extends CustomPainter {
       );
     canvas.drawPath(cuffHLPath, cuffHLPaint);
 
-    // ── Forearm (tapers from elbow to wrist, child proportions) ──
-    final elbowHalfW = shoulderArmW * 0.46;
-    final wristHalfW = wristArmW * 0.46;
+    // ── Forearm — chubby rounded tube tapering gently to wrist ──
+    final elbowHalfW = shoulderArmW * 0.44;
+    final wristHalfW = wristArmW * 0.50;
 
     final forearmPath = Path();
     forearmPath.moveTo(armCx - elbowHalfW, elbowY);
-    // Outer contour — smooth organic taper with slight forearm swell
+    // Outer contour — gentle taper with slight swell (baby fat)
     forearmPath.cubicTo(
-      armCx - elbowHalfW * 1.08, elbowY + (forearmBottom - elbowY) * 0.35,
-      armCx - wristHalfW * 1.15, forearmBottom - (forearmBottom - elbowY) * 0.2,
+      armCx - elbowHalfW * 1.05, elbowY + (forearmBottom - elbowY) * 0.30,
+      armCx - wristHalfW * 1.10, forearmBottom - (forearmBottom - elbowY) * 0.25,
       armCx - wristHalfW, forearmBottom,
     );
-    // Wrist curve — rounded end
+    // Wrist curve — rounded end (wider for cartoon look)
     forearmPath.quadraticBezierTo(
-      armCx, forearmBottom + wristArmW * 0.22,
+      armCx, forearmBottom + wristArmW * 0.30,
       armCx + wristHalfW, forearmBottom,
     );
-    // Inner contour — mirror taper
+    // Inner contour
     forearmPath.cubicTo(
-      armCx + wristHalfW * 1.15, forearmBottom - (forearmBottom - elbowY) * 0.2,
-      armCx + elbowHalfW * 1.08, elbowY + (forearmBottom - elbowY) * 0.35,
+      armCx + wristHalfW * 1.10, forearmBottom - (forearmBottom - elbowY) * 0.25,
+      armCx + elbowHalfW * 1.05, elbowY + (forearmBottom - elbowY) * 0.30,
       armCx + elbowHalfW, elbowY,
     );
     forearmPath.close();
@@ -823,32 +823,21 @@ class ArmPainter extends CustomPainter {
         begin: side < 0 ? Alignment.centerLeft : Alignment.centerRight,
         end: side < 0 ? Alignment.centerRight : Alignment.centerLeft,
         colors: [shadow, highlight, skinColor, highlight, shadow],
-        stops: const [0.0, 0.12, 0.5, 0.88, 1.0],
+        stops: const [0.0, 0.15, 0.5, 0.85, 1.0],
       ).createShader(forearmRect);
     canvas.drawPath(forearmPath, forearmPaint);
 
-    // ── Elbow crease — subtle shadow with inner fold line ──
+    // ── Elbow hint — very subtle shadow, no hard crease for cartoon style ──
     final elbowCreasePaint = Paint()
-      ..color = shadow.withValues(alpha: 0.15)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+      ..color = shadow.withValues(alpha: 0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(armCx, elbowY + 0.5),
-        width: elbowHalfW * 1.6,
-        height: 3.5,
+        center: Offset(armCx, elbowY + 1),
+        width: elbowHalfW * 1.4,
+        height: 4,
       ),
       elbowCreasePaint,
-    );
-    // Inner fold line for depth
-    final foldPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5
-      ..color = shadow.withValues(alpha: 0.12)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1);
-    canvas.drawLine(
-      Offset(armCx - elbowHalfW * 0.6, elbowY + 1),
-      Offset(armCx + elbowHalfW * 0.6, elbowY + 1),
-      foldPaint,
     );
 
     if (totalRotation.abs() > 0.001) {
