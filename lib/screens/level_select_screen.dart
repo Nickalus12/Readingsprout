@@ -19,7 +19,7 @@ import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
 import '../widgets/zone_unlock_overlay.dart';
-import 'game_screen.dart';
+import 'game/game_screen.dart';
 
 class LevelSelectScreen extends StatefulWidget {
   final ProgressService progressService;

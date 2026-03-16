@@ -20,7 +20,7 @@ import '../avatar/avatar_widget.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
 import 'level_select_screen.dart';
-import 'game_screen.dart';
+import 'game/game_screen.dart';
 import 'alphabet_screen.dart';
 import 'mini_games_screen.dart';
 import 'parent_dashboard_screen.dart';
