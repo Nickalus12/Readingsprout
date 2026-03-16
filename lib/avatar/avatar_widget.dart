@@ -878,10 +878,8 @@ class _AvatarWidgetState extends State<AvatarWidget>
   //  - Wings: extend from shoulders (wider than head, centered on torso)
   //  - Full-head: ninja mask, halo (overlay the head region)
 
-  /// Accessories that sit on top of the head (crowns, hats, ears, horns).
-  static const _headTopAccessories = {
-    2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20,
-  };
+  // Head-top accessories (crowns, hats, ears, horns): all except wings
+  // and full-head overlays — handled as the default case below.
 
   /// Accessories that extend from shoulders/back (wings).
   static const _wingAccessories = {7};
