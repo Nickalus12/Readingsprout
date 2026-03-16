@@ -320,6 +320,10 @@ EXTRA_WORDS = [
     "grass", "flower", "mushroom", "vine",
     # Element Lab timer
     "minute", "thirty", "seconds", "time",
+    # Element Lab UI button labels
+    "shake", "undo", "clear", "circle", "line", "spray",
+    "night", "day", "pause", "medium", "left",
+    "small", "big", "eraser",
 ]
 
 # ============================================================================

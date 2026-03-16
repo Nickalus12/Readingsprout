@@ -166,6 +166,7 @@ const Set<String> speakableWords = {
   'mud', 'steam', 'ant', 'oil', 'acid', 'glass', 'rainbow',
   'snow', 'lightning', 'tnt',
   'seed', 'dirt', 'lava', 'wood', 'metal', 'smoke', 'bubble', 'ash',
+  'eraser', 'grass', 'flower', 'mushroom', 'vine',
 };
 
 // ── Plant data constants ─────────────────────────────────────────────
