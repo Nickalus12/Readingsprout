@@ -580,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                       ),
 
-                    // ── Adventure Mode button ────────────────
+                    // ── Adventure Mode button (hero CTA) ────────────────
                     PulsingHint(
                       active: _showAdventureHint,
                       showHand: _showAdventureHint,
@@ -615,77 +615,79 @@ class _HomeScreenState extends State<HomeScreen>
                             );
                           },
                       child: Container(
+                        width: double.infinity,
                         padding: EdgeInsets.symmetric(
-                            horizontal: 16 * sf, vertical: 10 * sf),
+                            horizontal: 20 * sf, vertical: 14 * sf),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [
-                              AppColors.emerald.withValues(alpha: 0.18),
-                              AppColors.electricBlue.withValues(alpha: 0.12),
-                              AppColors.violet.withValues(alpha: 0.10),
+                              AppColors.emerald.withValues(alpha: 0.22),
+                              AppColors.electricBlue.withValues(alpha: 0.14),
+                              AppColors.violet.withValues(alpha: 0.12),
                             ],
                             stops: const [0.0, 0.5, 1.0],
                           ),
-                          borderRadius: BorderRadius.circular(32),
+                          borderRadius: BorderRadius.circular(28),
                           border: Border.all(
-                            color: AppColors.emerald.withValues(alpha: 0.5),
-                            width: 1.5,
+                            color: AppColors.emerald.withValues(alpha: 0.6),
+                            width: 2,
                           ),
                           boxShadow: [
                             BoxShadow(
                               color:
-                                  AppColors.emerald.withValues(alpha: 0.15),
-                              blurRadius: 24,
-                              spreadRadius: 2,
+                                  AppColors.emerald.withValues(alpha: 0.2),
+                              blurRadius: 28,
+                              spreadRadius: 4,
                             ),
                             BoxShadow(
                               color:
-                                  AppColors.electricBlue.withValues(alpha: 0.08),
-                              blurRadius: 40,
-                              spreadRadius: 4,
+                                  AppColors.electricBlue.withValues(alpha: 0.1),
+                              blurRadius: 48,
+                              spreadRadius: 6,
                             ),
                           ],
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
                           children: [
                             // Small trees flanking the text
                             CustomPaint(
-                              size: Size(24 * sf, 24 * sf),
+                              size: Size(28 * sf, 28 * sf),
                               painter: const _TreeIconPainter(
                                   mirrored: false),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: 10 * sf),
                             Flexible(child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   'Adventure Mode',
                                   style: AppFonts.fredoka(
-                                    fontSize: 18 * sf,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 22 * sf,
+                                    fontWeight: FontWeight.w700,
                                     color: Colors.white,
+                                    letterSpacing: 0.5,
                                   ),
                                 ),
+                                SizedBox(height: 2 * sf),
                                 Text(
                                   totalStars > 0
                                       ? '$totalStars / ${DolchWords.totalLevels * 3} stars collected'
                                       : 'Begin your word journey',
                                   style: AppFonts.nunito(
-                                    fontSize: 10 * sf,
+                                    fontSize: 12 * sf,
                                     color: AppColors.emerald
-                                        .withValues(alpha: 0.8),
-                                    fontWeight: FontWeight.w500,
+                                        .withValues(alpha: 0.9),
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
                             )),
-                            const SizedBox(width: 8),
+                            SizedBox(width: 10 * sf),
                             CustomPaint(
-                              size: Size(24 * sf, 24 * sf),
+                              size: Size(28 * sf, 28 * sf),
                               painter: const _TreeIconPainter(
                                   mirrored: true),
                             ),
@@ -817,26 +819,26 @@ class _HomeScreenState extends State<HomeScreen>
       onTap: _launchReviewMode,
       child: Container(
         padding: EdgeInsets.symmetric(
-            horizontal: 16 * sf, vertical: 8 * sf),
+            horizontal: 16 * sf, vertical: 10 * sf),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppColors.violet.withValues(alpha: 0.18),
-              AppColors.magenta.withValues(alpha: 0.12),
+              AppColors.violet.withValues(alpha: 0.22),
+              AppColors.magenta.withValues(alpha: 0.15),
             ],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: AppColors.violet.withValues(alpha: 0.5),
+            color: AppColors.violet.withValues(alpha: 0.6),
             width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.violet.withValues(alpha: 0.12),
-              blurRadius: 16,
-              spreadRadius: 1,
+              color: AppColors.violet.withValues(alpha: 0.15),
+              blurRadius: 20,
+              spreadRadius: 2,
             ),
           ],
         ),
@@ -845,13 +847,13 @@ class _HomeScreenState extends State<HomeScreen>
           children: [
             Text(
               '\u{1F4DA}',
-              style: TextStyle(fontSize: 18 * sf),
+              style: TextStyle(fontSize: 20 * sf),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8 * sf),
             Text(
               'Review ($overdueCount due)',
               style: AppFonts.fredoka(
-                fontSize: 16 * sf,
+                fontSize: 17 * sf,
                 fontWeight: FontWeight.w600,
                 color: Colors.white,
               ),
@@ -860,6 +862,15 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     )
+        .animate(
+          onPlay: (c) => c.repeat(reverse: true),
+        )
+        .scaleXY(
+          begin: 1.0,
+          end: 1.04,
+          duration: 1200.ms,
+          curve: Curves.easeInOut,
+        )
         .animate()
         .fadeIn(delay: 600.ms, duration: 500.ms)
         .slideY(
