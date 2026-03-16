@@ -684,18 +684,25 @@ class SimulationEngine {
   }
 
   /// Flood-fill connected metal and electrify neighbors.
+  /// Conducts through all connected metal cells (up to 100).
   void conductMetal(int startX, int startY) {
     final visited = <int>{};
     final queue = <int>[startY * gridW + startX];
     int sparks = 0;
-    while (queue.isNotEmpty && sparks < 30) {
+    int metalCount = 0;
+    while (queue.isNotEmpty && sparks < 60) {
       final curIdx = queue.removeLast();
       if (visited.contains(curIdx)) continue;
       visited.add(curIdx);
       if (grid[curIdx] != El.metal) continue;
       life[curIdx] = 200;
+      metalCount++;
       final cx = curIdx % gridW;
       final cy = curIdx ~/ gridW;
+      // Spark flash every 5th metal cell for visible chain effect
+      if (metalCount % 5 == 0) {
+        queueReactionFlash(cx, cy, 255, 255, 150, 2);
+      }
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -734,7 +741,7 @@ class SimulationEngine {
         }
       }
     }
-    lightningFlashFrames = 3;
+    lightningFlashFrames = metalCount > 10 ? 6 : 3;
   }
 
   // ── AI Sensing API ─────────────────────────────────────────────────────
