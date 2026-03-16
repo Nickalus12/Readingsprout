@@ -180,9 +180,9 @@ class _TierOptionCard extends StatelessWidget {
       case WordTier.explorer:
         return null;
       case WordTier.adventurer:
-        return 'Complete Explorer first';
+        return 'Finish Explorer to unlock!';
       case WordTier.champion:
-        return 'Complete Adventurer first';
+        return 'Finish Adventurer to unlock!';
     }
   }
 
@@ -224,17 +224,25 @@ class _TierOptionCard extends StatelessWidget {
               children: [
                 // Tier icon
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: accentColor.withValues(alpha: unlocked ? 0.12 : 0.05),
                     borderRadius: BorderRadius.circular(12),
+                    boxShadow: unlocked
+                        ? [
+                            BoxShadow(
+                              color: accentColor.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Icon(
-                    _tierIcon,
+                    unlocked ? _tierIcon : Icons.lock_outline_rounded,
                     color: unlocked
                         ? accentColor
-                        : AppColors.secondaryText.withValues(alpha: 0.4),
+                        : AppColors.secondaryText.withValues(alpha: 0.35),
                     size: 22,
                   ),
                 ),
@@ -319,15 +327,26 @@ class _TierOptionCard extends StatelessWidget {
                   ),
                 ),
 
-                // Right side: play button or lock
+                // Right side: play button (lock icon now in left icon area)
                 if (unlocked)
                   Container(
+                    constraints: const BoxConstraints(minHeight: 42),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 9,
+                      horizontal: 20,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.15),
+                      gradient: isSuggested && !isComplete
+                          ? LinearGradient(
+                              colors: [
+                                accentColor.withValues(alpha: 0.2),
+                                accentColor.withValues(alpha: 0.12),
+                              ],
+                            )
+                          : null,
+                      color: isSuggested && !isComplete
+                          ? null
+                          : accentColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
                         color: accentColor.withValues(alpha: 0.35),
@@ -335,8 +354,9 @@ class _TierOptionCard extends StatelessWidget {
                       boxShadow: [
                         if (isSuggested && !isComplete)
                           BoxShadow(
-                            color: accentColor.withValues(alpha: 0.15),
-                            blurRadius: 10,
+                            color: accentColor.withValues(alpha: 0.18),
+                            blurRadius: 12,
+                            spreadRadius: 1,
                           ),
                       ],
                     ),
@@ -347,7 +367,7 @@ class _TierOptionCard extends StatelessWidget {
                           isComplete
                               ? Icons.replay_rounded
                               : Icons.play_arrow_rounded,
-                          size: 16,
+                          size: 18,
                           color: accentColor,
                         ),
                         const SizedBox(width: 4),
@@ -361,12 +381,6 @@ class _TierOptionCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  )
-                else
-                  Icon(
-                    Icons.lock_rounded,
-                    size: 20,
-                    color: AppColors.secondaryText.withValues(alpha: 0.35),
                   ),
               ],
             ),
