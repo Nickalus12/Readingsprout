@@ -1216,14 +1216,15 @@ class FacePainter extends CustomPainter {
     canvas.drawPath(facePath, gradientPaint);
 
     // ── Subsurface scattering simulation (Dart fallback) ──
+    // Blood flow under thin skin areas — key to making skin feel alive
     canvas.save();
     canvas.clipPath(facePath);
-    // Warm glow at cheeks (blood flow under thin skin)
+    // Warm glow at cheeks (visible blood flow under thin child skin)
     for (final cheekX in [w * 0.22, w * 0.78]) {
       final cheekSSS = Rect.fromCenter(
         center: Offset(cheekX, h * 0.55),
-        width: w * 0.28,
-        height: h * 0.22,
+        width: w * 0.32,
+        height: h * 0.26,
       );
       canvas.drawOval(
         cheekSSS,
@@ -1231,18 +1232,21 @@ class FacePainter extends CustomPainter {
           ..blendMode = BlendMode.overlay
           ..shader = RadialGradient(
             colors: [
-              (Color.lerp(skinColor, const Color(0xFFFF8080), 0.35) ?? skinColor)
-                  .withValues(alpha: 0.18),
+              (Color.lerp(skinColor, const Color(0xFFFF9080), 0.40) ?? skinColor)
+                  .withValues(alpha: 0.22),
+              (Color.lerp(skinColor, const Color(0xFFFF8080), 0.25) ?? skinColor)
+                  .withValues(alpha: 0.08),
               Colors.transparent,
             ],
+            stops: const [0.0, 0.55, 1.0],
           ).createShader(cheekSSS),
       );
     }
-    // Warm glow at nose tip (SSS)
+    // Warm glow at nose tip (SSS — thinnest skin on face)
     final noseTipSSS = Rect.fromCenter(
       center: Offset(w * 0.50, h * 0.58),
-      width: w * 0.14,
-      height: h * 0.10,
+      width: w * 0.16,
+      height: h * 0.12,
     );
     canvas.drawOval(
       noseTipSSS,
@@ -1250,11 +1254,29 @@ class FacePainter extends CustomPainter {
         ..blendMode = BlendMode.overlay
         ..shader = RadialGradient(
           colors: [
-            (Color.lerp(skinColor, const Color(0xFFFF9090), 0.30) ?? skinColor)
-                .withValues(alpha: 0.15),
+            (Color.lerp(skinColor, const Color(0xFFFF9090), 0.35) ?? skinColor)
+                .withValues(alpha: 0.18),
             Colors.transparent,
           ],
         ).createShader(noseTipSSS),
+    );
+    // Warm glow at forehead center (thin skin over bone)
+    final foreheadSSS = Rect.fromCenter(
+      center: Offset(w * 0.50, h * 0.18),
+      width: w * 0.35,
+      height: h * 0.16,
+    );
+    canvas.drawOval(
+      foreheadSSS,
+      Paint()
+        ..blendMode = BlendMode.overlay
+        ..shader = RadialGradient(
+          colors: [
+            (Color.lerp(skinColor, const Color(0xFFFFC8A0), 0.20) ?? skinColor)
+                .withValues(alpha: 0.10),
+            Colors.transparent,
+          ],
+        ).createShader(foreheadSSS),
     );
     // ── Temple shadows ──
     for (final templeX in [w * 0.08, w * 0.92]) {
