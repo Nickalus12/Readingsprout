@@ -1413,6 +1413,16 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   void simMud(int x, int y, int idx) {
+    // Mud dries out near fire or lava, becoming dirt
+    if (rng.nextInt(20) == 0 && (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava))) {
+      grid[idx] = El.dirt;
+      life[idx] = 0;
+      markProcessed(idx);
+      // Steam wisps from drying mud
+      queueReactionFlash(x, y, 180, 180, 200, 2);
+      return;
+    }
+
     // Mud is a thick, slow-flowing liquid — falls every other frame
     if (frameCount.isOdd) return;
 
