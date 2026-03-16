@@ -1074,14 +1074,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   ),
                 ),
 
-                // ── Champion perfect streak badge ─────────
+                // ── Champion perfect streak badge (centered below header) ──
                 if (_isChampion && _perfectStreak > 0 && !_levelComplete)
                   Positioned(
-                    top: MediaQuery.of(context).padding.top + 8,
-                    right: 8,
-                    child: GameStreakBadge(
-                      perfectStreak: _perfectStreak,
-                      streakPopController: _streakPopController,
+                    top: MediaQuery.of(context).padding.top + 52,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: GameStreakBadge(
+                        perfectStreak: _perfectStreak,
+                        streakPopController: _streakPopController,
+                      ),
                     ),
                   ),
 
