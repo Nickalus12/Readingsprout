@@ -3031,6 +3031,15 @@ class _ElementLabGameState extends State<ElementLabGame>
       return;
     }
 
+    // Step up 2 cells (climb taller obstacles)
+    final uy2 = y - g * 2;
+    if (_inBounds(nx, uy2) && _grid[uy2 * _gridW + nx] == El.empty &&
+        _inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
+      _velX[idx] = moveDir;
+      _swap(idx, uy2 * _gridW + nx);
+      return;
+    }
+
     // Wall climb straight up
     if (_inBounds(x, uy) && _grid[uy * _gridW + x] == El.empty) {
       if (!_inBounds(nx, y) || _grid[y * _gridW + nx] != El.empty) {
