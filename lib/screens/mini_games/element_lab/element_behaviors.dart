@@ -375,6 +375,8 @@ extension ElementBehaviors on SimulationEngine {
           grid[idx] = El.empty;
           life[idx] = 0;
           markProcessed(ni);
+          // Sizzle flash for fire+water
+          queueReactionFlash(nx, ny, 200, 200, 240, 3);
           return;
         }
         if ((neighbor == El.plant || neighbor == El.seed) && rng.nextInt(2) == 0) {
@@ -898,6 +900,8 @@ extension ElementBehaviors on SimulationEngine {
           grid[ni] = El.water;
           life[ni] = 0;
           markProcessed(ni);
+          // Ice cracking flash
+          queueReactionFlash(nx, ny, 180, 220, 255, 4);
           return;
         }
         if ((neighbor == El.plant || neighbor == El.seed ||
@@ -1073,6 +1077,8 @@ extension ElementBehaviors on SimulationEngine {
       if (velY[idx] < 3 || rng.nextInt(5) == 0) {
         life[idx] = 1;
         velY[idx] = 0;
+        // Wood ignition flash
+        queueReactionFlash(x, y, 255, 150, 30, 3);
       }
     }
   }
