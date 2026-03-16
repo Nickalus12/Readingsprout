@@ -1310,8 +1310,47 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   void simMud(int x, int y, int idx) {
+    // Mud is a thick, slow-flowing liquid — falls every other frame
     if (frameCount.isOdd) return;
-    fallGranular(x, y, idx, El.mud);
+
+    final by = y + gravityDir;
+    // Fall straight down
+    if (inBounds(x, by) && grid[by * gridW + x] == El.empty) {
+      swap(idx, by * gridW + x);
+      return;
+    }
+    // Sink through water (heavier)
+    if (inBounds(x, by) && grid[by * gridW + x] == El.water) {
+      final waterMass = life[by * gridW + x];
+      grid[idx] = El.water;
+      life[idx] = waterMass < 20 ? 100 : waterMass;
+      grid[by * gridW + x] = El.mud;
+      markProcessed(idx);
+      markProcessed(by * gridW + x);
+      return;
+    }
+    // Diagonal fall
+    final dl = rng.nextBool();
+    final x1 = dl ? x - 1 : x + 1;
+    final x2 = dl ? x + 1 : x - 1;
+    if (inBounds(x1, by) && grid[by * gridW + x1] == El.empty) {
+      swap(idx, by * gridW + x1);
+      return;
+    }
+    if (inBounds(x2, by) && grid[by * gridW + x2] == El.empty) {
+      swap(idx, by * gridW + x2);
+      return;
+    }
+    // Slow sideways spread (viscous flow — every 4th frame)
+    if (frameCount % 4 == 0) {
+      if (inBounds(x1, y) && grid[y * gridW + x1] == El.empty) {
+        swap(idx, y * gridW + x1);
+        return;
+      }
+      if (inBounds(x2, y) && grid[y * gridW + x2] == El.empty) {
+        swap(idx, y * gridW + x2);
+      }
+    }
   }
 
   void simSteam(int x, int y, int idx) {
