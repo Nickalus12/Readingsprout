@@ -1,4 +1,4 @@
-/// Barrel export for game screen components.
+// Barrel export for game screen components.
 export 'game_screen.dart';
 export 'game_board.dart';
 export 'game_keyboard.dart';
