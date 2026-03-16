@@ -507,10 +507,15 @@ class PixelRenderer {
       case El.steam:
         final steamLife = life[idx];
         _inlineA = (180 - steamLife * 2).clamp(60, 180);
-        final wisp = (frameCount + idx * 5) % 8 < 2 ? 20 : 0;
-        _inlineR = (220 + variation + wisp).clamp(200, 255);
-        _inlineG = (220 + variation + wisp).clamp(200, 255);
-        _inlineB = (240 + wisp).clamp(230, 255);
+        // Multi-wave wisp for billowing steam effect
+        final wisp1 = (frameCount + idx * 5) % 8 < 2 ? 18 : 0;
+        final wisp2 = (frameCount * 2 + idx * 11) % 13 < 3 ? 12 : 0;
+        final steamWisp = wisp1 + wisp2;
+        // Fresh steam is brighter, old steam fades to gray
+        final steamBase = steamLife < 30 ? 225 : 210;
+        _inlineR = (steamBase + variation + steamWisp).clamp(200, 255);
+        _inlineG = (steamBase + variation + steamWisp).clamp(200, 255);
+        _inlineB = (240 + steamWisp ~/ 2).clamp(230, 255);
 
       case El.water:
         if (life[idx] >= 200) {
@@ -743,10 +748,13 @@ class PixelRenderer {
         }
 
       case El.acid:
-        final bubble = (frameCount + idx) % 12 < 3 ? 40 : 0;
-        _inlineR = (30 + variation + bubble).clamp(0, 100);
-        _inlineG = (255 + variation).clamp(200, 255);
-        _inlineB = (30 + variation).clamp(0, 80);
+        // Acid with multi-frequency bubbling and toxic glow
+        final acidBubble1 = (frameCount + idx) % 12 < 3 ? 35 : 0;
+        final acidBubble2 = (frameCount * 3 + idx * 7) % 17 < 3 ? 20 : 0;
+        final acidGlow = acidBubble1 + acidBubble2;
+        _inlineR = (25 + variation + acidGlow ~/ 2).clamp(0, 100);
+        _inlineG = (245 + variation + acidGlow ~/ 3).clamp(200, 255);
+        _inlineB = (25 + variation + acidGlow ~/ 4).clamp(0, 80);
         _inlineA = 255;
 
       case El.glass:
@@ -850,11 +858,17 @@ class PixelRenderer {
         }
 
       case El.smoke:
-        final fade = (60 - life[idx]).clamp(0, 60);
+        final smokeLife = life[idx];
+        final fade = (60 - smokeLife).clamp(0, 60);
+        // Wispy smoke animation - brightness varies with time
+        final smokeWisp = ((frameCount + idx * 7) % 12 < 4) ? 15 : 0;
+        final smokeWave = ((frameCount * 2 + idx * 3) % 18 < 5) ? 8 : 0;
         _inlineA = (fade * 3 + 60).clamp(60, 200);
-        _inlineR = (128 + variation).clamp(100, 160);
-        _inlineG = (128 + variation).clamp(100, 160);
-        _inlineB = (128 + variation).clamp(100, 160);
+        // Young smoke is lighter (hot), old smoke is darker
+        final smokeBase = smokeLife < 20 ? 150 : (smokeLife < 40 ? 135 : 115);
+        _inlineR = (smokeBase + variation + smokeWisp + smokeWave).clamp(90, 180);
+        _inlineG = (smokeBase + variation + smokeWisp).clamp(90, 175);
+        _inlineB = (smokeBase + variation + smokeWave).clamp(95, 180);
 
       case El.bubble:
         final bright = (frameCount + idx) % 8 < 3 ? 30 : 0;
