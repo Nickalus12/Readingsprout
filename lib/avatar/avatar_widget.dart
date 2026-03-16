@@ -556,18 +556,19 @@ class _AvatarWidgetState extends State<AvatarWidget>
 
   // ── Bone/transform hierarchy helpers ─────────────────────────────
 
-  /// Eyebrow vertical offset based on expression.
-  /// Surprised/excited: brows UP high, thinking: brows DOWN and furrowed.
-  /// Exaggerated for kids — they need to clearly see the avatar react.
+  /// Eyebrow vertical offset based on expression, lerped by intensity
+  /// for smooth transitions instead of snapping.
   double _browOffsetY(double size) {
     final expr = widget.controller?.expression ?? AvatarExpression.neutral;
-    return switch (expr) {
+    final intensity = widget.controller?.expressionIntensity ?? 1.0;
+    final target = switch (expr) {
       AvatarExpression.surprised => -size * 0.04,
       AvatarExpression.excited => -size * 0.03,
       AvatarExpression.thinking => size * 0.018,
       AvatarExpression.happy => -size * 0.012,
       _ => 0.0,
     };
+    return target * intensity;
   }
 
   /// Jaw drop driven by mouth openness — pulls mouth and lower cheeks down.
