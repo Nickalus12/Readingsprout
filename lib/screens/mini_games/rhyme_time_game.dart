@@ -253,11 +253,12 @@ class _RhymeTimeGameState extends State<RhymeTimeGame>
 
     // Pick target word from this family
     final familyWords = List.of(family.words)..shuffle(_rng);
+    if (familyWords.isEmpty) return;
     _targetWord = familyWords.first;
 
     // Pick one correct answer (different from target)
     final correctWord = familyWords.length > 1
-        ? familyWords.firstWhere((w) => w != _targetWord)
+        ? familyWords.firstWhere((w) => w != _targetWord, orElse: () => familyWords.first)
         : familyWords.first;
 
     // Pick distractors from OTHER families

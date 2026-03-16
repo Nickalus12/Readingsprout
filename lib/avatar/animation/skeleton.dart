@@ -168,29 +168,29 @@ class AvatarSkeleton {
 
   // ── Quick accessors for important bones ─────────────────────────────
 
-  Bone get head => bones['head']!;
-  Bone get jaw => bones['jaw']!;
-  Bone get leftEye => bones['leftEye']!;
-  Bone get rightEye => bones['rightEye']!;
-  Bone get leftBrow => bones['leftBrow']!;
-  Bone get rightBrow => bones['rightBrow']!;
-  Bone get nose => bones['nose']!;
-  Bone get leftCheek => bones['leftCheek']!;
-  Bone get rightCheek => bones['rightCheek']!;
-  Bone get leftEar => bones['leftEar']!;
-  Bone get rightEar => bones['rightEar']!;
-  Bone get neck => bones['neck']!;
-  Bone get chest => bones['chest']!;
-  Bone get spine => bones['spine']!;
-  Bone get leftShoulder => bones['leftShoulder']!;
-  Bone get rightShoulder => bones['rightShoulder']!;
-  Bone get leftUpperArm => bones['leftUpperArm']!;
-  Bone get rightUpperArm => bones['rightUpperArm']!;
-  Bone get leftForearm => bones['leftForearm']!;
-  Bone get rightForearm => bones['rightForearm']!;
-  Bone get leftHand => bones['leftHand']!;
-  Bone get rightHand => bones['rightHand']!;
-  Bone get hairRoot => bones['hairRoot']!;
+  Bone get head { assert(bones.containsKey('head'), 'head bone not initialized'); return bones['head']!; }
+  Bone get jaw { assert(bones.containsKey('jaw'), 'jaw bone not initialized'); return bones['jaw']!; }
+  Bone get leftEye { assert(bones.containsKey('leftEye'), 'leftEye bone not initialized'); return bones['leftEye']!; }
+  Bone get rightEye { assert(bones.containsKey('rightEye'), 'rightEye bone not initialized'); return bones['rightEye']!; }
+  Bone get leftBrow { assert(bones.containsKey('leftBrow'), 'leftBrow bone not initialized'); return bones['leftBrow']!; }
+  Bone get rightBrow { assert(bones.containsKey('rightBrow'), 'rightBrow bone not initialized'); return bones['rightBrow']!; }
+  Bone get nose { assert(bones.containsKey('nose'), 'nose bone not initialized'); return bones['nose']!; }
+  Bone get leftCheek { assert(bones.containsKey('leftCheek'), 'leftCheek bone not initialized'); return bones['leftCheek']!; }
+  Bone get rightCheek { assert(bones.containsKey('rightCheek'), 'rightCheek bone not initialized'); return bones['rightCheek']!; }
+  Bone get leftEar { assert(bones.containsKey('leftEar'), 'leftEar bone not initialized'); return bones['leftEar']!; }
+  Bone get rightEar { assert(bones.containsKey('rightEar'), 'rightEar bone not initialized'); return bones['rightEar']!; }
+  Bone get neck { assert(bones.containsKey('neck'), 'neck bone not initialized'); return bones['neck']!; }
+  Bone get chest { assert(bones.containsKey('chest'), 'chest bone not initialized'); return bones['chest']!; }
+  Bone get spine { assert(bones.containsKey('spine'), 'spine bone not initialized'); return bones['spine']!; }
+  Bone get leftShoulder { assert(bones.containsKey('leftShoulder'), 'leftShoulder bone not initialized'); return bones['leftShoulder']!; }
+  Bone get rightShoulder { assert(bones.containsKey('rightShoulder'), 'rightShoulder bone not initialized'); return bones['rightShoulder']!; }
+  Bone get leftUpperArm { assert(bones.containsKey('leftUpperArm'), 'leftUpperArm bone not initialized'); return bones['leftUpperArm']!; }
+  Bone get rightUpperArm { assert(bones.containsKey('rightUpperArm'), 'rightUpperArm bone not initialized'); return bones['rightUpperArm']!; }
+  Bone get leftForearm { assert(bones.containsKey('leftForearm'), 'leftForearm bone not initialized'); return bones['leftForearm']!; }
+  Bone get rightForearm { assert(bones.containsKey('rightForearm'), 'rightForearm bone not initialized'); return bones['rightForearm']!; }
+  Bone get leftHand { assert(bones.containsKey('leftHand'), 'leftHand bone not initialized'); return bones['leftHand']!; }
+  Bone get rightHand { assert(bones.containsKey('rightHand'), 'rightHand bone not initialized'); return bones['rightHand']!; }
+  Bone get hairRoot { assert(bones.containsKey('hairRoot'), 'hairRoot bone not initialized'); return bones['hairRoot']!; }
 
   AvatarSkeleton() {
     _buildSkeleton();

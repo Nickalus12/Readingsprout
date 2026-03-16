@@ -100,7 +100,7 @@ class HighScoreService {
   bool isHighScore(String gameId, int score) {
     if (score <= 0) return false;
     final scores = getHighScores(gameId);
-    if (scores.length < _maxEntries) return true;
+    if (scores.isEmpty || scores.length < _maxEntries) return true;
     return score > scores.last.score;
   }
 }

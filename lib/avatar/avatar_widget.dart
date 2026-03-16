@@ -988,15 +988,15 @@ class FacePainter extends CustomPainter {
     // ── Face with warm-to-cool 3D gradient ──
     final faceRect = Rect.fromLTWH(0, 0, w, h);
     // Warm highlight on forehead, cool shadow on jaw
-    final warmHighlight = Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.15)!;
-    final coolShadow = Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.12)!;
+    final warmHighlight = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.15) ?? skinColor);
+    final coolShadow = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.12) ?? skinColor);
     final gradient = RadialGradient(
       center: const Alignment(-0.1, -0.35),
       radius: 0.95,
       colors: [
         warmHighlight,
         skinColor,
-        Color.lerp(skinColor, coolShadow, 0.4)!,
+        (Color.lerp(skinColor, coolShadow, 0.4) ?? skinColor),
         coolShadow,
       ],
       stops: const [0.0, 0.35, 0.7, 1.0],
@@ -1023,7 +1023,7 @@ class FacePainter extends CustomPainter {
           ..blendMode = BlendMode.overlay
           ..shader = RadialGradient(
             colors: [
-              Color.lerp(skinColor, const Color(0xFFFF8080), 0.35)!
+              (Color.lerp(skinColor, const Color(0xFFFF8080), 0.35) ?? skinColor)
                   .withValues(alpha: 0.18),
               Colors.transparent,
             ],
@@ -1042,7 +1042,7 @@ class FacePainter extends CustomPainter {
         ..blendMode = BlendMode.overlay
         ..shader = RadialGradient(
           colors: [
-            Color.lerp(skinColor, const Color(0xFFFF9090), 0.30)!
+            (Color.lerp(skinColor, const Color(0xFFFF9090), 0.30) ?? skinColor)
                 .withValues(alpha: 0.15),
             Colors.transparent,
           ],
@@ -1060,7 +1060,7 @@ class FacePainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [
-              Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.18)!
+              (Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.18) ?? skinColor)
                   .withValues(alpha: 0.12),
               Colors.transparent,
             ],
@@ -1115,7 +1115,7 @@ class FacePainter extends CustomPainter {
     final philtrumTop = h * 0.64;
     final philtrumBot = h * 0.74;
     final philtrumShadow = Paint()
-      ..color = Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.15)!
+      ..color = (Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.15) ?? skinColor)
           .withValues(alpha: 0.12)
       ..strokeWidth = w * 0.008
       ..strokeCap = StrokeCap.round
@@ -1134,7 +1134,7 @@ class FacePainter extends CustomPainter {
       Offset(philtrumX, philtrumTop + h * 0.01),
       Offset(philtrumX, philtrumBot - h * 0.01),
       Paint()
-        ..color = Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.12)!
+        ..color = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.12) ?? skinColor)
             .withValues(alpha: 0.10)
         ..strokeWidth = w * 0.008
         ..strokeCap = StrokeCap.round
@@ -1181,8 +1181,8 @@ class FacePainter extends CustomPainter {
       );
 
       // Ear base with gradient
-      final warmSide = Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.08)!;
-      final coolSide = Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.08)!;
+      final warmSide = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.08) ?? skinColor);
+      final coolSide = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.08) ?? skinColor);
       final earGradient = RadialGradient(
         center: Alignment(isLeft ? 0.3 : -0.3, -0.2),
         radius: 0.8,
@@ -1203,7 +1203,7 @@ class FacePainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [
-              Color.lerp(skinColor, const Color(0xFFFF9090), 0.25)!
+              (Color.lerp(skinColor, const Color(0xFFFF9090), 0.25) ?? skinColor)
                   .withValues(alpha: 0.45),
               Colors.transparent,
             ],
@@ -1212,7 +1212,7 @@ class FacePainter extends CustomPainter {
 
       // ── Inner ear fold/concha detail ──
       final foldPaint = Paint()
-        ..color = Color.lerp(skinColor, const Color(0xFF8A6A5E), 0.25)!
+        ..color = (Color.lerp(skinColor, const Color(0xFF8A6A5E), 0.25) ?? skinColor)
             .withValues(alpha: 0.22)
         ..style = PaintingStyle.stroke
         ..strokeWidth = earW * 0.06
@@ -1233,7 +1233,7 @@ class FacePainter extends CustomPainter {
         Offset(tragusX, earY + earH * 0.02),
         earW * 0.06,
         Paint()
-          ..color = Color.lerp(skinColor, const Color(0xFF8A6A5E), 0.12)!
+          ..color = (Color.lerp(skinColor, const Color(0xFF8A6A5E), 0.12) ?? skinColor)
               .withValues(alpha: 0.18),
       );
     }
@@ -1495,10 +1495,10 @@ class EyesPainter extends CustomPainter {
           center: Alignment.center,
           radius: 1.0,
           colors: [
-            Color.lerp(eyeColor, Colors.white, 0.45)!,
-            Color.lerp(eyeColor, Colors.white, 0.15)!,
+            (Color.lerp(eyeColor, Colors.white, 0.45) ?? eyeColor),
+            (Color.lerp(eyeColor, Colors.white, 0.15) ?? eyeColor),
             eyeColor,
-            Color.lerp(eyeColor, Colors.black, 0.25)!,
+            (Color.lerp(eyeColor, Colors.black, 0.25) ?? eyeColor),
           ],
           stops: const [0.0, 0.25, 0.6, 1.0],
         ).createShader(irisRect),
@@ -1517,11 +1517,11 @@ class EyesPainter extends CustomPainter {
       final isLight = fiberRng.nextDouble() > 0.45;
       fiberColors.add(
         isLight
-            ? Color.lerp(eyeColor, Colors.white,
-                    0.30 + fiberRng.nextDouble() * 0.15)!
+            ? (Color.lerp(eyeColor, Colors.white,
+                    0.30 + fiberRng.nextDouble() * 0.15) ?? eyeColor)
                 .withValues(alpha: 0.18)
-            : Color.lerp(eyeColor, Colors.black,
-                    0.15 + fiberRng.nextDouble() * 0.10)!
+            : (Color.lerp(eyeColor, Colors.black,
+                    0.15 + fiberRng.nextDouble() * 0.10) ?? eyeColor)
                 .withValues(alpha: 0.14),
       );
       fiberStops.add(t);
@@ -1552,8 +1552,8 @@ class EyesPainter extends CustomPainter {
       final innerR2 = irisR * (0.30 + fiberRng.nextDouble() * 0.08);
       final outerR2 = irisR * (0.78 + fiberRng.nextDouble() * 0.18);
       linePaint.color = fiberRng.nextDouble() > 0.5
-          ? Color.lerp(eyeColor, Colors.white, 0.28)!.withValues(alpha: 0.16)
-          : Color.lerp(eyeColor, Colors.black, 0.18)!.withValues(alpha: 0.12);
+          ? (Color.lerp(eyeColor, Colors.white, 0.28) ?? eyeColor).withValues(alpha: 0.16)
+          : (Color.lerp(eyeColor, Colors.black, 0.18) ?? eyeColor).withValues(alpha: 0.12);
       canvas.drawLine(
         Offset(irisCenter.dx + innerR2 * cos(angle),
             irisCenter.dy + innerR2 * sin(angle)),
@@ -1574,7 +1574,7 @@ class EyesPainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           colors: [
-            Color.lerp(eyeColor, Colors.white, 0.50)!.withValues(alpha: 0.25),
+            (Color.lerp(eyeColor, Colors.white, 0.50) ?? eyeColor).withValues(alpha: 0.25),
             Colors.transparent,
           ],
         ).createShader(causticRect),
@@ -1592,7 +1592,7 @@ class EyesPainter extends CustomPainter {
         ..shader = RadialGradient(
           colors: [
             Colors.transparent,
-            Color.lerp(eyeColor, const Color(0xFF0A0A1A), 0.55)!
+            (Color.lerp(eyeColor, const Color(0xFF0A0A1A), 0.55) ?? eyeColor)
                 .withValues(alpha: 0.65),
           ],
           stops: const [0.85, 1.0],
@@ -1667,7 +1667,7 @@ class EyesPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = r * 0.04
         ..strokeCap = StrokeCap.round
-        ..color = Color.lerp(skinColor, const Color(0xFF8878A0), 0.18)!
+        ..color = (Color.lerp(skinColor, const Color(0xFF8878A0), 0.18) ?? skinColor)
             .withValues(alpha: 0.30),
     );
   }
@@ -1714,9 +1714,9 @@ class EyesPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.05)!,
+            (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.05) ?? skinColor),
             skinColor,
-            Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.10)!,
+            (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.10) ?? skinColor),
           ],
         ).createShader(lidRect),
     );
@@ -1726,7 +1726,7 @@ class EyesPainter extends CustomPainter {
       Offset(center.dx - r * 0.9, lidBottom),
       Offset(center.dx + r * 0.9, lidBottom),
       Paint()
-        ..color = Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.22)!
+        ..color = (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.22) ?? skinColor)
             .withValues(alpha: 0.45)
         ..strokeWidth = r * 0.14
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
@@ -1783,9 +1783,9 @@ class EyesPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.05)!,
+            (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.05) ?? skinColor),
             skinColor,
-            Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.06)!,
+            (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.06) ?? skinColor),
           ],
         ).createShader(lidRect),
     );
@@ -1795,7 +1795,7 @@ class EyesPainter extends CustomPainter {
         Offset(center.dx - r * 1.0, lidBottom),
         Offset(center.dx + r * 1.0, lidBottom),
         Paint()
-          ..color = Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.18)!
+          ..color = (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.18) ?? skinColor)
               .withValues(alpha: 0.35)
           ..strokeWidth = r * 0.10
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5)
@@ -2040,11 +2040,11 @@ class EyesPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..shader = LinearGradient(
             colors: [
-              Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.12)!
+              (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.12) ?? skinColor)
                   .withValues(alpha: 0.45),
-              Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.18)!
+              (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.18) ?? skinColor)
                   .withValues(alpha: 0.65),
-              Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.12)!
+              (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.12) ?? skinColor)
                   .withValues(alpha: 0.45),
             ],
           ).createShader(droopRect),
@@ -2072,9 +2072,9 @@ class EyesPainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           colors: [
-            Color.lerp(AppColors.starGold, Colors.white, 0.40)!,
+            (Color.lerp(AppColors.starGold, Colors.white, 0.40) ?? AppColors.starGold),
             AppColors.starGold,
-            Color.lerp(AppColors.starGold, const Color(0xFFCC7700), 0.35)!,
+            (Color.lerp(AppColors.starGold, const Color(0xFFCC7700), 0.35) ?? AppColors.starGold),
           ],
           stops: const [0.0, 0.45, 1.0],
         ).createShader(Rect.fromCircle(center: center, radius: r)),
@@ -2107,10 +2107,10 @@ class EyesPainter extends CustomPainter {
         ..shader = RadialGradient(
           center: const Alignment(0.0, -0.3),
           colors: [
-            Color.lerp(const Color(0xFFFF4D6A), Colors.white, 0.30)!,
+            (Color.lerp(const Color(0xFFFF4D6A), Colors.white, 0.30) ?? const Color(0xFFFF4D6A)),
             const Color(0xFFFF4D6A),
-            Color.lerp(
-                const Color(0xFFFF4D6A), const Color(0xFF9B1030), 0.40)!,
+            (Color.lerp(
+                const Color(0xFFFF4D6A), const Color(0xFF9B1030), 0.40) ?? const Color(0xFFFF4D6A)),
           ],
           stops: const [0.0, 0.5, 1.0],
         ).createShader(Rect.fromCircle(center: center, radius: r)),
@@ -2207,9 +2207,9 @@ class MouthPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Color.lerp(base, const Color(0xFF4A2040), 0.2)!, // cool dark top lip
+          (Color.lerp(base, const Color(0xFF4A2040), 0.2) ?? base), // cool dark top lip
           base,
-          Color.lerp(base, const Color(0xFFFFF0E0), 0.12)!, // warm bottom lip
+          (Color.lerp(base, const Color(0xFFFFF0E0), 0.12) ?? base), // warm bottom lip
         ],
         stops: const [0.0, 0.45, 1.0],
       ).createShader(rect);
@@ -2226,7 +2226,7 @@ class MouthPainter extends CustomPainter {
     canvas.drawPath(
       bowPath,
       Paint()
-        ..color = Color.lerp(_effectiveLipFill, const Color(0xFF4A2040), 0.25)!
+        ..color = (Color.lerp(_effectiveLipFill, const Color(0xFF4A2040), 0.25) ?? _effectiveLipFill)
             .withValues(alpha: 0.35)
         ..style = PaintingStyle.stroke
         ..strokeWidth = mouthW * 0.015
@@ -2259,7 +2259,7 @@ class MouthPainter extends CustomPainter {
       Offset(centerX - lineW * 0.35, lineY),
       Offset(centerX + lineW * 0.35, lineY),
       Paint()
-        ..color = Color.lerp(_effectiveLipFill, const Color(0xFF2D1A2E), 0.35)!
+        ..color = (Color.lerp(_effectiveLipFill, const Color(0xFF2D1A2E), 0.35) ?? _effectiveLipFill)
             .withValues(alpha: 0.25)
         ..strokeWidth = lineW * 0.012
         ..strokeCap = StrokeCap.round,
@@ -2509,9 +2509,9 @@ class MouthPainter extends CustomPainter {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color.lerp(col, const Color(0xFF4A2040), 0.18)!,
+                (Color.lerp(col, const Color(0xFF4A2040), 0.18) ?? col),
                 col,
-                Color.lerp(col, const Color(0xFFFFF0E0), 0.1)!,
+                (Color.lerp(col, const Color(0xFFFFF0E0), 0.1) ?? col),
               ],
             ).createShader(rect),
         );
@@ -2794,11 +2794,11 @@ class NosePainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final nosePaint = Paint()
-      ..color = Color.lerp(skinColor, Colors.black, 0.12)!;
+      ..color = (Color.lerp(skinColor, Colors.black, 0.12) ?? skinColor);
     final highlightPaint = Paint()
-      ..color = Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.22)!;
+      ..color = (Color.lerp(skinColor, const Color(0xFFFFF8E0), 0.22) ?? skinColor);
     final shadowPaint = Paint()
-      ..color = Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.22)!
+      ..color = (Color.lerp(skinColor, const Color(0xFF4A3A6E), 0.22) ?? skinColor)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
 
     // Breathing: nostrils flare more visibly
@@ -2894,7 +2894,7 @@ class NosePainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           colors: [
-            Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.15)!
+            (Color.lerp(skinColor, const Color(0xFF5A4A7E), 0.15) ?? skinColor)
                 .withValues(alpha: 0.08),
             Colors.transparent,
           ],
@@ -2915,7 +2915,7 @@ class NosePainter extends CustomPainter {
         ..blendMode = BlendMode.overlay
         ..shader = RadialGradient(
           colors: [
-            Color.lerp(skinColor, const Color(0xFFFF8888), 0.30)!
+            (Color.lerp(skinColor, const Color(0xFFFF8888), 0.30) ?? skinColor)
                 .withValues(alpha: 0.15),
             Colors.transparent,
           ],
@@ -3003,7 +3003,7 @@ class CheekPainter extends CustomPainter {
               center.translate(0, h * 0.08),
               w * 0.012,
               Paint()
-                ..color = Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.15)!
+                ..color = (Color.lerp(skinColor, const Color(0xFF6A5A8E), 0.15) ?? skinColor)
                     .withValues(alpha: 0.18)
                 ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
             );
@@ -3021,7 +3021,7 @@ class CheekPainter extends CustomPainter {
             canvas.drawCircle(
               center.translate(dx, dy),
               radius,
-              Paint()..color = Color.lerp(skinColor, Colors.brown, darkness)!,
+              Paint()..color = (Color.lerp(skinColor, Colors.brown, darkness) ?? skinColor),
             );
           }
         }
@@ -3300,7 +3300,7 @@ class EyebrowPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
-    final browColor = Color.lerp(color, const Color(0xFF1A1A2E), 0.3)!;
+    final browColor = (Color.lerp(color, const Color(0xFF1A1A2E), 0.3) ?? color);
 
     final leftStart = Offset(w * 0.10, h * 0.50);
     final leftEnd = Offset(w * 0.40, h * 0.50);
@@ -3311,9 +3311,9 @@ class EyebrowPainter extends CustomPainter {
       return Paint()
         ..shader = LinearGradient(
           colors: [
-            Color.lerp(browColor, const Color(0xFF4A3A6E), 0.1)!, // cool edge
+            (Color.lerp(browColor, const Color(0xFF4A3A6E), 0.1) ?? browColor), // cool edge
             browColor, // center
-            Color.lerp(browColor, const Color(0xFF4A3A6E), 0.1)!, // cool edge
+            (Color.lerp(browColor, const Color(0xFF4A3A6E), 0.1) ?? browColor), // cool edge
           ],
           stops: const [0.0, 0.5, 1.0],
         ).createShader(bounds)
@@ -3490,7 +3490,7 @@ class FrecklesPainter extends CustomPainter {
         center.translate(dx, dy),
         radius,
         Paint()
-          ..color = Color.lerp(skinColor, Colors.brown, darkness)!
+          ..color = (Color.lerp(skinColor, Colors.brown, darkness) ?? skinColor)
               .withValues(alpha: alpha),
       );
     }

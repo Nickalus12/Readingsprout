@@ -899,7 +899,7 @@ class _PaintSplashGameState extends State<PaintSplashGame>
               final letter = _currentWord[i].toUpperCase();
               final isDone = i < _nextLetterIndex;
               final isNext = i == _nextLetterIndex;
-              final blobColor = isDone
+              final blobColor = isDone && _blobs.isNotEmpty
                   ? _blobs
                       .firstWhere(
                         (b) => b.isCorrect && b.correctIndex == i,
