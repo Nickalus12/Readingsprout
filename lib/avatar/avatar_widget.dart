@@ -966,13 +966,13 @@ class _AvatarWidgetState extends State<AvatarWidget>
                   ),
                 ),
 
-              // Glasses
+              // Glasses — matched to enlarged eye area
               if (config.glassesStyle > 0)
                 Positioned(
-                  left: headSize * 0.26,
-                  top: headSize * (_faceTop + _faceHeightFraction * 0.28),
+                  left: headSize * 0.24,
+                  top: headSize * (_faceTop + _faceHeightFraction * 0.26),
                   child: CustomPaint(
-                    size: Size(headSize * 0.48, headSize * 0.16),
+                    size: Size(headSize * 0.52, headSize * 0.18),
                     isComplex: true,
                     painter: GlassesPainter(
                       style: config.glassesStyle,
