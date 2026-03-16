@@ -714,7 +714,6 @@ class _LetterDropGameState extends State<LetterDropGame>
       )..scale(lb.body.mass),
     );
 
-    widget.audioService.playError();
     Haptics.wrong();
 
     _spawnBurst(

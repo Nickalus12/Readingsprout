@@ -584,7 +584,6 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
       ));
     }
 
-    widget.audioService.playError();
     Haptics.wrong();
 
     if (_hearts <= 0) {

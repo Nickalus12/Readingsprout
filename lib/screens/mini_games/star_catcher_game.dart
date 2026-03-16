@@ -249,7 +249,6 @@ class _StarCatcherGameState extends State<StarCatcherGame>
 
   void _endGame() {
     _gameTimer?.cancel();
-    widget.audioService.playError();
     setState(() => _gameOver = true);
     _awardMiniGameStickers();
   }
@@ -459,7 +458,6 @@ class _StarCatcherGameState extends State<StarCatcherGame>
     star.wobbleAmount = 12;
     star.wobbleTimer = 0.4;
     _combo = 0;
-    widget.audioService.playError();
     Haptics.wrong();
     if (mounted) setState(() {});
   }

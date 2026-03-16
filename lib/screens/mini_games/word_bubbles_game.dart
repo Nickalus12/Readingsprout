@@ -633,7 +633,6 @@ class _WordBubblesGameState extends State<WordBubblesGame>
       }
       setState(() {});
     } else {
-      widget.audioService.playError();
       Haptics.wrong();
       _sim.combo = 0;
       _sim.comboMultiplier = 1;

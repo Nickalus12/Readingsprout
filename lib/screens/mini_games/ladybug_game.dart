@@ -790,7 +790,7 @@ class _LadybugGameState extends State<LadybugGame>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _lives <= 0 ? 'Oh No!' : "Time's Up!",
+                _wordsCompleted > 0 ? 'Great Job!' : 'Nice Try!',
                 style: AppFonts.fredoka(
                   fontSize: 30,
                   fontWeight: FontWeight.w600,

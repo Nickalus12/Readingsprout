@@ -265,7 +265,6 @@ class _PaintSplashGameState extends State<PaintSplashGame>
 
   void _endGame() {
     _gameTimer?.cancel();
-    widget.audioService.playError();
     setState(() => _gameOver = true);
     _awardMiniGameStickers();
   }
@@ -455,7 +454,6 @@ class _PaintSplashGameState extends State<PaintSplashGame>
     blob.squishTimer = 0.3;
     _combo = 0;
     _madeErrorThisWord = true;
-    widget.audioService.playError();
     Haptics.wrong();
     if (mounted) setState(() {});
   }

@@ -953,13 +953,11 @@ class _FallingLettersGameState extends State<FallingLettersGame>
     _sim.flashColor = AppColors.error;
     _sim.flashOpacity = 0.3;
 
-    widget.audioService.playError();
     Haptics.wrong();
 
     if (_lives <= 0) {
       _gameOver = true;
       _awardMiniGameStickers();
-      widget.audioService.playError();
     }
     setState(() {});
   }

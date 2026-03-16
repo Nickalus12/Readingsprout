@@ -359,7 +359,6 @@ class _WordNinjaGameState extends State<WordNinjaGame>
       setState(() => _score += points);
     } else {
       Haptics.wrong();
-      widget.audioService.playError();
       _sim.combo = 0;
       _sim.shakeFrames = 8;
       _sim.flyingWords.removeAt(index);

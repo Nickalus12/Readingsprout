@@ -468,7 +468,6 @@ class _CatLetterTossGameState extends State<CatLetterTossGame>
       _sim.feedbackColor = AppColors.error;
       _sim.feedbackTimer = 1.0;
 
-      widget.audioService.playError();
       Haptics.wrong();
 
       if (_lives <= 0) {
