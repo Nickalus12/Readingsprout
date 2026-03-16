@@ -428,11 +428,13 @@ class _WordBubblesGameState extends State<WordBubblesGame>
     _initAmbientBubbles();
 
     _sim.onLifeLost = () {
-      if (mounted) setState(() {
-        _lives = _sim.lives;
-        _combo = _sim.combo;
-        _comboMultiplier = _sim.comboMultiplier;
-      });
+      if (mounted) {
+        setState(() {
+          _lives = _sim.lives;
+          _combo = _sim.combo;
+          _comboMultiplier = _sim.comboMultiplier;
+        });
+      }
     };
     _sim.onGameEnd = () {
       _endGame();

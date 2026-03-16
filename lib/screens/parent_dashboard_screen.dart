@@ -1982,7 +1982,7 @@ class _AccuracyTrendPainter extends CustomPainter {
       ..color = AppColors.border.withValues(alpha: 0.2)
       ..strokeWidth = 0.5;
     canvas.drawLine(
-      Offset(0, topPad),
+      const Offset(0, topPad),
       Offset(size.width, topPad),
       gridPaint,
     );
@@ -1994,7 +1994,7 @@ class _AccuracyTrendPainter extends CustomPainter {
 
     // Draw 100% and 50% labels
     for (final entry in [
-      MapEntry('100%', topPad),
+      const MapEntry('100%', topPad),
       MapEntry('50%', topPad + chartHeight / 2),
     ]) {
       final tp = TextPainter(
