@@ -78,7 +78,17 @@ class HearWordButton extends StatelessWidget {
           .animate(onPlay: (c) => c.repeat(reverse: true))
           .scaleXY(begin: 1.0, end: 1.04, duration: 600.ms, curve: Curves.easeInOut);
     }
-    return button;
+    // Gentle shimmer on idle to invite tapping
+    return button
+        .animate(
+          onPlay: (c) => c.repeat(),
+          delay: 2000.ms,
+        )
+        .shimmer(
+          duration: 1800.ms,
+          color: AppColors.electricBlue.withValues(alpha: 0.15),
+          delay: 3000.ms,
+        );
   }
 }
 
