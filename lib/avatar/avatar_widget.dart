@@ -2949,32 +2949,46 @@ class MouthPainter extends CustomPainter {
     }
   }
 
-  /// Excited mouth — big happy grin with teeth.
+  /// Excited mouth — big joyful grin with teeth, the celebratory expression.
   void _drawExcitedMouth(Canvas canvas, double w, double h) {
     final mouthPath = Path()
-      ..moveTo(w * 0.02, h * 0.15)
-      ..quadraticBezierTo(w * 0.5, h * 1.4, w * 0.98, h * 0.15)
+      ..moveTo(w * 0.0, h * 0.12)
+      ..quadraticBezierTo(w * 0.5, h * 1.45, w * 1.0, h * 0.12)
       ..close();
 
     canvas.drawPath(mouthPath, Paint()..color = const Color(0xFF2D1A2E));
 
+    // Teeth — wider row visible in big grin
     canvas.save();
     canvas.clipPath(mouthPath);
-    _drawIndividualTeeth(canvas, w * 0.15, h * 0.15, w * 0.7, h * 0.25, 6);
+    _drawIndividualTeeth(canvas, w * 0.12, h * 0.12, w * 0.76, h * 0.26, 6);
     canvas.restore();
 
+    // Thicker lip outline for excitement
     canvas.drawPath(mouthPath, _lipGradientPaint(Rect.fromLTWH(0, 0, w, h))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.05);
+      ..strokeWidth = w * 0.055);
+
+    // Upturned corner creases for extreme joy
+    for (final side in [-1.0, 1.0]) {
+      canvas.drawCircle(
+        Offset(w * (0.5 + side * 0.49), h * 0.16),
+        w * 0.022,
+        Paint()
+          ..color = const Color(0xFF4A3A6E).withValues(alpha: 0.15)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0),
+      );
+    }
   }
 
-  /// Happy mouth — warm gentle smile wider than default, slightly open.
+  /// Happy mouth — warm inviting smile with gentle teeth peek.
+  /// The most common expression kids will see — should feel friendly.
   void _drawHappyMouth(Canvas canvas, double w, double h) {
-    // Wider smile than neutral but not as extreme as excited
+    // Wider smile with upturned corners for warmth
     final mouthPath = Path()
-      ..moveTo(w * 0.05, h * 0.22)
-      ..quadraticBezierTo(w * 0.5, h * 1.15, w * 0.95, h * 0.22)
-      ..quadraticBezierTo(w * 0.5, h * 0.50, w * 0.05, h * 0.22)
+      ..moveTo(w * 0.03, h * 0.20)
+      ..quadraticBezierTo(w * 0.5, h * 1.18, w * 0.97, h * 0.20)
+      ..quadraticBezierTo(w * 0.5, h * 0.48, w * 0.03, h * 0.20)
       ..close();
 
     // Dark mouth interior
@@ -2983,16 +2997,27 @@ class MouthPainter extends CustomPainter {
     // Teeth peeking through the smile
     canvas.save();
     canvas.clipPath(mouthPath);
-    _drawIndividualTeeth(canvas, w * 0.18, h * 0.22, w * 0.64, h * 0.20, 5);
+    _drawIndividualTeeth(canvas, w * 0.18, h * 0.20, w * 0.64, h * 0.20, 5);
     canvas.restore();
 
-    // Lip gradient outline
+    // Lip gradient outline — slightly thicker for warmth
     canvas.drawPath(mouthPath, _lipGradientPaint(Rect.fromLTWH(0, 0, w, h))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.045);
+      ..strokeWidth = w * 0.05);
 
     // Cupid's bow
-    _drawCupidsBow(canvas, w * 0.5, h * 0.20, w * 0.65);
+    _drawCupidsBow(canvas, w * 0.5, h * 0.18, w * 0.65);
+
+    // Corner dimples — subtle warmth detail
+    for (final side in [-1.0, 1.0]) {
+      canvas.drawCircle(
+        Offset(w * (0.5 + side * 0.46), h * 0.24),
+        w * 0.018,
+        Paint()
+          ..color = const Color(0xFF4A3A6E).withValues(alpha: 0.12)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+      );
+    }
   }
 
   /// Thinking mouth — small pursed 'o'.
