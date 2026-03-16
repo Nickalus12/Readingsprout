@@ -95,7 +95,17 @@ class TierStarsDisplay extends StatelessWidget {
           size: starSize,
           color: color,
         ),
-      );
+      )
+          .animate(
+            onPlay: (c) => c.repeat(reverse: true),
+            delay: Duration(milliseconds: (color == AppColors.bronze ? 0 : color == AppColors.silver ? 600 : 1200)),
+          )
+          .scaleXY(
+            begin: 1.0,
+            end: 1.12,
+            duration: 1800.ms,
+            curve: Curves.easeInOut,
+          );
     }
 
     return Icon(

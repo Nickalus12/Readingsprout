@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../data/dolch_words.dart';
+import '../models/word.dart';
 import '../theme/app_theme.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
@@ -12,10 +14,12 @@ import '../services/stats_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/adaptive_music_service.dart';
 import '../services/review_service.dart';
+import '../services/player_settings_service.dart';
 import '../avatar/avatar_widget.dart';
 import '../widgets/floating_hearts_bg.dart';
 import '../widgets/streak_badge.dart';
 import 'level_select_screen.dart';
+import 'game_screen.dart';
 import 'alphabet_screen.dart';
 import 'mini_games_screen.dart';
 import 'parent_dashboard_screen.dart';
@@ -36,6 +40,7 @@ class HomeScreen extends StatefulWidget {
   final AdaptiveDifficultyService? adaptiveDifficultyService;
   final AdaptiveMusicService? musicService;
   final FirstTimeHintsService? hintsService;
+  final PlayerSettingsService? settingsService;
   final String playerName;
   final String profileId;
   final VoidCallback? onChangeName;
@@ -54,6 +59,7 @@ class HomeScreen extends StatefulWidget {
     this.adaptiveDifficultyService,
     this.musicService,
     this.hintsService,
+    this.settingsService,
     this.playerName = '',
     this.profileId = '',
     this.onChangeName,
@@ -117,6 +123,46 @@ class _HomeScreenState extends State<HomeScreen>
   void _onLogoTap() {
     widget.audioService.playWord('reading_sprout');
     _logoController.forward(from: 0);
+  }
+
+  String get _continueSubtitle {
+    final settings = widget.settingsService;
+    if (settings == null || !settings.hasContinue) return '';
+    final level = settings.lastPlayedLevel!;
+    final tier = settings.lastPlayedTier ?? 1;
+    const tierNames = {1: 'Explorer', 2: 'Adventurer', 3: 'Champion'};
+    return 'Level $level \u2022 ${tierNames[tier] ?? 'Explorer'}';
+  }
+
+  void _onContinue() {
+    final settings = widget.settingsService;
+    if (settings == null || !settings.hasContinue) return;
+    final level = settings.lastPlayedLevel!;
+    final tier = settings.lastPlayedTier ?? 1;
+    // Validate level is in valid range
+    if (level < 1 || level > DolchWords.totalLevels) return;
+
+    // Record this as last-played again (in case tier suggestion changed)
+    settings.setLastPlayed(level, tier);
+
+    Navigator.push(
+      context,
+      _smoothRoute(GameScreen(
+        level: level,
+        tier: tier,
+        progressService: widget.progressService,
+        audioService: widget.audioService,
+        profileService: widget.profileService,
+        statsService: widget.statsService,
+        streakService: widget.streakService,
+        personalityService: widget.personalityService,
+        reviewService: widget.reviewService,
+        adaptiveDifficultyService: widget.adaptiveDifficultyService,
+        musicService: widget.musicService,
+        playerName: widget.playerName,
+        profileId: widget.profileId,
+      )),
+    );
   }
 
   void _showMilestone(String message) {
@@ -310,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     const SizedBox(height: 12),
 
-                    // ── Hero: Player name (tappable letters) ──
+                    // ── Hero: Player name (letter-by-letter entrance) ──
                     if (hasName)
                       Semantics(
                         label: 'Player name: ${widget.playerName}',
@@ -323,18 +369,22 @@ class _HomeScreenState extends State<HomeScreen>
                                 letter: widget.playerName[i],
                                 index: i,
                                 audioService: widget.audioService,
-                              ),
+                              )
+                                  .animate()
+                                  .fadeIn(
+                                    delay: Duration(milliseconds: 300 + i * 60),
+                                    duration: 400.ms,
+                                  )
+                                  .slideY(
+                                    begin: 0.4,
+                                    end: 0,
+                                    delay: Duration(milliseconds: 300 + i * 60),
+                                    duration: 400.ms,
+                                    curve: Curves.easeOutBack,
+                                  ),
                           ],
                         ),
-                      )
-                          .animate()
-                          .fadeIn(duration: 800.ms)
-                          .slideY(
-                            begin: 0.2,
-                            end: 0,
-                            curve: Curves.easeOutCubic,
-                            duration: 800.ms,
-                          ),
+                      ),
 
                     const SizedBox(height: 6),
 
@@ -370,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     const SizedBox(height: 20),
 
-                    // ── Stat badges ───────────────────────────
+                    // ── Stat badges (staggered entrance) ───────────────────────────
                     if (totalWords > 0 || widget.streakService.hasStreak)
                       Wrap(
                         alignment: WrapAlignment.center,
@@ -382,10 +432,13 @@ class _HomeScreenState extends State<HomeScreen>
                               icon: Icons.star_rounded,
                               iconColor: AppColors.starGold,
                               value: '$totalStars',
-                              label: 'Stars',
+                              label: '/ ${DolchWords.totalLevels * 3} Stars',
                               audioService: widget.audioService,
                               audioWord: 'stars',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 700.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 700.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                             _StatBadge(
                               icon: Icons.check_circle_rounded,
                               iconColor: AppColors.success,
@@ -393,19 +446,139 @@ class _HomeScreenState extends State<HomeScreen>
                               label: 'Words',
                               audioService: widget.audioService,
                               audioWord: 'words',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 820.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 820.ms, duration: 400.ms, curve: Curves.easeOutCubic),
+                            _StatBadge(
+                              icon: Icons.monetization_on_rounded,
+                              iconColor: AppColors.starGold,
+                              value: '${widget.progressService.starCoins}',
+                              label: 'Coins',
+                              audioService: widget.audioService,
+                              audioWord: 'coins',
+                            )
+                                .animate()
+                                .fadeIn(delay: 940.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 940.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                           ],
                           if (widget.streakService.hasStreak)
                             StreakBadge(
                               currentStreak:
                                   widget.streakService.currentStreak,
-                            ),
+                              longestStreak:
+                                  widget.streakService.longestStreak,
+                              showStreakFreezeInfo:
+                                  widget.streakService.streakFreezeAvailable,
+                            )
+                                .animate()
+                                .fadeIn(delay: 1060.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 1060.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                         ],
-                      )
-                          .animate()
-                          .fadeIn(delay: 700.ms, duration: 600.ms),
+                      ),
 
                     const SizedBox(height: 24),
+
+                    // ── Continue button (if last-played exists) ──
+                    if (widget.settingsService?.hasContinue == true)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: GestureDetector(
+                          onTap: _onContinue,
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 20 * sf, vertical: 12 * sf),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.electricBlue.withValues(alpha: 0.22),
+                                  AppColors.violet.withValues(alpha: 0.16),
+                                  AppColors.magenta.withValues(alpha: 0.12),
+                                ],
+                                stops: const [0.0, 0.5, 1.0],
+                              ),
+                              borderRadius: BorderRadius.circular(32),
+                              border: Border.all(
+                                color: AppColors.electricBlue.withValues(alpha: 0.6),
+                                width: 1.5,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.electricBlue.withValues(alpha: 0.2),
+                                  blurRadius: 24,
+                                  spreadRadius: 2,
+                                ),
+                                BoxShadow(
+                                  color: AppColors.violet.withValues(alpha: 0.1),
+                                  blurRadius: 40,
+                                  spreadRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.play_arrow_rounded,
+                                  size: 28 * sf,
+                                  color: AppColors.electricBlue,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Continue',
+                                      style: AppFonts.fredoka(
+                                        fontSize: 20 * sf,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      _continueSubtitle,
+                                      style: AppFonts.nunito(
+                                        fontSize: 11 * sf,
+                                        color: AppColors.electricBlue
+                                            .withValues(alpha: 0.8),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                )),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 20 * sf,
+                                  color: AppColors.electricBlue.withValues(alpha: 0.6),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                            .animate(
+                              onPlay: (controller) =>
+                                  controller.repeat(reverse: true),
+                            )
+                            .scaleXY(
+                              begin: 1.0,
+                              end: 1.02,
+                              duration: 1800.ms,
+                              curve: Curves.easeInOut,
+                            )
+                            .animate()
+                            .fadeIn(delay: 400.ms, duration: 500.ms)
+                            .slideY(
+                              begin: 0.3,
+                              end: 0,
+                              curve: Curves.easeOutCubic,
+                              delay: 400.ms,
+                              duration: 500.ms,
+                            ),
+                      ),
 
                     // ── Adventure Mode button ────────────────
                     PulsingHint(
@@ -435,6 +608,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 reviewService: widget.reviewService,
                                 adaptiveDifficultyService: widget.adaptiveDifficultyService,
                                 musicService: widget.musicService,
+                                settingsService: widget.settingsService,
                                 playerName: widget.playerName,
                                 profileId: widget.profileId,
                               )),
@@ -497,7 +671,9 @@ class _HomeScreenState extends State<HomeScreen>
                                   ),
                                 ),
                                 Text(
-                                  'Begin your word journey',
+                                  totalStars > 0
+                                      ? '$totalStars / ${DolchWords.totalLevels * 3} stars collected'
+                                      : 'Begin your word journey',
                                   style: AppFonts.nunito(
                                     fontSize: 10 * sf,
                                     color: AppColors.emerald
@@ -535,7 +711,12 @@ class _HomeScreenState extends State<HomeScreen>
                           curve: Curves.easeOutCubic,
                         ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+
+                    // ── Review Pile button (or "All caught up!") ──
+                    _buildReviewSection(sf),
+
+                    const SizedBox(height: 12),
 
                     // ── Garden & Mini Games icons ────────────
                     Row(
@@ -613,6 +794,141 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildReviewSection(double sf) {
+    if (widget.reviewService == null) return const SizedBox.shrink();
+
+    final overdueCount = widget.reviewService!.getOverdueCount();
+
+    if (overdueCount == 0) {
+      // Show "All caught up!" when nothing is due
+      return Text(
+        'All caught up! \u{1F31F}',
+        style: AppFonts.nunito(
+          fontSize: 14 * sf,
+          fontWeight: FontWeight.w600,
+          color: AppColors.starGold.withValues(alpha: 0.8),
+        ),
+      )
+          .animate()
+          .fadeIn(delay: 600.ms, duration: 500.ms);
+    }
+
+    return GestureDetector(
+      onTap: _launchReviewMode,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+            horizontal: 16 * sf, vertical: 8 * sf),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.violet.withValues(alpha: 0.18),
+              AppColors.magenta.withValues(alpha: 0.12),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: AppColors.violet.withValues(alpha: 0.5),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.violet.withValues(alpha: 0.12),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '\u{1F4DA}',
+              style: TextStyle(fontSize: 18 * sf),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Review ($overdueCount due)',
+              style: AppFonts.fredoka(
+                fontSize: 16 * sf,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(delay: 600.ms, duration: 500.ms)
+        .slideY(
+          begin: 0.2,
+          end: 0,
+          delay: 600.ms,
+          duration: 400.ms,
+          curve: Curves.easeOut,
+        );
+  }
+
+  void _launchReviewMode() {
+    if (widget.reviewService == null) return;
+
+    final overdueWordTexts = widget.reviewService!.getOverdueWords();
+    if (overdueWordTexts.isEmpty) return;
+
+    // Convert overdue word strings to Word objects
+    // Find the matching Word from DolchWords to preserve level info
+    final allWords = DolchWords.allWords;
+    final wordMap = <String, Word>{};
+    for (final w in allWords) {
+      wordMap[w.text.toLowerCase()] = w;
+    }
+
+    final reviewWords = <Word>[];
+    for (final text in overdueWordTexts) {
+      final match = wordMap[text.toLowerCase()];
+      if (match != null) {
+        reviewWords.add(match);
+      } else {
+        // Word not in Dolch list — create a review Word with level 0
+        reviewWords.add(Word(
+          id: 'review_$text',
+          text: text,
+          level: 0,
+        ));
+      }
+    }
+
+    if (reviewWords.isEmpty) return;
+
+    // Use level from the first word (for zone theming), tier 1 (Explorer)
+    final firstLevel = reviewWords.first.level > 0 ? reviewWords.first.level : 1;
+
+    Navigator.push(
+      context,
+      _smoothRoute(GameScreen(
+        level: firstLevel,
+        tier: 1,
+        progressService: widget.progressService,
+        audioService: widget.audioService,
+        profileService: widget.profileService,
+        statsService: widget.statsService,
+        streakService: widget.streakService,
+        personalityService: widget.personalityService,
+        reviewService: widget.reviewService,
+        adaptiveDifficultyService: widget.adaptiveDifficultyService,
+        musicService: widget.musicService,
+        playerName: widget.playerName,
+        profileId: widget.profileId,
+        reviewWords: reviewWords,
+      )),
+    ).then((_) {
+      // Refresh overdue count after returning from review
+      if (mounted) setState(() {});
+    });
+  }
+
   void _showParentGate(BuildContext context) {
     showDialog(
       context: context,
@@ -639,10 +955,19 @@ class _HomeScreenState extends State<HomeScreen>
     return PageRouteBuilder(
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
-          opacity:
-              CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-          child: child,
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
         );
       },
       transitionDuration: const Duration(milliseconds: 350),

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/app_theme.dart';
@@ -12,9 +13,11 @@ import '../services/adaptive_music_service.dart';
 import '../services/avatar_personality_service.dart';
 import '../services/review_service.dart';
 import '../services/adaptive_difficulty_service.dart';
+import '../services/player_settings_service.dart';
 import '../widgets/zone_background.dart';
 import '../widgets/tier_stars_display.dart';
 import '../widgets/tier_selection_sheet.dart';
+import '../widgets/zone_unlock_overlay.dart';
 import 'game_screen.dart';
 
 class LevelSelectScreen extends StatefulWidget {
@@ -27,6 +30,7 @@ class LevelSelectScreen extends StatefulWidget {
   final ReviewService? reviewService;
   final AdaptiveDifficultyService? adaptiveDifficultyService;
   final AdaptiveMusicService? musicService;
+  final PlayerSettingsService? settingsService;
   final String playerName;
   final String profileId;
 
@@ -41,6 +45,7 @@ class LevelSelectScreen extends StatefulWidget {
     this.reviewService,
     this.adaptiveDifficultyService,
     this.musicService,
+    this.settingsService,
     this.playerName = '',
     this.profileId = '',
   });
@@ -49,10 +54,15 @@ class LevelSelectScreen extends StatefulWidget {
   State<LevelSelectScreen> createState() => _LevelSelectScreenState();
 }
 
-class _LevelSelectScreenState extends State<LevelSelectScreen> {
+class _LevelSelectScreenState extends State<LevelSelectScreen>
+    with TickerProviderStateMixin {
   // Track which zones are expanded. Default: expand the zone containing the
   // highest unlocked level, collapse others.
   late final Map<int, bool> _expanded;
+
+  /// Tracks which locked zone is currently shaking (gentle "not yet!" hint).
+  int? _shakingZoneIndex;
+  AnimationController? _lockedShakeController;
 
   /// Zone index for the animated background (based on highest unlocked level).
   late final int _activeZoneIndex;
@@ -77,6 +87,27 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     if (!_expanded.values.any((v) => v)) {
       _expanded[0] = true;
     }
+
+    _lockedShakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _lockedShakeController?.reset();
+          if (mounted) setState(() => _shakingZoneIndex = null);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _lockedShakeController?.dispose();
+    super.dispose();
+  }
+
+  void _shakeLockedZone(int zoneIndex) {
+    setState(() => _shakingZoneIndex = zoneIndex);
+    _lockedShakeController?.forward(from: 0);
   }
 
   @override
@@ -138,6 +169,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                         ),
                       ),
                       const Spacer(),
+                      _CoinBadge(coins: widget.progressService.starCoins),
+                      SizedBox(width: 8 * sf),
                       _TotalStarsBadge(
                         stars: widget.progressService.totalStars,
                         maxStars: DolchWords.totalLevels * 3,
@@ -201,14 +234,30 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
       padding: EdgeInsets.only(bottom: 6 * sf),
       child: Column(
         children: [
-          // Zone header (tappable to expand/collapse)
+          // Zone header (tappable to expand/collapse, shake if locked)
           GestureDetector(
             onTap: zoneUnlocked
                 ? () => setState(() {
                       _expanded[zoneIndex] = !isExpanded;
                     })
-                : null,
-            child: AnimatedOpacity(
+                : () {
+                    // Gentle shake to indicate "not yet!"
+                    _shakeLockedZone(zoneIndex);
+                  },
+            child: AnimatedBuilder(
+              animation: _lockedShakeController!,
+              builder: (context, child) {
+                double offsetX = 0;
+                if (_shakingZoneIndex == zoneIndex && !zoneUnlocked) {
+                  final t = _lockedShakeController!.value;
+                  offsetX = sin(t * pi * 4) * 8 * (1.0 - t);
+                }
+                return Transform.translate(
+                  offset: Offset(offsetX, 0),
+                  child: child,
+                );
+              },
+              child: AnimatedOpacity(
               opacity: zoneUnlocked ? 1.0 : 0.55,
               duration: const Duration(milliseconds: 250),
               child: Container(
@@ -348,6 +397,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                 ),
               ),
             ),
+            ),
           )
               .animate()
               .fadeIn(
@@ -355,16 +405,15 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                 duration: 400.ms,
               ),
 
-          // Level cards (collapsible) — only show for unlocked zones
+          // Level cards (collapsible) — smooth spring expand/collapse
           if (zoneUnlocked)
-            AnimatedCrossFade(
-              firstChild: const SizedBox(width: double.infinity, height: 0),
-              secondChild: _buildLevelCards(zone, zoneIndex),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 300),
-              sizeCurve: Curves.easeInOut,
+            AnimatedSize(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: isExpanded
+                  ? _buildLevelCards(zone, zoneIndex)
+                  : const SizedBox(width: double.infinity, height: 0),
             ),
         ],
       ),
@@ -441,7 +490,19 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
 
     if (selectedTier == null || !context.mounted) return;
 
-    Navigator.push(
+    // Record last-played for Continue button on home screen
+    widget.settingsService?.setLastPlayed(level, selectedTier.value);
+
+    // Snapshot which zones are fully mastered BEFORE entering the game
+    final masteredBefore = <int>{};
+    for (int i = 0; i < DolchWords.zones.length; i++) {
+      final z = DolchWords.zones[i];
+      if (widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+        masteredBefore.add(i);
+      }
+    }
+
+    await Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => GameScreen(
@@ -460,17 +521,63 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
           tier: selectedTier.value,
         ),
         transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
           return FadeTransition(
-            opacity: CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeInOut,
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
             ),
-            child: child,
           );
         },
         transitionDuration: const Duration(milliseconds: 350),
       ),
     );
+
+    // After returning from GameScreen, check for newly mastered zones
+    if (!context.mounted) return;
+    await _checkForZoneUnlock(context, masteredBefore);
+
+    // Refresh the level list to reflect updated progress
+    if (mounted) setState(() {});
+  }
+
+  /// Compare zone mastery state before/after gameplay and show celebration.
+  Future<void> _checkForZoneUnlock(
+    BuildContext context,
+    Set<int> masteredBefore,
+  ) async {
+    for (int i = 0; i < DolchWords.zones.length; i++) {
+      if (masteredBefore.contains(i)) continue;
+      final z = DolchWords.zones[i];
+      if (!widget.progressService.isZoneFullyMastered(z.startLevel, z.endLevel)) {
+        continue;
+      }
+      // Zone i was just mastered!
+      final isLastZone = i + 1 >= DolchWords.zones.length;
+      final nextZoneIndex = isLastZone ? i : i + 1;
+
+      // Play level complete sound as zone unlock fanfare
+      widget.audioService.playLevelCompleteEffect();
+
+      if (!context.mounted) return;
+      await ZoneUnlockOverlay.show(
+        context,
+        masteredZoneIndex: i,
+        newZoneIndex: nextZoneIndex,
+        playerName: widget.playerName,
+        isAllComplete: isLastZone,
+      );
+
+      // Only show one celebration at a time
+      break;
+    }
   }
 }
 
@@ -705,6 +812,46 @@ class _LevelBadge extends StatelessWidget {
               color: unlocked
                   ? AppColors.primaryText
                   : AppColors.secondaryText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Coin Badge ───────────────────────────────────────────────────────
+
+class _CoinBadge extends StatelessWidget {
+  final int coins;
+  const _CoinBadge({required this.coins});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final sf = (screenW / 400).clamp(0.7, 1.2);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10 * sf, vertical: 5 * sf),
+      decoration: BoxDecoration(
+        color: AppColors.starGold.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12 * sf),
+        border: Border.all(
+          color: AppColors.starGold.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.monetization_on_rounded,
+              color: AppColors.starGold.withValues(alpha: 0.8), size: 16 * sf),
+          SizedBox(width: 4 * sf),
+          Text(
+            '$coins',
+            style: AppFonts.fredoka(
+              fontSize: 14 * sf,
+              fontWeight: FontWeight.w600,
+              color: AppColors.starGold.withValues(alpha: 0.8),
             ),
           ),
         ],

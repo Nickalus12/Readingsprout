@@ -25,7 +25,8 @@ import 'mini_games/word_ninja_game.dart';
 import 'mini_games/spelling_bee_game.dart';
 import 'mini_games/word_train_game.dart';
 import 'mini_games/ladybug_game.dart';
-import 'mini_games/element_lab_game.dart';
+import 'mini_games/element_lab/element_lab_game.dart';
+import 'mini_games/element_lab/element_lab_painters.dart';
 import '../services/adaptive_difficulty_service.dart';
 
 class MiniGamesScreen extends StatefulWidget {
@@ -380,6 +381,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
       label: label,
       painter: painter,
       glowColor: glow,
+      floatIndex: index,
       onTap: () async {
         await Navigator.push(context, _smoothRoute(game));
         if (!mounted) return;
@@ -410,6 +412,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
       label: label,
       painter: painter,
       glowColor: glow,
+      floatIndex: index,
       coinCost: widget.progressService.freePlayMode ? null : cost,
       coinBalance: widget.progressService.starCoins,
       onTap: () async {
@@ -493,10 +496,19 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
     return PageRouteBuilder(
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
-          opacity:
-              CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-          child: child,
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
         );
       },
       transitionDuration: const Duration(milliseconds: 350),
@@ -513,6 +525,7 @@ class _GameButton extends StatefulWidget {
   final VoidCallback onTap;
   final int? coinCost;
   final int? coinBalance;
+  final int floatIndex;
 
   const _GameButton({
     required this.label,
@@ -521,6 +534,7 @@ class _GameButton extends StatefulWidget {
     required this.onTap,
     this.coinCost,
     this.coinBalance,
+    this.floatIndex = 0,
   });
 
   @override
@@ -550,7 +564,7 @@ class _GameButtonState extends State<_GameButton> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon circle (with optional coin badge)
+              // Icon circle (with optional coin badge + idle float)
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -583,7 +597,17 @@ class _GameButtonState extends State<_GameButton> {
                       painter: widget.painter,
                       size: const Size(72, 72),
                     ),
-                  ),
+                  )
+                      .animate(
+                        onPlay: (c) => c.repeat(reverse: true),
+                        delay: Duration(milliseconds: widget.floatIndex * 200),
+                      )
+                      .slideY(
+                        begin: 0,
+                        end: -0.06,
+                        duration: Duration(milliseconds: 1800 + (widget.floatIndex % 3) * 200),
+                        curve: Curves.easeInOut,
+                      ),
                   if (widget.coinCost != null)
                     Positioned(
                       top: -4,
