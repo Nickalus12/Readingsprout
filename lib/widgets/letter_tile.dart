@@ -29,8 +29,8 @@ class LetterTile extends StatelessWidget {
     final tile = AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      width: 52,
-      height: 62,
+      width: 56,
+      height: 66,
       decoration: BoxDecoration(
         color: _backgroundColor,
         borderRadius: BorderRadius.circular(14),
@@ -86,8 +86,8 @@ class LetterTile extends StatelessWidget {
         letter.toUpperCase(),
         key: ValueKey('revealed_$letter'),
         style: AppFonts.fredoka(
-          fontSize: 30,
-          fontWeight: FontWeight.w600,
+          fontSize: 32,
+          fontWeight: FontWeight.w700,
           color: color,
           shadows: [
             Shadow(
@@ -108,7 +108,7 @@ class LetterTile extends StatelessWidget {
         '_',
         key: const ValueKey('cursor'),
         style: AppFonts.fredoka(
-          fontSize: 30,
+          fontSize: 32,
           fontWeight: FontWeight.w400,
           color: AppColors.electricBlue,
         ),
@@ -119,12 +119,12 @@ class LetterTile extends StatelessWidget {
           .fade(begin: 1.0, end: 0.4, duration: 600.ms);
     }
 
-    return const Text(
+    return Text(
       '\u00B7',
-      key: ValueKey('dot'),
-      style: TextStyle(
-        fontSize: 24,
-        color: AppColors.secondaryText,
+      key: const ValueKey('dot'),
+      style: AppFonts.fredoka(
+        fontSize: 28,
+        color: AppColors.secondaryText.withValues(alpha: 0.5),
       ),
     );
   }
