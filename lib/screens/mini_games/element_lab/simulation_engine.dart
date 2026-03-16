@@ -639,11 +639,12 @@ class SimulationEngine {
   // ── Electrical conduction ───────────────────────────────────────────────
 
   /// Flood-fill connected water body and electrify all cells.
+  /// Larger bodies get fully electrified (up to 200 cells).
   void electrifyWater(int startX, int startY) {
     final visited = <int>{};
     final queue = <int>[startY * gridW + startX];
     int count = 0;
-    while (queue.isNotEmpty && count < 50) {
+    while (queue.isNotEmpty && count < 200) {
       final curIdx = queue.removeLast();
       if (visited.contains(curIdx)) continue;
       visited.add(curIdx);
@@ -666,11 +667,20 @@ class SimulationEngine {
             grid[ni] = El.empty;
             life[ni] = 0;
             markProcessed(ni);
+          } else if (grid[ni] == El.oil) {
+            // Oil in electrified water ignites
+            grid[ni] = El.fire;
+            life[ni] = 0;
+            markProcessed(ni);
           }
         }
       }
+      // Spawn electric flash particles periodically
+      if (count % 15 == 0) {
+        queueReactionFlash(cx, cy, 255, 255, 100, 3);
+      }
     }
-    lightningFlashFrames = 5;
+    lightningFlashFrames = 8;
   }
 
   /// Flood-fill connected metal and electrify neighbors.
