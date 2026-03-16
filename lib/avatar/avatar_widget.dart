@@ -135,9 +135,10 @@ class AvatarController extends ChangeNotifier {
     const rampMs = 100.0; // ease in/out duration
 
     // Randomized per-session parameters for organic feel
-    final baseFreq = 6.0 + _rng.nextDouble() * 6.0;   // 6–12 Hz
-    final ampBase = 0.3 + _rng.nextDouble() * 0.3;     // 0.3–0.6 base
-    final ampRange = 0.15 + _rng.nextDouble() * 0.15;  // variation range
+    // Wider amplitude range so mouth movement is clearly visible to kids
+    final baseFreq = 5.0 + _rng.nextDouble() * 5.0;   // 5–10 Hz
+    final ampBase = 0.45 + _rng.nextDouble() * 0.3;    // 0.45–0.75 base
+    final ampRange = 0.15 + _rng.nextDouble() * 0.20;  // variation range
 
     _talkCycleTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       final elapsed = DateTime.now().millisecondsSinceEpoch - startMs;
@@ -339,7 +340,8 @@ class _AvatarWidgetState extends State<AvatarWidget>
 
   void _scheduleNextBlink() {
     _blinkTimer?.cancel();
-    final delayMs = 2000 + _rng.nextInt(4000);
+    // Natural blink interval: 3-6 seconds (every 3-5s on average)
+    final delayMs = 3000 + _rng.nextInt(3000);
     _blinkTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || !widget.animateEffects) return;
       _isBlinking = true;
@@ -482,21 +484,24 @@ class _AvatarWidgetState extends State<AvatarWidget>
   // ── Bone/transform hierarchy helpers ─────────────────────────────
 
   /// Eyebrow vertical offset based on expression.
-  /// Surprised/excited: brows UP, thinking: brows DOWN.
+  /// Surprised/excited: brows UP high, thinking: brows DOWN and furrowed.
+  /// Exaggerated for kids — they need to clearly see the avatar react.
   double _browOffsetY(double size) {
     final expr = widget.controller?.expression ?? AvatarExpression.neutral;
     return switch (expr) {
-      AvatarExpression.surprised => -size * 0.02,
-      AvatarExpression.excited => -size * 0.015,
-      AvatarExpression.thinking => size * 0.01,
+      AvatarExpression.surprised => -size * 0.04,
+      AvatarExpression.excited => -size * 0.03,
+      AvatarExpression.thinking => size * 0.018,
+      AvatarExpression.happy => -size * 0.012,
       _ => 0.0,
     };
   }
 
   /// Jaw drop driven by mouth openness — pulls mouth and lower cheeks down.
+  /// Exaggerated for kids to clearly see talking animation.
   double _jawDrop(double size) {
     final openness = widget.controller?.mouthOpenAmount ?? 0.0;
-    return openness * size * 0.03;
+    return openness * size * 0.045;
   }
 
   // ── Touch handling ────────────────────────────────────────────────
@@ -1433,11 +1438,12 @@ class EyesPainter extends CustomPainter {
     final leftCenter = Offset(w * 0.25, h * 0.5);
     final rightCenter = Offset(w * 0.75, h * 0.5);
 
-    // Expression-aware eye scaling
+    // Expression-aware eye scaling — exaggerated for kids to clearly see reactions
     final eyeScaleFactor = switch (expression) {
-      AvatarExpression.excited => 1.15,
-      AvatarExpression.surprised => 1.25,
-      AvatarExpression.thinking => 0.85,
+      AvatarExpression.excited => 1.25,
+      AvatarExpression.surprised => 1.35,
+      AvatarExpression.thinking => 0.78,
+      AvatarExpression.happy => 1.10,
       _ => 1.0,
     };
     final eyeRadius = w * 0.12 * eyeScaleFactor;
