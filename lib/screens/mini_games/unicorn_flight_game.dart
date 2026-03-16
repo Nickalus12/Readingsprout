@@ -647,17 +647,37 @@ class _UnicornFlightGameState extends State<UnicornFlightGame>
                 ),
               ),
               const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 48),
-                child: Text(
-                  'Fly your unicorn into the correct sight words!\nAvoid misspelled words and wrong answers.',
-                  textAlign: TextAlign.center,
-                  style: AppFonts.nunito(
-                    fontSize: 16,
-                    color: AppColors.secondaryText,
-                    height: 1.5,
+              // Visual hint: listen then fly into word
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.volume_up_rounded,
+                      color: AppColors.violet, size: 28),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded,
+                      color: AppColors.secondaryText, size: 20),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.violet.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.violet.withValues(alpha: 0.5),
+                        width: 2,
+                      ),
+                    ),
+                    child: Text(
+                      'cat',
+                      style: AppFonts.fredoka(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 36),
               ElevatedButton(
