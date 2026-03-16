@@ -44,6 +44,7 @@ class GameScreen extends StatefulWidget {
   final AdaptiveMusicService? musicService;
   final String playerName;
   final String profileId;
+  final List<Word>? reviewWords;
 
   const GameScreen({
     super.key,
@@ -60,6 +61,7 @@ class GameScreen extends StatefulWidget {
     this.tier = 1,
     this.playerName = '',
     this.profileId = '',
+    this.reviewWords,
   });
 
   @override
@@ -206,7 +208,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     widget.musicService?.startZoneMusic(musicZoneKey);
 
     // Load words for this level, ordered by spaced repetition priority
-    final levelWords = List<Word>.from(DolchWords.wordsForLevel(widget.level));
+    final List<Word> levelWords;
+    if (widget.reviewWords != null && widget.reviewWords!.isNotEmpty) {
+      levelWords = List<Word>.from(widget.reviewWords!);
+    } else {
+      levelWords = List<Word>.from(DolchWords.wordsForLevel(widget.level));
+    }
     if (widget.reviewService != null) {
       final wordTexts = levelWords.map((w) => w.text.toLowerCase()).toList();
       final ordered = widget.reviewService!.orderWordsForPractice(wordTexts);
