@@ -204,11 +204,19 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
           setState(() {});
         },
         child: Container(
-          width: 164,
-          height: 164,
+          width: 200,
+          height: 240,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(color: AppColors.border, width: 2),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppColors.violet.withValues(alpha: 0.10),
+                AppColors.surface,
+              ],
+            ),
             boxShadow: [
               BoxShadow(
                 color: AppColors.violet.withValues(alpha: 0.25),
@@ -217,18 +225,21 @@ class _AvatarEditorScreenState extends State<AvatarEditorScreen> {
               ),
             ],
           ),
-          child: AvatarWidget(
-            config: _config,
-            size: 160.0,
-            animateEffects: true,
-          )
-              .animate(key: ValueKey(_config.hashCode))
-              .scale(
-                begin: const Offset(0.92, 0.92),
-                end: const Offset(1.0, 1.0),
-                duration: 280.ms,
-                curve: Curves.elasticOut,
-              ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: AvatarWidget(
+              config: _config,
+              size: 196.0,
+              animateEffects: true,
+            )
+                .animate(key: ValueKey(_config.hashCode))
+                .scale(
+                  begin: const Offset(0.92, 0.92),
+                  end: const Offset(1.0, 1.0),
+                  duration: 280.ms,
+                  curve: Curves.elasticOut,
+                ),
+          ),
         ),
       ),
     );
