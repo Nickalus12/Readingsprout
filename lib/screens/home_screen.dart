@@ -389,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                     const SizedBox(height: 20),
 
-                    // ── Stat badges ───────────────────────────
+                    // ── Stat badges (staggered entrance) ───────────────────────────
                     if (totalWords > 0 || widget.streakService.hasStreak)
                       Wrap(
                         alignment: WrapAlignment.center,
@@ -404,7 +404,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: '/ ${DolchWords.totalLevels * 3} Stars',
                               audioService: widget.audioService,
                               audioWord: 'stars',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 700.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 700.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                             _StatBadge(
                               icon: Icons.check_circle_rounded,
                               iconColor: AppColors.success,
@@ -412,7 +415,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: 'Words',
                               audioService: widget.audioService,
                               audioWord: 'words',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 820.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 820.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                             _StatBadge(
                               icon: Icons.monetization_on_rounded,
                               iconColor: AppColors.starGold,
@@ -420,7 +426,10 @@ class _HomeScreenState extends State<HomeScreen>
                               label: 'Coins',
                               audioService: widget.audioService,
                               audioWord: 'coins',
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 940.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 940.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                           ],
                           if (widget.streakService.hasStreak)
                             StreakBadge(
@@ -430,11 +439,12 @@ class _HomeScreenState extends State<HomeScreen>
                                   widget.streakService.longestStreak,
                               showStreakFreezeInfo:
                                   widget.streakService.streakFreezeAvailable,
-                            ),
+                            )
+                                .animate()
+                                .fadeIn(delay: 1060.ms, duration: 400.ms)
+                                .slideX(begin: -0.15, end: 0, delay: 1060.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                         ],
-                      )
-                          .animate()
-                          .fadeIn(delay: 700.ms, duration: 600.ms),
+                      ),
 
                     const SizedBox(height: 24),
 
@@ -1182,7 +1192,7 @@ class _TappableTagWordState extends State<_TappableTagWord>
 
 // ── Icon-only menu button ──────────────────────────────────────────────
 
-class _MenuIconButton extends StatelessWidget {
+class _MenuIconButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
 
@@ -1192,23 +1202,67 @@ class _MenuIconButton extends StatelessWidget {
   });
 
   @override
+  State<_MenuIconButton> createState() => _MenuIconButtonState();
+}
+
+class _MenuIconButtonState extends State<_MenuIconButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _tapController;
+  double _scale = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tapController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tapController.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) {
+    setState(() => _scale = 0.88);
+  }
+
+  void _onTapUp(TapUpDetails _) {
+    setState(() => _scale = 1.0);
+    widget.onTap();
+  }
+
+  void _onTapCancel() {
+    setState(() => _scale = 1.0);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          color: AppColors.surface.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.border.withValues(alpha: 0.4),
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.border.withValues(alpha: 0.4),
+            ),
           ),
-        ),
-        child: Icon(
-          icon,
-          size: 24,
-          color: AppColors.secondaryText,
+          child: Icon(
+            widget.icon,
+            size: 24,
+            color: AppColors.secondaryText,
+          ),
         ),
       ),
     );
