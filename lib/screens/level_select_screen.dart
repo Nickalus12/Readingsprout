@@ -132,6 +132,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                         ),
                       ),
                       const Spacer(),
+                      _CoinBadge(coins: widget.progressService.starCoins),
+                      SizedBox(width: 8 * sf),
                       _TotalStarsBadge(
                         stars: widget.progressService.totalStars,
                         maxStars: DolchWords.totalLevels * 3,
@@ -702,6 +704,46 @@ class _LevelBadge extends StatelessWidget {
               color: unlocked
                   ? AppColors.primaryText
                   : AppColors.secondaryText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Coin Badge ───────────────────────────────────────────────────────
+
+class _CoinBadge extends StatelessWidget {
+  final int coins;
+  const _CoinBadge({required this.coins});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final sf = (screenW / 400).clamp(0.7, 1.2);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10 * sf, vertical: 5 * sf),
+      decoration: BoxDecoration(
+        color: AppColors.starGold.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12 * sf),
+        border: Border.all(
+          color: AppColors.starGold.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.monetization_on_rounded,
+              color: AppColors.starGold.withValues(alpha: 0.8), size: 16 * sf),
+          SizedBox(width: 4 * sf),
+          Text(
+            '$coins',
+            style: AppFonts.fredoka(
+              fontSize: 14 * sf,
+              fontWeight: FontWeight.w600,
+              color: AppColors.starGold.withValues(alpha: 0.8),
             ),
           ),
         ],
