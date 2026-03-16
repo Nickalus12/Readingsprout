@@ -153,8 +153,17 @@ class _ElementLabGameState extends State<ElementLabGame>
   }
 
   Future<void> _toggleMute() async {
+    // Speak feedback BEFORE actually muting so the child hears it
+    if (!_isMuted) {
+      // About to mute — say "off" while still unmuted
+      await widget.audioService.playWord('off');
+    }
     setState(() => _isMuted = !_isMuted);
     Haptics.tap();
+    if (!_isMuted) {
+      // Just unmuted — say "on"
+      _speakLabel('on');
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_muteKey, _isMuted);
   }
@@ -164,17 +173,31 @@ class _ElementLabGameState extends State<ElementLabGame>
     _engine.isNight = _isNight;
     _engine.markAllDirty();
     Haptics.tap();
+    _speakLabel(_isNight ? 'night' : 'day');
   }
 
-  Future<void> _speakElementName(int elType) async {
-    if (_isMuted || elType == El.empty || elType == El.eraser) return;
-    final name = elementNames[elType.clamp(0, elementNames.length - 1)].toLowerCase();
-    if (name.isEmpty) return;
+  /// Map display names to audio file names when they differ.
+  static const Map<String, String> _displayToAudioName = {
+    'zap': 'lightning',    // display "Zap" but audio is "lightning"
+    'shroom': 'mushroom',  // seed sub-type display name
+  };
 
-    if (speakableWords.contains(name)) {
-      await widget.audioService.playWord(name);
+  Future<void> _speakElementName(int elType) async {
+    if (_isMuted || elType == El.empty) return;
+    final displayName = elType == El.eraser
+        ? 'eraser'
+        : elementNames[elType.clamp(0, elementNames.length - 1)].toLowerCase();
+    if (displayName.isEmpty) return;
+
+    // Resolve audio name: use mapping if exists, else display name
+    final audioName = _displayToAudioName[displayName] ?? displayName;
+
+    if (speakableWords.contains(audioName)) {
+      await widget.audioService.playWord(audioName);
+    } else if (speakableWords.contains(displayName)) {
+      await widget.audioService.playWord(displayName);
     } else {
-      for (final letter in name.split('')) {
+      for (final letter in displayName.split('')) {
         if (!mounted || _isMuted) break;
         await widget.audioService.playLetter(letter);
         await Future.delayed(const Duration(milliseconds: 250));
@@ -185,6 +208,22 @@ class _ElementLabGameState extends State<ElementLabGame>
   Future<void> _speakWord(String word) async {
     if (_isMuted) return;
     await widget.audioService.playWord(word);
+  }
+
+  /// Speak a UI label — tries the word audio file first, falls back to
+  /// spelling it letter-by-letter so every button gives audible feedback.
+  Future<void> _speakLabel(String text) async {
+    if (_isMuted) return;
+    final lower = text.toLowerCase();
+    // Try full word audio first
+    final ok = await widget.audioService.playWord(lower);
+    if (ok) return;
+    // Fallback: spell it out letter by letter
+    for (final letter in lower.split('')) {
+      if (!mounted || _isMuted) break;
+      await widget.audioService.playLetter(letter);
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
   }
 
   void _initGrid(double canvasW, double canvasH) {
@@ -306,6 +345,7 @@ class _ElementLabGameState extends State<ElementLabGame>
     if (_shakeCooldown > 0) return;
     _shakeCooldown = 60;
     Haptics.tap();
+    _speakLabel('shake');
     _engine.doShake();
 
     // Brief screen shake animation
@@ -325,6 +365,7 @@ class _ElementLabGameState extends State<ElementLabGame>
   void _togglePause() {
     setState(() => _isPaused = !_isPaused);
     Haptics.tap();
+    _speakLabel(_isPaused ? 'pause' : 'play');
   }
 
   void _addMoreTime() {
@@ -991,12 +1032,14 @@ class _ElementLabGameState extends State<ElementLabGame>
     final hPad = compact ? 6.0 : 12.0;
 
     Widget buildBrushSizeBtn(int size) {
+      final label = size == 1 ? 'small' : size == 3 ? 'medium' : 'big';
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 3),
         child: GestureDetector(
           onTap: () {
             setState(() => _input.brushSize = size);
             Haptics.tap();
+            _speakLabel(label);
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -1031,13 +1074,14 @@ class _ElementLabGameState extends State<ElementLabGame>
       );
     }
 
-    Widget buildBrushModeBtn(int mode, IconData icon) {
+    Widget buildBrushModeBtn(int mode, IconData icon, String label) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 1),
         child: GestureDetector(
           onTap: () {
             setState(() => _input.brushMode = mode);
             Haptics.tap();
+            _speakLabel(label);
           },
           child: Container(
             width: chipSz,
@@ -1100,9 +1144,9 @@ class _ElementLabGameState extends State<ElementLabGame>
               buildBrushSizeBtn(size),
             SizedBox(width: compact ? 4 : 6),
             // Brush modes
-            buildBrushModeBtn(0, Icons.circle),
-            buildBrushModeBtn(1, Icons.horizontal_rule_rounded),
-            buildBrushModeBtn(2, Icons.grain_rounded),
+            buildBrushModeBtn(0, Icons.circle, 'circle'),
+            buildBrushModeBtn(1, Icons.horizontal_rule_rounded, 'line'),
+            buildBrushModeBtn(2, Icons.grain_rounded, 'spray'),
             SizedBox(width: compact ? 3 : 4),
             // Gravity flip
             buildIconBtn(
@@ -1110,6 +1154,7 @@ class _ElementLabGameState extends State<ElementLabGame>
                 setState(() => _engine.gravityDir = -_engine.gravityDir);
                 _engine.markAllDirty();
                 Haptics.tap();
+                _speakLabel(_engine.gravityDir == -1 ? 'up' : 'down');
               },
               icon: Icons.swap_vert_rounded,
               color: _engine.gravityDir == -1
@@ -1122,6 +1167,11 @@ class _ElementLabGameState extends State<ElementLabGame>
                 setState(() => _engine.windForce = (_engine.windForce - 1).clamp(-3, 3));
                 _engine.markAllDirty();
                 Haptics.tap();
+                if (_engine.windForce == 0) {
+                  _speakLabel('no');
+                } else {
+                  _speakLabel('left');
+                }
               },
               icon: Icons.arrow_back_rounded,
               color: _engine.windForce < 0
@@ -1152,6 +1202,11 @@ class _ElementLabGameState extends State<ElementLabGame>
                 setState(() => _engine.windForce = (_engine.windForce + 1).clamp(-3, 3));
                 _engine.markAllDirty();
                 Haptics.tap();
+                if (_engine.windForce == 0) {
+                  _speakLabel('no');
+                } else {
+                  _speakLabel('right');
+                }
               },
               icon: Icons.arrow_forward_rounded,
               color: _engine.windForce > 0
@@ -1171,7 +1226,10 @@ class _ElementLabGameState extends State<ElementLabGame>
             SizedBox(width: compact ? 4 : 8),
             // Undo
             buildIconBtn(
-              onPressed: _input.undoHistory.isNotEmpty ? _input.undo : null,
+              onPressed: _input.undoHistory.isNotEmpty ? () {
+                _input.undo();
+                _speakLabel('undo');
+              } : null,
               icon: Icons.undo_rounded,
               color: _input.undoHistory.isNotEmpty
                   ? AppColors.electricBlue
@@ -1185,7 +1243,10 @@ class _ElementLabGameState extends State<ElementLabGame>
             ),
             // Clear
             buildIconBtn(
-              onPressed: _input.clearGrid,
+              onPressed: () {
+                _speakLabel('clear');
+                _input.clearGrid();
+              },
               icon: Icons.delete_outline_rounded,
               color: AppColors.error.withValues(alpha: 0.8),
             ),
