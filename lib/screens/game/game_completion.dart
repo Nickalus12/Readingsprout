@@ -166,6 +166,54 @@ class GameLevelComplete extends StatelessWidget {
                 .fadeIn(delay: 250.ms, duration: 400.ms)
                 .slideY(begin: 0.3, end: 0, delay: 250.ms, duration: 400.ms, curve: Curves.easeOutCubic),
 
+            // Earned star display - dramatic one-at-a-time reveal
+            if (!championNotDone)
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (i) {
+                    final earned = i < tier;
+                    final Color starColor;
+                    if (i == 0) {
+                      starColor = AppColors.bronze;
+                    } else if (i == 1) {
+                      starColor = AppColors.silver;
+                    } else {
+                      starColor = AppColors.starGold;
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(
+                        earned
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: earned ? 36 : 28,
+                        color: earned
+                            ? starColor
+                            : AppColors.secondaryText.withValues(alpha: 0.2),
+                      )
+                          .animate()
+                          .scaleXY(
+                            begin: 0,
+                            end: earned ? 1.3 : 1.0,
+                            delay: Duration(milliseconds: 500 + i * 300),
+                            duration: 400.ms,
+                            curve: Curves.easeOut,
+                          )
+                          .then()
+                          .scaleXY(
+                            begin: earned ? 1.3 : 1.0,
+                            end: 1.0,
+                            duration: 300.ms,
+                            curve: Curves.bounceOut,
+                          ),
+                    );
+                  }),
+                ),
+              ),
+
             const SizedBox(height: 8),
 
             // Personalized phrase or "try again" message
