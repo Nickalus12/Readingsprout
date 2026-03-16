@@ -528,9 +528,9 @@ class ShoulderPainter extends CustomPainter {
       // Align with torso shoulder dome (0.48 * shoulderW from center)
       final sCx = cx + side * shoulderW * 0.48;
       final sCy = shoulderY + dy * h;
-      // Wider, flatter cap for child-like roundness
-      final capW = w * 0.16;
-      final capH = h * 0.055;
+      // Wider, flatter cap for child-like roundness (matches wider arms)
+      final capW = w * 0.18;
+      final capH = h * 0.060;
 
       // Cap top sits slightly above shoulderY for overlap with torso dome
       final capTop = sCy - capH * 0.15;
